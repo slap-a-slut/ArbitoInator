@@ -148,6 +148,7 @@
       grid-template-columns: 1.05fr 0.95fr;
       gap: 18px;
       margin-top: 16px;
+      align-items: start;
     }
 
     .card{
@@ -176,10 +177,64 @@
       font-weight: 800;
     }
 
+    /* Left column becomes an operator stack: logs -> chart -> deals */
+    .leftStack{
+      display:flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 12px;
+      min-height: 0;
+    }
+
     .logFeed{
-      height: 560px;
+      height: 320px;
       overflow:auto;
       padding: 12px 12px 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(0,0,0,0.14);
+    }
+
+    .chartBox{
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(0,0,0,0.14);
+      overflow:hidden;
+      height: 220px;
+    }
+
+    .dealsWrap{
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(0,0,0,0.14);
+      overflow:hidden;
+      min-height: 0;
+      flex: 1;
+      display:flex;
+      flex-direction: column;
+    }
+
+    .tableHead{
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.10);
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .tableHead h3{
+      margin:0;
+      font-size: 12px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.62);
+      font-weight: 900;
+    }
+
+    .dealsBody{
+      overflow:auto;
+      min-height: 0;
+      padding: 0 8px 10px;
     }
 
     .logItem{
@@ -336,10 +391,8 @@
       overflow:hidden;
     }
 
-    #profitRows{
-      max-height: 220px;
-      overflow: auto;
-    }
+    /* Profit rows live inside the left operator stack; scrolling is handled by .dealsBody */
+    #profitRows{ overflow: visible; max-height: none; }
 
     .routeDetails{ width: 100%; }
     .routeDetails summary{
@@ -435,7 +488,8 @@
     @media (max-width: 980px){
       .grid{ grid-template-columns: 1fr; }
       .pill{ min-width: auto; width: 100%; }
-      .logFeed{ height: 420px; }
+      .logFeed{ height: 360px; }
+      .chartBox{ height: 200px; }
     }
   </style>
 </head>
@@ -456,13 +510,37 @@
     </div>
 
     <div class="grid">
-      <!-- LEFT: log feed -->
-      <section class="card">
+      <!-- LEFT: operator stack (logs -> chart -> deals) -->
+      <section class="card" style="min-height:0;">
         <div class="cardHeader">
-          <h2>Подробный лог обнаружения арбов и их просчёт</h2>
+          <h2>Оперативная лента</h2>
           <span class="badge blue" id="logCount">0</span>
         </div>
-        <div class="logFeed" id="logs"></div>
+
+        <div class="leftStack">
+          <div class="logFeed" id="logs" aria-label="Logs"></div>
+
+          <div class="chartBox" title="Profit timeline (последние события)">
+            <canvas id="profitChart" width="900" height="260"></canvas>
+          </div>
+
+          <div class="dealsWrap" aria-label="Последние профитные события">
+            <div class="tableHead">
+              <h3>Deals</h3>
+              <span class="badge" id="dealsHint">latest</span>
+            </div>
+            <div class="table" style="margin: 0 8px 8px;">
+              <div class="row" style="background: rgba(255,255,255,0.04); font-weight:800; color: rgba(255,255,255,0.75);">
+                <div class="muted">Time</div>
+                <div class="muted">Route</div>
+                <div class="muted" style="text-align:right;">Spent</div>
+                <div class="muted" style="text-align:right;">ROI</div>
+                <div class="muted" style="text-align:right;">Profit</div>
+              </div>
+              <div class="dealsBody" id="profitRows"></div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- RIGHT: status + dashboard -->
@@ -482,7 +560,7 @@
         </div>
 
         <div class="dashboard">
-          <!-- Blue space → реально полезный блок: Stats + chart + last profits -->
+          <!-- Stats stay on the right -->
           <div class="stats">
             <div class="stat">
               <div class="k">Blocks scanned</div>
@@ -504,21 +582,6 @@
               <div class="k">Avg ROI</div>
               <div class="v" id="statRoi">0.00%</div>
             </div>
-          </div>
-
-          <div class="chartWrap" title="Profit timeline (последние события)">
-            <canvas id="profitChart" width="900" height="260"></canvas>
-          </div>
-
-          <div class="table" aria-label="Последние профитные события">
-            <div class="row" style="background: rgba(255,255,255,0.04); font-weight:800; color: rgba(255,255,255,0.75);">
-              <div class="muted">Time</div>
-              <div class="muted">Route</div>
-              <div class="muted" style="text-align:right;">Spent</div>
-              <div class="muted" style="text-align:right;">ROI</div>
-              <div class="muted" style="text-align:right;">Profit</div>
-            </div>
-            <div id="profitRows"></div>
           </div>
         </div>
 
