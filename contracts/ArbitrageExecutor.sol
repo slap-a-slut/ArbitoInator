@@ -7,7 +7,7 @@ contract ArbitrageExecutor {
     address public owner;
 
     constructor() {
-        owner = payable(msg.sender);
+        owner = msg.sender;
     }
 
     modifier onlyOwner() {
@@ -15,12 +15,11 @@ contract ArbitrageExecutor {
         _;
     }
 
-    // входные данные для арба
     struct SwapRoute {
         address tokenIn;
         address tokenOut;
         uint256 amountIn;
-        bytes dexData; // info about path, pool, dex-type
+        bytes dexData; // encoded routing
     }
 
     receive() external payable {}
@@ -34,7 +33,7 @@ contract ArbitrageExecutor {
 
         uint256 startBal = IERC20(profitToken).balanceOf(address(this));
 
-        for (uint256 i = 0; i < routes.length; i++) {
+        for (uint256 i; i < routes.length; i++) {
             _swap(routes[i]);
         }
 
@@ -46,17 +45,63 @@ contract ArbitrageExecutor {
         IERC20(profitToken).transfer(to, profit);
     }
 
+    // -------- INTERNAL SWAP ROUTING --------
+
     function _swap(SwapRoute calldata route) internal {
-        // placeholder — тут будет разветвление: curve, uniV2, uniV3, balancer и тд
-        // swap через интерфейсы
+        (uint8 dex, bytes memory data) = abi.decode(route.dexData, (uint8, bytes));
+
+        if (dex == 1) {
+            _swapUniV2(route, data);
+        } else if (dex == 2) {
+            _swapUniV3(route, data);
+        } else {
+            revert("unknown dex");
+        }
     }
 
+    function _swapUniV2(SwapRoute calldata route, bytes memory data) internal {
+        (address router, address[] memory path) = abi.decode(data, (address, address[]));
+
+        // approve
+        IERC20(route.tokenIn).approve(router, route.amountIn);
+
+        // execute
+        IUniswapV2Router(router).swapExactTokensForTokens(
+            route.amountIn,
+            1,                          // minOut = 1 (bot handles slippage offchain)
+            path,
+            address(this),
+            block.timestamp
+        );
+    }
+
+    function _swapUniV3(SwapRoute calldata route, bytes memory data) internal {
+        (address router, uint24 fee) = abi.decode(data, (address, uint24));
+
+        IERC20(route.tokenIn).approve(router, route.amountIn);
+
+        IUniswapV3Router(router).exactInputSingle(
+            IUniswapV3Router.ExactInputSingleParams({
+                tokenIn: route.tokenIn,
+                tokenOut: route.tokenOut,
+                fee: fee,
+                recipient: address(this),
+                deadline: block.timestamp,
+                amountIn: route.amountIn,
+                amountOutMinimum: 1,   // minOut = 1, handled offchain
+                sqrtPriceLimitX96: 0   // no price limit
+            })
+        );
+    }
+
+    // -------- OWNER OPS --------
+
     function withdrawToken(address token, uint256 amount) external onlyOwner {
-        IERC20(token).transfer(owner, amount);
+        IERC20(token).transfer(msg.sender, amount);
     }
 
     function withdrawETH(uint256 amount) external onlyOwner {
-        (bool sent, ) = owner.call{value: amount}("");
-        require(sent);
+        (bool sent,) = msg.sender.call{value: amount}("");
+        require(sent, "eth withdraw failed");
     }
 }
