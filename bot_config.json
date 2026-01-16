@@ -1,0 +1,25 @@
+{
+  "min_profit_pct": 0.01,
+  "min_profit_abs": 0.01,
+  "slippage_bps": 5,
+  "max_gas_gwei": null,
+  "concurrency": 10,
+  "block_budget_s": 12,
+  "scan_mode": "auto",
+  "amount_presets": [
+    1,
+    5
+  ],
+  "stage1_amount": 1,
+  "stage1_fee_tiers": [
+    500,
+    3000
+  ],
+  "stage2_top_k": 30,
+  "stage2_amount_min": 0.5,
+  "stage2_amount_max": 50,
+  "stage2_max_evals": 6,
+  "rpc_timeout_stage1_s": 6,
+  "rpc_timeout_stage2_s": 10,
+  "verbose": false
+}

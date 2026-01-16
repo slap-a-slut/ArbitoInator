@@ -4,6 +4,9 @@ eth-account==0.13.6
 eth-utils==5.0.0
 hexbytes==1.2.0
 
+# Needed by Uniswap V3 Quoter calldata encoding
+eth-abi>=5.1.0,<6
+
 # Асинхронные библиотеки
 aiohttp==3.13.3
 websockets==11.0.3

@@ -1,36 +1,1237 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
-<meta charset="UTF-8">
-<title>Fork Simulation Monitor</title>
-<style>
-    body { font-family: monospace; background: #111; color: #eee; }
-    .log { margin: 5px 0; }
-    .profit { color: #0f0; }
-    .warn { color: #f90; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fork Simulation Monitor</title>
+  <!-- Optional fonts (adds "forbidden" vibe but keeps readability).
+       If Google Fonts is blocked, fallbacks will be used automatically. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=UnifrakturCook:wght@700&family=Cinzel:wght@500;700;900&family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet">
+  <style>
+    :root{
+	      /* Forbidden / noir palette */
+	      --bg: #05050a;
+	      --panel: rgba(255,255,255,0.045);
+	      --panel-2: rgba(255,255,255,0.07);
+	      --stroke: rgba(255,255,255,0.12);
+	      --text: rgba(255,255,255,0.92);
+	      --muted: rgba(255,255,255,0.62);
+	      --good: #3fe08f;
+	      --warn: #f6c25a;
+	      --bad: #ff3b6a;
+	      --blue: #6a5cff;
+	      --violet: #a100ff;
+	      --red: #ff2b51;
+	      --shadow: 0 20px 70px rgba(0,0,0,.72);
+      --radius: 22px;
+    }
+
+    *{ box-sizing: border-box; }
+    body{
+      margin:0;
+	      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+	      background:
+	        radial-gradient(950px 580px at 15% 15%, rgba(161,0,255,.18), transparent 65%),
+	        radial-gradient(900px 520px at 85% 12%, rgba(255,43,81,.14), transparent 68%),
+	        radial-gradient(700px 500px at 70% 85%, rgba(106,92,255,.10), transparent 70%),
+	        linear-gradient(180deg, rgba(0,0,0,.35), rgba(0,0,0,.10)),
+	        var(--bg);
+      color: var(--text);
+	      min-height: 100vh;
+    }
+
+	    /* Subtle "forbidden" overlays: scanlines + noise */
+	    body::before{
+	      content:"";
+	      position:fixed;
+	      inset:0;
+	      pointer-events:none;
+	      background:
+	        repeating-linear-gradient(
+	          to bottom,
+	          rgba(255,255,255,0.03) 0px,
+	          rgba(255,255,255,0.03) 1px,
+	          rgba(0,0,0,0) 3px,
+	          rgba(0,0,0,0) 6px
+	        );
+	      opacity: .06;
+	      mix-blend-mode: overlay;
+	    }
+	    body::after{
+	      content:"";
+	      position:fixed;
+	      inset:0;
+	      pointer-events:none;
+	      background-image:
+	        radial-gradient(circle at 20% 30%, rgba(255,43,81,.10), transparent 40%),
+	        radial-gradient(circle at 80% 65%, rgba(161,0,255,.10), transparent 45%);
+	      opacity: .32;
+	      filter: blur(18px);
+	    }
+
+    .frame{
+      max-width: 1200px;
+      margin: 28px auto;
+      padding: 0 18px 28px;
+    }
+
+    .titlebar{
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 18px 18px 14px;
+      border-radius: calc(var(--radius) + 8px);
+      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      border: 1px solid var(--stroke);
+      box-shadow: var(--shadow);
+    }
+
+    .title{
+	      /* "Forbidden" but readable: gothic header + classy serif fallback */
+	      font-family: "UnifrakturCook", "Cinzel", ui-sans-serif, system-ui;
+	      font-weight: 700;
+	      letter-spacing: .06em;
+      text-transform: uppercase;
+      font-size: clamp(22px, 3vw, 42px);
+      margin:0;
+      line-height:1.1;
+	      text-shadow:
+          0 0 18px rgba(161,0,255,.22),
+          0 0 22px rgba(255,43,81,.14),
+          0 0 32px rgba(255,43,81,.10);
+    }
+
+    /* slight "glitch/flicker" for the forbidden vibe (very subtle) */
+    @media (prefers-reduced-motion: no-preference){
+      .title{
+        animation: titleFlicker 7.5s infinite;
+      }
+      @keyframes titleFlicker{
+        0%, 96%, 100%{ filter: none; opacity: 1; }
+        97%{ filter: saturate(1.2) contrast(1.05); opacity: .96; }
+        98%{ filter: saturate(1.0) contrast(1.0); opacity: 1; }
+        99%{ filter: saturate(1.15) contrast(1.08); opacity: .97; }
+      }
+    }
+
+	    .mono{
+	      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+	    }
+
+    .pill{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding: 10px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--stroke);
+      background: rgba(255,255,255,0.04);
+      color: var(--muted);
+      min-width: 280px;
+      justify-content: space-between;
+    }
+    .pill b{ color: var(--text); font-weight: 700; }
+    .dot{
+      width: 10px; height: 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.2);
+      box-shadow: 0 0 0 6px rgba(255,255,255,0.06);
+    }
+    .dot.ok{ background: var(--good); box-shadow: 0 0 0 6px rgba(68,194,119,0.18); }
+    .dot.off{ background: rgba(255,255,255,0.22); box-shadow: 0 0 0 6px rgba(255,255,255,0.06); }
+
+    .grid{
+      display:grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 18px;
+      margin-top: 16px;
+    }
+
+    .card{
+      border-radius: var(--radius);
+      background: var(--panel);
+      border: 1px solid var(--stroke);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+    }
+
+    .cardHeader{
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.10);
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .cardHeader h2{
+      margin:0;
+      font-size: 14px;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      font-weight: 800;
+    }
+
+    .logFeed{
+      height: 560px;
+      overflow:auto;
+      padding: 12px 12px 14px;
+    }
+
+    .logItem{
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(0,0,0,0.16);
+      margin-bottom: 10px;
+    }
+    .logItem .meta{
+      display:flex;
+      gap: 10px;
+      align-items:center;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .logItem .text{ font-size: 13px; line-height: 1.35; }
+
+    .badge{
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.05);
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .badge.good{ color: rgba(68,194,119,1); border-color: rgba(68,194,119,0.35); background: rgba(68,194,119,0.10);} 
+    .badge.warn{ color: rgba(245,197,66,1); border-color: rgba(245,197,66,0.35); background: rgba(245,197,66,0.10);} 
+    .badge.bad{ color: rgba(225,84,74,1); border-color: rgba(225,84,74,0.35); background: rgba(225,84,74,0.10);} 
+    .badge.blue{ color: rgba(47,107,255,1); border-color: rgba(47,107,255,0.40); background: rgba(47,107,255,0.12);} 
+
+    .rightTop{
+      padding: 14px 16px 10px;
+      display:flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .kv{
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(0,0,0,0.14);
+      border: 1px solid rgba(255,255,255,0.10);
+    }
+    .kv span{ color: var(--muted); font-size: 12px; }
+    .kv b{ font-size: 14px; }
+
+    .notice{
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(0,0,0,0.14);
+      border: 1px solid rgba(255,255,255,0.10);
+    }
+
+    .notice .left{
+      display:flex;
+      align-items:center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .notice .msg{
+      color: var(--muted);
+      font-size: 13px;
+      overflow:hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .buttons{
+      display:flex;
+      gap: 12px;
+      padding: 10px 16px 14px;
+      align-items:center;
+      justify-content: center;
+    }
+
+    .btn{
+      width: 100%;
+      border-radius: 999px;
+      padding: 12px 16px;
+      font-weight: 800;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.06);
+      color: rgba(255,255,255,0.88);
+      cursor:pointer;
+      transition: transform .08s ease, background .12s ease, opacity .12s ease;
+      user-select:none;
+    }
+    .btn:active{ transform: translateY(1px); }
+	    .btn:hover{ background: rgba(255,255,255,0.08); }
+	    .btn.primary{ 
+	      background: linear-gradient(180deg, rgba(63,224,143,0.28), rgba(63,224,143,0.14));
+	      border-color: rgba(63,224,143,0.40);
+	      box-shadow: 0 0 0 1px rgba(63,224,143,0.06), 0 0 26px rgba(63,224,143,0.10);
+	    } 
+	    .btn.danger{ 
+	      background: linear-gradient(180deg, rgba(255,43,81,0.22), rgba(255,43,81,0.10));
+	      border-color: rgba(255,43,81,0.40);
+	      box-shadow: 0 0 0 1px rgba(255,43,81,0.06), 0 0 26px rgba(255,43,81,0.10);
+	    } 
+    .btn:disabled{
+      opacity: .40;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .dashboard{
+      padding: 12px 12px 14px;
+    }
+
+    .stats{
+      display:grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .stat{
+      padding: 12px 12px;
+      border-radius: 16px;
+	      background: rgba(0,0,0,0.22);
+	      border: 1px solid rgba(161,0,255,0.22);
+	      box-shadow: 0 0 0 1px rgba(255,255,255,0.02), 0 0 24px rgba(161,0,255,0.08);
+    }
+    .stat .k{ color: rgba(255,255,255,0.70); font-size: 12px; }
+    .stat .v{ font-size: 18px; font-weight: 900; margin-top: 4px; }
+
+    .chartWrap{
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(0,0,0,0.18);
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+
+    canvas{ width:100%; height: 210px; display:block; }
+
+    .table{
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(0,0,0,0.18);
+      overflow:hidden;
+    }
+
+    #profitRows{
+      max-height: 220px;
+      overflow: auto;
+    }
+
+    .routeDetails{ width: 100%; }
+    .routeDetails summary{
+      cursor: pointer;
+      list-style: none;
+      outline: none;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .routeDetails summary::-webkit-details-marker{ display: none; }
+    .routeFull{
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid rgba(255,255,255,0.10);
+      color: rgba(255,255,255,0.80);
+      font-size: 12px;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+    .row{
+      display:grid;
+	      grid-template-columns: 74px 1fr 120px 90px 130px;
+      gap: 10px;
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      align-items:center;
+      font-size: 13px;
+    }
+    .row:last-child{ border-bottom: none; }
+    .row .muted{ color: var(--muted); font-size: 12px; }
+    .row .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+    /* Route cell: long strings should not break the layout */
+    .routeCell{ min-width: 0; }
+    .routeCell .scroll{
+      overflow-x: auto;
+      white-space: nowrap;
+      padding-bottom: 2px;
+      scrollbar-width: thin;
+    }
+    .routeCell details{ display: inline; }
+    .routeCell summary{
+      cursor: pointer;
+      list-style: none;
+      color: rgba(255,255,255,0.88);
+    }
+    .routeCell summary::-webkit-details-marker{ display:none; }
+    .routeCell .full{
+      display: block;
+      margin-top: 6px;
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: rgba(0,0,0,0.22);
+      border: 1px solid rgba(255,255,255,0.10);
+      white-space: pre;
+    }
+
+    /* Settings */
+    .settings{
+      margin-top: 12px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(0,0,0,0.18);
+      padding: 12px;
+    }
+    .settings h3{
+      margin: 0 0 10px;
+      font-size: 12px;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .settingsGrid{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .field{ display:flex; flex-direction:column; gap:6px; }
+    .field label{ font-size: 12px; color: var(--muted); }
+    .field input{
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      padding: 10px 10px;
+      outline: none;
+      font-size: 13px;
+    }
+    .field small{ color: rgba(255,255,255,0.55); font-size: 11px; }
+    .settingsActions{ display:flex; gap: 10px; margin-top: 12px; }
+
+    @media (max-width: 980px){
+      .grid{ grid-template-columns: 1fr; }
+      .pill{ min-width: auto; width: 100%; }
+      .logFeed{ height: 420px; }
+    }
+  </style>
 </head>
 <body>
-<h1>Fork Simulation Monitor</h1>
-<div id="logs"></div>
+  <div class="frame">
+    <div class="titlebar">
+      <h1 class="title">Fork Simulation Monitor</h1>
+      <div class="pill" title="Состояние соединения и процесса">
+        <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+          <div id="connDot" class="dot off"></div>
+          <div style="display:flex; flex-direction:column; min-width:0;">
+            <span style="font-size:12px; color:var(--muted);">Connection</span>
+            <b id="connText" style="font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">offline</b>
+          </div>
+        </div>
+        <div class="badge" id="runBadge">stopped</div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <!-- LEFT: log feed -->
+      <section class="card">
+        <div class="cardHeader">
+          <h2>Подробный лог обнаружения арбов и их просчёт</h2>
+          <span class="badge blue" id="logCount">0</span>
+        </div>
+        <div class="logFeed" id="logs"></div>
+      </section>
+
+      <!-- RIGHT: status + dashboard -->
+      <section class="card">
+        <div class="rightTop">
+          <div class="kv">
+            <span>Last scanned Block</span>
+            <b class="mono" id="lastBlock">—</b>
+          </div>
+          <div class="notice" id="notice">
+            <div class="left">
+              <span class="badge" id="noticeIcon" aria-hidden="true">ℹ</span>
+              <div class="msg" id="noticeText">No data yet. Press Start to begin.</div>
+            </div>
+            <div class="badge" id="opBadge">idle</div>
+          </div>
+        </div>
+
+        <div class="dashboard">
+          <!-- Blue space → реально полезный блок: Stats + chart + last profits -->
+          <div class="stats">
+            <div class="stat">
+              <div class="k">Blocks scanned</div>
+              <div class="v" id="statBlocks">0</div>
+            </div>
+            <div class="stat">
+              <div class="k">Profitable hits</div>
+              <div class="v" id="statHits">0</div>
+            </div>
+            <div class="stat">
+              <div class="k">Total profit</div>
+              <div class="v" id="statProfit">0.000000</div>
+            </div>
+            <div class="stat">
+              <div class="k">Total spent</div>
+              <div class="v" id="statSpent">0.000</div>
+            </div>
+            <div class="stat">
+              <div class="k">Avg ROI</div>
+              <div class="v" id="statRoi">0.00%</div>
+            </div>
+          </div>
+
+          <div class="chartWrap" title="Profit timeline (последние события)">
+            <canvas id="profitChart" width="900" height="260"></canvas>
+          </div>
+
+          <div class="table" aria-label="Последние профитные события">
+            <div class="row" style="background: rgba(255,255,255,0.04); font-weight:800; color: rgba(255,255,255,0.75);">
+              <div class="muted">Time</div>
+              <div class="muted">Route</div>
+              <div class="muted" style="text-align:right;">Spent</div>
+              <div class="muted" style="text-align:right;">ROI</div>
+              <div class="muted" style="text-align:right;">Profit</div>
+            </div>
+            <div id="profitRows"></div>
+          </div>
+        </div>
+
+        <!-- Settings (editable from UI) -->
+        <div class="settings" id="settings">
+          <h3>Settings</h3>
+          <div class="settingsGrid">
+            <div class="field">
+              <label for="cfgMinPct">Min profit % (of input)</label>
+              <input id="cfgMinPct" type="number" step="0.01" min="0" />
+              <small>e.g. 0.05 = 0.05%</small>
+            </div>
+            <div class="field">
+              <label for="cfgMinAbs">Min profit absolute</label>
+              <input id="cfgMinAbs" type="number" step="0.001" min="0" />
+              <small>in base token units (USDC/USDT/DAI)</small>
+            </div>
+            <div class="field">
+              <label for="cfgSlip">Slippage safety (bps)</label>
+              <input id="cfgSlip" type="number" step="1" min="0" />
+              <small>5 = 0.05%</small>
+            </div>
+            <div class="field">
+              <label for="cfgGas">Max gas (gwei)</label>
+              <input id="cfgGas" type="number" step="1" min="0" placeholder="(no limit)" />
+              <small>empty = don't skip blocks</small>
+            </div>
+            <div class="field">
+              <label for="cfgConc">Concurrency</label>
+              <input id="cfgConc" type="number" step="1" min="1" max="200" />
+              <small>RPC parallel quotes (25-50 typical)</small>
+            </div>
+            <div class="field">
+              <label for="cfgMode">Scan mode</label>
+              <select id="cfgMode">
+                <option value="auto">auto (Stage1 + Stage2 optimize)</option>
+                <option value="fixed">fixed (preset amounts)</option>
+              </select>
+              <small>auto = fast + smart; fixed = brute force</small>
+            </div>
+            <div class="field">
+              <label for="cfgBudget">Block budget (sec)</label>
+              <input id="cfgBudget" type="number" step="0.5" min="1" />
+              <small>hard limit per block (prevents hanging)</small>
+            </div>
+            <div class="field">
+              <label for="cfgAmts">Amounts (comma list)</label>
+              <input id="cfgAmts" type="text" placeholder="1,3,10" />
+              <small>token_in units; increases search coverage</small>
+            </div>
+            <div class="field">
+              <label for="cfgS1Amt">Stage1 amount</label>
+              <input id="cfgS1Amt" type="number" step="0.1" min="0" />
+              <small>cheap filter amount</small>
+            </div>
+            <div class="field">
+              <label for="cfgTopK">Stage2 top-K</label>
+              <input id="cfgTopK" type="number" step="1" min="1" max="500" />
+              <small>how many routes get optimized</small>
+            </div>
+            <div class="field">
+              <label for="cfgRange">Stage2 amount range</label>
+              <input id="cfgRange" type="text" placeholder="0.5..50" />
+              <small>min..max (units of token_in)</small>
+            </div>
+            <div class="field">
+              <label for="cfgEvals">Stage2 max evals</label>
+              <input id="cfgEvals" type="number" step="1" min="2" max="12" />
+              <small>RPC calls per route for optimization</small>
+            </div>
+            <div class="field">
+              <label for="cfgT1">RPC timeout Stage1 (sec)</label>
+              <input id="cfgT1" type="number" step="0.5" min="1" />
+              <small>short timeout keeps block moving</small>
+            </div>
+            <div class="field">
+              <label for="cfgT2">RPC timeout Stage2 (sec)</label>
+              <input id="cfgT2" type="number" step="0.5" min="1" />
+              <small>longer timeout to not miss profit</small>
+            </div>
+          </div>
+          <div class="settingsActions">
+            <button id="saveCfgBtn" class="btn">save</button>
+            <button id="applyCfgBtn" class="btn primary">apply & restart</button>
+          </div>
+        </div>
+
+        <div class="buttons">
+          <button id="startBtn" class="btn primary" disabled>start</button>
+          <button id="stopBtn" class="btn danger" disabled>stop</button>
+        </div>
+
+        <div style="padding: 0 16px 16px;">
+          <div class="kv" style="margin-top: -6px;">
+            <span>Текущее состояние программы</span>
+            <b id="stateText" class="mono">stopped</b>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
 
 <script>
-const logsDiv = document.getElementById("logs");
-const ws = new WebSocket("ws://localhost:8080");
+  // -----------------------------
+  // State
+  const logsDiv = document.getElementById('logs');
+  const logCount = document.getElementById('logCount');
 
-ws.onmessage = (event) => {
-    const msg = JSON.parse(event.data);
-    const div = document.createElement("div");
-    div.className = "log";
-    if(msg.type) div.classList.add(msg.type);
-    div.textContent = `[${msg.time}] Block ${msg.block} | ${msg.text}`;
-    logsDiv.prepend(div);
-};
-ws.onclose = () => {
-    const div = document.createElement("div");
-    div.textContent = "🛑 Connection closed";
-    logsDiv.prepend(div);
-};
+  const connDot = document.getElementById('connDot');
+  const connText = document.getElementById('connText');
+  const runBadge = document.getElementById('runBadge');
+  const stateText = document.getElementById('stateText');
+
+  const lastBlockEl = document.getElementById('lastBlock');
+  const noticeIcon = document.getElementById('noticeIcon');
+  const noticeText = document.getElementById('noticeText');
+  const opBadge = document.getElementById('opBadge');
+
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn = document.getElementById('stopBtn');
+
+  const statBlocks = document.getElementById('statBlocks');
+  const statHits = document.getElementById('statHits');
+  const statProfit = document.getElementById('statProfit');
+  const statSpent = document.getElementById('statSpent');
+  const statRoi = document.getElementById('statRoi');
+
+  const profitRows = document.getElementById('profitRows');
+  const canvas = document.getElementById('profitChart');
+  const ctx = canvas.getContext('2d');
+
+  let logs = 0;
+  let blocksScanned = 0;
+  let profitableHits = 0;
+  const totalProfitBySym = {}; // {USDC: 1.23, USDT: 0.10, ...}
+  const totalSpentBySym = {};  // {USDC: 10.0, USDT: 5.0, ...}
+  let profitCurrency = 'USDC'; // currently displayed currency
+  const profitEvents = []; // {t, block, profit, route, sym}
+
+  // Settings elements
+  const cfgMinPct = document.getElementById('cfgMinPct');
+  const cfgMinAbs = document.getElementById('cfgMinAbs');
+  const cfgSlip = document.getElementById('cfgSlip');
+  const cfgGas = document.getElementById('cfgGas');
+  const cfgConc = document.getElementById('cfgConc');
+  const cfgMode = document.getElementById('cfgMode');
+  const cfgBudget = document.getElementById('cfgBudget');
+  const cfgAmts = document.getElementById('cfgAmts');
+  const cfgS1Amt = document.getElementById('cfgS1Amt');
+  const cfgTopK = document.getElementById('cfgTopK');
+  const cfgRange = document.getElementById('cfgRange');
+  const cfgEvals = document.getElementById('cfgEvals');
+  const cfgT1 = document.getElementById('cfgT1');
+  const cfgT2 = document.getElementById('cfgT2');
+  const saveCfgBtn = document.getElementById('saveCfgBtn');
+  const applyCfgBtn = document.getElementById('applyCfgBtn');
+
+  // -----------------------------
+  // Formatting helpers (avoid scientific notation in UI)
+  function fmtAmount(value, decimals = 3){
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '0.000';
+    // If something explodes upstream (overflow), show a clear marker instead of e+233.
+    if (Math.abs(n) > 1e12) return '∞';
+    return n.toFixed(decimals);
+  }
+
+  function fmtPct(value, decimals = 2){
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '—';
+    // Our bot uses "0.05" to mean 0.05% (same as UI hint).
+    return n.toFixed(decimals) + '%';
+  }
+
+  // Number formatting helpers (avoid scientific notation in UI)
+  function formatToken(x, decimals = 3, maxAbs = 1e12){
+    const num = Number(x);
+    if (!isFinite(num)) return '0.000';
+    if (Math.abs(num) > maxAbs) return '∞';
+    // Intl formatter avoids scientific notation for normal ranges
+    try {
+      return new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+      }).format(num);
+    } catch {
+      return num.toFixed(decimals);
+    }
+  }
+
+  function formatPct(x, decimals = 2){
+    const num = Number(x);
+    if (!isFinite(num)) return '—';
+    if (Math.abs(num) > 1e6) return '∞%';
+    try {
+      return new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals,
+      }).format(num) + '%';
+    } catch {
+      return num.toFixed(decimals) + '%';
+    }
+  }
+
+  function currentTotalProfit(){
+    return Number(totalProfitBySym[profitCurrency] || 0);
+  }
+
+  function setRunning(running){
+    runBadge.textContent = running ? 'running' : 'stopped';
+    runBadge.className = 'badge ' + (running ? 'good' : '');
+    stateText.textContent = running ? 'running' : 'stopped';
+
+    // Button logic you described:
+    // - initial start disabled until connected
+    // - when running: start disabled, stop enabled
+    // - when stopped: start enabled, stop disabled
+    if (running){
+      startBtn.disabled = true;
+      stopBtn.disabled = false;
+    } else {
+      startBtn.disabled = !wsConnected;
+      stopBtn.disabled = true;
+    }
+  }
+
+  function addLog({type, time, block, text}){
+    logs += 1;
+    logCount.textContent = String(logs);
+
+    const item = document.createElement('div');
+    item.className = 'logItem';
+
+    const badge = document.createElement('span');
+    badge.className = 'badge';
+    if (type === 'profit') badge.classList.add('good');
+    if (type === 'warn' || type === 'stderr') badge.classList.add('warn');
+    if (type === 'status') badge.classList.add('blue');
+
+    badge.textContent = type || 'log';
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.appendChild(Object.assign(document.createElement('span'), {textContent: time || ''}));
+
+    const right = document.createElement('div');
+    right.style.display = 'flex';
+    right.style.gap = '8px';
+    right.style.alignItems = 'center';
+    if (typeof block === 'number'){
+      const b = document.createElement('span');
+      b.className = 'badge blue';
+      b.textContent = 'Block ' + block;
+      right.appendChild(b);
+    }
+    right.appendChild(badge);
+    meta.appendChild(right);
+
+    const body = document.createElement('div');
+    body.className = 'text';
+    body.textContent = text || '';
+
+    item.appendChild(meta);
+    item.appendChild(body);
+
+    // If user is already near the bottom, keep auto-scrolling like a terminal.
+    const nearBottom = (logsDiv.scrollTop + logsDiv.clientHeight) >= (logsDiv.scrollHeight - 40);
+
+    // Newest logs go to the bottom (terminal-style)
+    logsDiv.appendChild(item);
+
+    // Keep feed lightweight (remove oldest from the top)
+    while (logsDiv.children.length > 120){
+      logsDiv.removeChild(logsDiv.firstChild);
+    }
+
+    if (nearBottom){
+      logsDiv.scrollTop = logsDiv.scrollHeight;
+    }
+  }
+
+  function setNotice(kind, msg){
+    noticeText.textContent = msg;
+    opBadge.textContent = kind;
+    opBadge.className = 'badge ' + (kind === 'profit' ? 'good' : kind === 'warn' ? 'warn' : '');
+
+    // Icon + subtle color cue
+    if (noticeIcon){
+      if (kind === 'profit') noticeIcon.textContent = '✅';
+      else if (kind === 'scan') noticeIcon.textContent = '🔍';
+      else if (kind === 'warn') noticeIcon.textContent = '⚠';
+      else noticeIcon.textContent = 'ℹ';
+      noticeIcon.className = 'badge ' + (kind === 'profit' ? 'good' : kind === 'warn' ? 'warn' : kind === 'scan' ? 'blue' : '');
+    }
+  }
+
+  function updateStats(){
+    statBlocks.textContent = String(blocksScanned);
+    statHits.textContent = String(profitableHits);
+    const sym = profitCurrency || 'USDC';
+    const v = Number(totalProfitBySym[sym] || 0);
+    statProfit.textContent = formatToken(v, 3) + ' ' + sym;
+
+    const spent = Number(totalSpentBySym[sym] || 0);
+    if (statSpent) statSpent.textContent = formatToken(spent, 3) + ' ' + sym;
+
+    // Avg ROI across successful hits in the currently shown currency
+    const roi = (spent > 0) ? (v / spent) * 100 : 0;
+    if (statRoi) statRoi.textContent = formatPct(roi, 2);
+  }
+
+  function parseProfitText(text){
+    // fallback parser (older bot versions)
+    const mProfit = text.match(/profit\s*=\s*([0-9.+-eE]+)/i);
+    const mSpent = text.match(/(?:amount_in|spent|input)\s*=\s*([0-9.+-eE]+)/i);
+    const mPct = text.match(/(?:profit_pct|roi|pct)\s*=\s*([0-9.+-eE]+)/i);
+    const mSym = text.match(/(?:symbol|token|base)\s*=\s*([A-Z]{3,6})/);
+    const mRoute = text.match(/route\s*=\s*(.+?)(?:\s+gas=|$)/i);
+    const profit = mProfit ? Number(mProfit[1]) : null;
+    const spent = mSpent ? Number(mSpent[1]) : null;
+    const profit_pct = mPct ? Number(mPct[1]) : null;
+    const route = mRoute ? String(mRoute[1]).trim() : '—';
+    const sym = mSym ? String(mSym[1]) : null;
+    return { profit, spent, profit_pct, sym, route };
+  }
+
+  function pushProfitRow(evt){
+    const row = document.createElement('div');
+    row.className = 'row';
+
+    const c1 = document.createElement('div');
+    c1.className = 'mono';
+    c1.textContent = evt.t;
+
+    const c2 = document.createElement('div');
+    c2.className = 'routeCell';
+    const sc = document.createElement('div');
+    sc.className = 'scroll mono';
+
+    // Collapsible route (summary stays compact; full route available on demand)
+    const det = document.createElement('details');
+    const sum = document.createElement('summary');
+    sum.textContent = summarizeRoute(evt.route || '—');
+    const full = document.createElement('div');
+    full.className = 'full mono';
+    full.textContent = evt.route || '—';
+    det.appendChild(sum);
+    det.appendChild(full);
+    sc.appendChild(det);
+
+    // Allow horizontal scroll with mouse wheel when route overflows
+    sc.addEventListener('wheel', (e) => {
+      if (sc.scrollWidth > sc.clientWidth){
+        sc.scrollLeft += e.deltaY;
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    c2.appendChild(sc);
+
+    const c3 = document.createElement('div');
+    c3.className = 'mono';
+    c3.style.textAlign = 'right';
+    const spentSym = evt.spent_sym || evt.token_in_sym || 'USDT';
+    c3.textContent = (evt.spent == null) ? '—' : (formatToken(evt.spent, 3) + ' ' + spentSym);
+
+    const c4 = document.createElement('div');
+    c4.className = 'mono';
+    c4.style.textAlign = 'right';
+    c4.textContent = (evt.roi_pct == null) ? '—' : formatPct(evt.roi_pct, 2);
+
+    const c5 = document.createElement('div');
+    c5.className = 'mono';
+    c5.style.textAlign = 'right';
+    c5.textContent = formatToken(evt.profit || 0, 3) + ' ' + (evt.sym || profitCurrency);
+
+    row.appendChild(c1);
+    row.appendChild(c2);
+    row.appendChild(c3);
+    row.appendChild(c4);
+    row.appendChild(c5);
+
+    // newest at top
+    profitRows.prepend(row);
+    while (profitRows.children.length > 10){
+      profitRows.removeChild(profitRows.lastChild);
+    }
+  }
+
+  function summarizeRoute(route){
+    const r = String(route || '');
+    if (r.length <= 42) return r;
+    return r.slice(0, 24) + '…' + r.slice(-14);
+  }
+
+  function drawChart(){
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0,0,w,h);
+
+    // axes background grid
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+    ctx.lineWidth = 1;
+    for (let i=1;i<=4;i++){
+      const y = Math.round((h*i)/5);
+      ctx.beginPath();
+      ctx.moveTo(0,y);
+      ctx.lineTo(w,y);
+      ctx.stroke();
+    }
+
+    const data = profitEvents.filter(e => (e.sym || profitCurrency) === profitCurrency).slice(-30);
+    if (data.length === 0){
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.font = '700 14px ui-sans-serif, system-ui';
+      ctx.fillText('Profit timeline will appear here after first hit', 16, 28);
+      return;
+    }
+
+    const maxP = Math.max(...data.map(d=>d.profit), 1e-9);
+    const minP = 0;
+
+    const padX = 14;
+    const padY = 18;
+
+    const xStep = (w - padX*2) / Math.max(1, data.length-1);
+
+    // line
+    ctx.strokeStyle = 'rgba(68,194,119,0.95)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    data.forEach((d, i) => {
+      const x = padX + i*xStep;
+      const y = h - padY - ((d.profit - minP) / (maxP - minP || 1)) * (h - padY*2);
+      if (i === 0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+
+    // points
+    ctx.fillStyle = 'rgba(68,194,119,0.95)';
+    data.forEach((d, i)=>{
+      const x = padX + i*xStep;
+      const y = h - padY - ((d.profit - minP) / (maxP - minP || 1)) * (h - padY*2);
+      ctx.beginPath();
+      ctx.arc(x,y,3.3,0,Math.PI*2);
+      ctx.fill();
+    });
+
+    // label max
+    ctx.fillStyle = 'rgba(255,255,255,0.70)';
+    ctx.font = '700 12px ui-monospace, monospace';
+	    ctx.fillText('max ' + formatToken(maxP, 3) + ' ' + (profitCurrency || ''), 16, h-10);
+  }
+
+  // -----------------------------
+  // WebSocket
+  let ws = null;
+  let wsConnected = false;
+
+  function setConn(state){
+    wsConnected = state;
+    connDot.className = 'dot ' + (state ? 'ok' : 'off');
+    connText.textContent = state ? 'online' : 'offline';
+
+    // enable start only when connected AND not running
+    if (!state){
+      startBtn.disabled = true;
+      stopBtn.disabled = true;
+    } else {
+      // sync status from server
+      fetch('/status').then(r=>r.json()).then(s=>{
+        if (s && s.ok) setRunning(!!s.running);
+        else setRunning(false);
+      }).catch(()=>setRunning(false));
+    }
+  }
+
+  function connectWS(){
+    ws = new WebSocket(`ws://${location.host}`);
+
+    ws.onopen = () => {
+      setConn(true);
+      addLog({type:'status', time: new Date().toISOString().slice(11,19), block:null, text:'UI connected'});
+    };
+
+    ws.onmessage = (event) => {
+      let msg;
+      try { msg = JSON.parse(event.data); } catch { return; }
+
+      // unified log
+      addLog(msg);
+
+      if (msg.type === 'status'){
+        if (typeof msg.running === 'boolean') setRunning(msg.running);
+        if (typeof msg.text === 'string' && msg.text.toLowerCase().includes('stopped')) setRunning(false);
+        if (typeof msg.text === 'string' && msg.text.toLowerCase().includes('started')) setRunning(true);
+        // Status is for process/network state, not for scan results
+        setNotice('status', msg.text || 'status');
+      }
+
+      if (msg.type === 'scan'){
+        if (typeof msg.block === 'number'){
+          lastBlockEl.textContent = String(msg.block);
+          blocksScanned += 1;
+          updateStats();
+          const candidates = (typeof msg.candidates === 'number') ? msg.candidates : null;
+          const profitable = (typeof msg.profitable === 'number') ? msg.profitable : null;
+          const best = (typeof msg.best_profit === 'number') ? msg.best_profit : null;
+
+          let summary = msg.text || '';
+          if (!summary){
+            summary = 'Scan complete';
+            if (candidates != null) summary += ` | routes=${candidates}`;
+            if (profitable != null) summary += ` | profitable=${profitable}`;
+            if (best != null) summary += ` | best=${best.toFixed(6)}`;
+          }
+          setNotice('scan', summary);
+        }
+      }
+
+      if (msg.type === 'warn'){
+        if (typeof msg.block === 'number') lastBlockEl.textContent = String(msg.block);
+        setNotice('warn', msg.text || 'warning');
+      }
+
+      if (msg.type === 'profit'){
+        if (typeof msg.block === 'number') lastBlockEl.textContent = String(msg.block);
+        // Prefer structured fields from the bot; fall back to parsing text.
+        const parsed = parseProfitText(msg.text || '');
+        const profit = (typeof msg.profit === 'number') ? msg.profit : parsed.profit;
+        const route = (typeof msg.route === 'string') ? msg.route : parsed.route;
+        const symFromMsg = (typeof msg.profit_symbol === 'string') ? msg.profit_symbol : (parsed.sym || null);
+        // Optional extra fields (newer bot builds may send these)
+        const spent = (typeof msg.spent === 'number') ? msg.spent
+          : (typeof msg.amount_in_display === 'number') ? msg.amount_in_display
+          : (typeof msg.amount_in === 'number') ? msg.amount_in
+          : parsed.spent;
+        const spentSym = (typeof msg.spent_symbol === 'string') ? msg.spent_symbol
+          : (typeof msg.token_in_symbol === 'string') ? msg.token_in_symbol
+          : 'USDT';
+        const roiPct = (typeof msg.roi_pct === 'number') ? msg.roi_pct
+          : (typeof msg.profit_pct === 'number') ? msg.profit_pct
+          : (parsed.profit_pct != null && isFinite(parsed.profit_pct)) ? parsed.profit_pct
+          : (spent != null && isFinite(spent) && spent !== 0 && profit != null && isFinite(profit)) ? (Number(profit) / Number(spent) * 100) : null;
+        if (profit != null && Number.isFinite(profit)){
+          profitableHits += 1;
+          const sym = symFromMsg || spentSym || profitCurrency;
+          profitCurrency = sym;
+          totalProfitBySym[sym] = Number(totalProfitBySym[sym] || 0) + Number(profit);
+
+          // Track total spent in the input token (usually same as profit token for this scanner).
+          if (spent != null && isFinite(spent)){
+            totalSpentBySym[sym] = Number(totalSpentBySym[sym] || 0) + Number(spent);
+          }
+          updateStats();
+          const evt = {
+            t: msg.time || new Date().toISOString().slice(11,19),
+            block: msg.block,
+            profit: profit,
+            sym: sym,
+            route: route,
+            spent: spent,
+            spent_sym: spentSym,
+            roi_pct: roiPct,
+            route_short: (typeof msg.route_short === 'string') ? msg.route_short : route,
+            route_full: (typeof msg.route_full === 'string') ? msg.route_full : route,
+          };
+          profitEvents.push(evt);
+          drawChart();
+          pushProfitRow(evt);
+          setNotice('profit', '✅ Profitable opportunity found');
+        } else {
+          setNotice('profit', msg.text || 'profit');
+        }
+      }
+    };
+
+    ws.onclose = () => {
+      setConn(false);
+      addLog({type:'status', time: new Date().toISOString().slice(11,19), block:null, text:'Connection closed. Reconnecting...'});
+      setNotice('warn', 'Connection closed. Reconnecting...');
+      setTimeout(connectWS, 700);
+    };
+
+    ws.onerror = () => {
+      // close will handle
+    };
+  }
+
+  // -----------------------------
+  // Controls
+  async function post(path){
+    const r = await fetch(path, {method:'POST'});
+    return r.json().catch(()=>({ok:false}));
+  }
+
+  async function getConfig(){
+    return fetch('/config').then(r=>r.json()).catch(()=>({ok:false}));
+  }
+
+  async function saveConfig(cfg){
+    const r = await fetch('/config', {
+      method:'POST',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify(cfg || {}),
+    });
+    return r.json().catch(()=>({ok:false}));
+  }
+
+  function cfgFromForm(){
+    // range parsing: "min..max"
+    let rmin = null; let rmax = null;
+    const r = String(cfgRange.value || '').trim();
+    if (r.includes('..')){
+      const parts = r.split('..').map(x=>x.trim());
+      rmin = Number(parts[0]);
+      rmax = Number(parts[1]);
+    }
+    return {
+      min_profit_pct: Number(cfgMinPct.value || 0),
+      min_profit_abs: Number(cfgMinAbs.value || 0),
+      slippage_bps: parseInt(cfgSlip.value || '0', 10),
+      max_gas_gwei: (cfgGas.value === '' ? null : Number(cfgGas.value)),
+      concurrency: parseInt(cfgConc.value || '12', 10),
+      block_budget_s: Number(cfgBudget.value || 10),
+      scan_mode: String(cfgMode.value || 'auto'),
+
+      amount_presets: (cfgAmts.value || '').trim(),
+
+      stage1_amount: Number(cfgS1Amt.value || 1),
+      stage2_top_k: parseInt(cfgTopK.value || '30', 10),
+      stage2_amount_min: (rmin == null || !isFinite(rmin)) ? null : rmin,
+      stage2_amount_max: (rmax == null || !isFinite(rmax)) ? null : rmax,
+      stage2_max_evals: parseInt(cfgEvals.value || '6', 10),
+
+      rpc_timeout_stage1_s: Number(cfgT1.value || 6),
+      rpc_timeout_stage2_s: Number(cfgT2.value || 10),
+    };
+  }
+
+  function fillForm(cfg){
+    cfgMinPct.value = String(cfg.min_profit_pct ?? 0.05);
+    cfgMinAbs.value = String(cfg.min_profit_abs ?? 0.05);
+    cfgSlip.value = String(cfg.slippage_bps ?? 8);
+    cfgGas.value = (cfg.max_gas_gwei == null ? '' : String(cfg.max_gas_gwei));
+    cfgConc.value = String(cfg.concurrency ?? 12);
+    cfgMode.value = String(cfg.scan_mode ?? 'auto');
+    cfgBudget.value = String(cfg.block_budget_s ?? 10);
+    const ap = cfg.amount_presets;
+    cfgAmts.value = Array.isArray(ap) ? ap.join(',') : String(ap ?? '1,3,10');
+
+    cfgS1Amt.value = String(cfg.stage1_amount ?? 1);
+    cfgTopK.value = String(cfg.stage2_top_k ?? 30);
+    const rmin = cfg.stage2_amount_min ?? 0.5;
+    const rmax = cfg.stage2_amount_max ?? 50;
+    cfgRange.value = String(rmin) + '..' + String(rmax);
+    cfgEvals.value = String(cfg.stage2_max_evals ?? 6);
+    cfgT1.value = String(cfg.rpc_timeout_stage1_s ?? 6);
+    cfgT2.value = String(cfg.rpc_timeout_stage2_s ?? 10);
+  }
+
+  // Settings buttons
+  saveCfgBtn.addEventListener('click', async () => {
+    setNotice('status', 'Saving config...');
+    const out = await saveConfig(cfgFromForm());
+    if (out.ok) setNotice('status', 'Config saved');
+    else setNotice('warn', 'Config save failed: ' + (out.error || 'unknown'));
+  });
+
+  applyCfgBtn.addEventListener('click', async () => {
+    setNotice('status', 'Applying config (restart)...');
+    const saved = await saveConfig(cfgFromForm());
+    if (!saved.ok){
+      setNotice('warn', 'Config save failed: ' + (saved.error || 'unknown'));
+      return;
+    }
+    // restart if running
+    try { await post('/stop'); } catch {}
+    const started = await post('/start');
+    if (started.ok) setNotice('status', 'Restarted with new config');
+    else setNotice('warn', 'Restart failed: ' + (started.error || 'unknown'));
+  });
+
+  startBtn.addEventListener('click', async () => {
+    startBtn.disabled = true;
+    setNotice('status', 'Starting...');
+    const out = await post('/start');
+    if (!out.ok){
+      setNotice('warn', 'Failed to start: ' + (out.error || 'unknown'));
+      setRunning(false);
+    }
+  });
+
+  stopBtn.addEventListener('click', async () => {
+    stopBtn.disabled = true;
+    setNotice('status', 'Stopping...');
+    const out = await post('/stop');
+    if (!out.ok){
+      setNotice('warn', 'Failed to stop: ' + (out.error || 'unknown'));
+    }
+    // actual state will be updated by WS status message
+  });
+
+  // -----------------------------
+  // Init
+  drawChart();
+  // Load settings once on page init
+  getConfig().then((c)=>{
+    if (c && c.ok) fillForm(c.config || {});
+  }).catch(()=>{});
+
+  connectWS();
 </script>
 </body>
 </html>

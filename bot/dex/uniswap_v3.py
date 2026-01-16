@@ -1,36 +1,115 @@
 # bot/dex/uniswap_v3.py
 
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional, Tuple, List
+
+from eth_abi import decode, encode
+from eth_utils import keccak
+
 from infra.rpc import AsyncRPC
-from bot.config import UNISWAP_V3_QUOTER, TOKENS, FEE_TIERS
-from eth_abi import encode
-from eth_utils import to_hex
+from bot.config import UNISWAP_V3_QUOTER, UNISWAP_V3_QUOTER_V2, FEE_TIERS
+
+
+def _selector(sig: str) -> str:
+    return keccak(text=sig)[:4].hex()
+
+
+@dataclass(frozen=True)
+class Quote:
+    fee: int
+    amount_out: int
+    gas_estimate: Optional[int] = None
 
 class UniV3:
     def __init__(self, rpc: AsyncRPC):
         self.rpc = rpc
 
-    async def quote(self, token_in: str, token_out: str, amount_in: int, fee: int) -> int:
-        # quoteExactInputSingle(address,address,uint24,uint256,uint160)
-        selector = "0xf7729d43"
+        # Pre-compute selectors
+        self._sel_v1 = _selector("quoteExactInputSingle(address,address,uint24,uint256,uint160)")
+        self._sel_v2 = _selector("quoteExactInputSingle((address,address,uint256,uint24,uint160))")
+
+    async def quote_v1(
+        self,
+        token_in: str,
+        token_out: str,
+        amount_in: int,
+        fee: int,
+        block: str = "latest",
+        *,
+        timeout_s: Optional[float] = None,
+    ) -> int:
+        """Quoter (v1) quoteExactInputSingle.
+
+        Note: Quoter uses a revert-based mechanism to return data. Our AsyncRPC
+        extracts revert data for eth_call.
+        """
         params = encode(
             ["address", "address", "uint24", "uint256", "uint160"],
-            [token_in, token_out, fee, amount_in, 0]
+            [token_in, token_out, fee, amount_in, 0],
         )
-        data = selector + params.hex()
+        data = "0x" + self._sel_v1 + params.hex()
+        raw = await self.rpc.eth_call(UNISWAP_V3_QUOTER, data, block=block, timeout_s=timeout_s)
+        return int(raw, 16)
 
-        out = await self.rpc.eth_call(UNISWAP_V3_QUOTER, "0x" + data)
-        return int(out, 16)
+    async def quote_v2(
+        self,
+        token_in: str,
+        token_out: str,
+        amount_in: int,
+        fee: int,
+        block: str = "latest",
+        *,
+        timeout_s: Optional[float] = None,
+    ) -> Quote:
+        """QuoterV2 quoteExactInputSingle.
 
-    async def best_quote(self, token_in: str, token_out: str, amount_in: int):
-        results = []
-        for fee in FEE_TIERS:
+        Returns amount_out + gas_estimate.
+        """
+        # Encode struct QuoteExactInputSingleParams as a tuple
+        params = encode(
+            ["(address,address,uint256,uint24,uint160)"],
+            [(token_in, token_out, amount_in, fee, 0)],
+        )
+        data = "0x" + self._sel_v2 + params.hex()
+        raw = await self.rpc.eth_call(UNISWAP_V3_QUOTER_V2, data, block=block, timeout_s=timeout_s)
+        blob = bytes.fromhex(raw[2:] if raw.startswith("0x") else raw)
+        amount_out, _sqrt_price_after, _ticks_crossed, gas_estimate = decode(
+            ["uint256", "uint160", "uint32", "uint256"], blob
+        )
+        return Quote(fee=fee, amount_out=int(amount_out), gas_estimate=int(gas_estimate))
+
+    async def best_quote(
+        self,
+        token_in: str,
+        token_out: str,
+        amount_in: int,
+        block: str = "latest",
+        *,
+        fee_tiers: Optional[List[int]] = None,
+        timeout_s: Optional[float] = None,
+    ) -> Optional[Quote]:
+        """Return the best available quote across fee tiers.
+
+        Prefers QuoterV2 (gasEstimate-aware); falls back to Quoter v1.
+        """
+        results: list[Quote] = []
+        tiers = fee_tiers if fee_tiers else FEE_TIERS
+        for fee in tiers:
             try:
-                out = await self.quote(token_in, token_out, amount_in, fee)
-                results.append((fee, out))
+                q = await self.quote_v2(token_in, token_out, amount_in, fee, block=block, timeout_s=timeout_s)
+                results.append(q)
+                continue
             except Exception:
-                pass
+                # fall back to v1
+                try:
+                    out = await self.quote_v1(token_in, token_out, amount_in, fee, block=block, timeout_s=timeout_s)
+                    results.append(Quote(fee=fee, amount_out=int(out), gas_estimate=None))
+                except Exception:
+                    pass
 
         if not results:
             return None
 
-        return max(results, key=lambda x: x[1])
+        return max(results, key=lambda x: x.amount_out)

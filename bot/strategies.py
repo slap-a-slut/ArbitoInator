@@ -1,73 +1,77 @@
 # bot/strategies.py
-from bot.config import TOKENS
-from bot.utils import get_price_estimate  # вспомогательная функция для расчёта swap
+
+"""Route generation + lightweight risk checks.
+
+We focus on scanning *lots* of plausible triangular cycles without exploding
+into completely illiquid pairs.
+"""
+
+from __future__ import annotations
+
+from typing import List, Tuple
+
+from bot import config
+
 
 class Strategy:
-    """
-    Арб-стратегия: можно несколько маршрутов (triangular или прямой)
-    Симуляция профита на основе реальных котировок (без транзакций)
-    """
-
     def __init__(self):
-        # примеры маршрутов
-        self.routes = [
-            (TOKENS["USDC"], TOKENS["WETH"], TOKENS["USDC"]),  # треугольник
-            (TOKENS["USDC"], TOKENS["DAI"], TOKENS["USDC"]),   # альт-арб
+        # Bases to close the cycle on (profits computed in base token)
+        self.bases = [config.TOKENS["USDC"], config.TOKENS["USDT"], config.TOKENS["DAI"]]
+
+        # Liquid universe
+        self.universe = [
+            config.TOKENS["WETH"],
+            config.TOKENS["WBTC"],
+            config.TOKENS["LINK"],
+            config.TOKENS["UNI"],
+            config.TOKENS["AAVE"],
+            config.TOKENS["LDO"],
         ]
 
-    def get_routes(self):
-        return self.routes
+        # Hubs usually give more paths
+        self.hubs = [config.TOKENS["WETH"], config.TOKENS["USDC"], config.TOKENS["USDT"], config.TOKENS["DAI"]]
 
-    def calc_profit(self, amount_in: int, route: tuple, w3) -> float:
-        """
-        amount_in - входной токен в минимальных единицах (wei/USDC units)
-        route - tuple токенов
-        w3 - Web3 provider для вызова quoter
-        Возвращает профит в том же токене, что и amount_in
-        """
-        out = amount_in
-        total_gas_cost = 0
+    def get_routes(self) -> List[Tuple[str, ...]]:
+        routes: List[Tuple[str, ...]] = []
 
-        for i in range(len(route) - 1):
-            from_token = route[i]
-            to_token = route[i + 1]
+        # 2-hop roundtrips: BASE -> X -> BASE
+        for base in self.bases:
+            for x in self.universe:
+                if x == base:
+                    continue
+                routes.append((base, x, base))
 
-            # Получаем estimate выхода через get_price_estimate (имитация swap)
-            out_est, gas_est = get_price_estimate(w3, from_token, to_token, out)
-            out = out_est
-            total_gas_cost += gas_est
+        # 3-hop triangles: BASE -> A -> B -> BASE
+        for base in self.bases:
+            tokens = list(dict.fromkeys([base] + self.hubs + self.universe))
+            mids = [t for t in tokens if t != base]
+            for a in mids:
+                for b in mids:
+                    if a == b:
+                        continue
+                    routes.append((base, a, b, base))
 
-        profit = out - amount_in - total_gas_cost
-        return profit
+        # Deduplicate
+        uniq = []
+        seen = set()
+        for r in routes:
+            if r in seen:
+                continue
+            seen.add(r)
+            uniq.append(r)
+        return uniq
 
-# ----------------------------
-# Функция для fork_test.py
-def compute_payload(candidate, w3):
-    """
-    Формирует payload для executor.
-    Берёт candidate, вычисляет профит через Strategy.calc_profit
-    """
-    strategy = Strategy()
-    profit = strategy.calc_profit(
-        amount_in=candidate["amount_in"],
-        route=candidate["route"],
-        w3=w3
-    )
-    return {
-        "route": candidate["route"],
-        "amount_in": candidate["amount_in"],
-        "profit": profit,
-        "to": "0x0000000000000000000000000000000000000000",  # dummy recipient
-    }
 
-# ----------------------------
-# Заглушка risk layer
-def risk_check(payload):
-    """
-    Простейший risk check:
-    - игнорируем payload с отрицательным профитом
-    - можно добавить slippage, MEV detection и т.д.
-    """
-    if payload["profit"] <= 0:
+def risk_check(payload: dict) -> bool:
+    """Very lightweight risk filter.
+
+Actual thresholds are applied in fork_test based on UI settings.
+Here we only ensure the payload is sane.
+"""
+    if not payload:
+        return False
+    if payload.get("profit_raw", -1) <= 0:
+        return False
+    if payload.get("amount_in", 0) <= 0:
         return False
     return True
