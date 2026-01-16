@@ -1,4 +1,5 @@
 # bot/config.py
+TEST_PRIVATE_KEY = "0x59c6995e998f97a5a0044966f0945381f1a9c6b2d2f44f992a76aef1b1f0f93b"
 
 RPC_URL = "https://eth.llamarpc.com"
 

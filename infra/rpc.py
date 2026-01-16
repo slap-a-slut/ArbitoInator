@@ -2,7 +2,8 @@
 import aiohttp
 import asyncio
 import json
-from typing import Any, Optional
+from typing import Any
+from web3 import Web3
 
 class AsyncRPC:
     def __init__(self, url: str, timeout: int = 15):
@@ -35,3 +36,17 @@ class AsyncRPC:
     async def get_block_number(self) -> int:
         res = await self.call("eth_blockNumber", [])
         return int(res, 16)
+
+
+# ------------------------
+# Добавляем синхронный helper для fork_test.py
+def get_provider() -> Web3:
+    """
+    Возвращает Web3 провайдера для локального форка или любого RPC.
+    """
+    # пример: локальный fork на http://127.0.0.1:8545
+    url = "http://127.0.0.1:8545"
+    provider = Web3(Web3.HTTPProvider(url))
+    if not provider.is_connected():
+        raise ConnectionError(f"Cannot connect to RPC at {url}")
+    return provider

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Fork Simulation Monitor</title>
+<style>
+    body { font-family: monospace; background: #111; color: #eee; }
+    .log { margin: 5px 0; }
+    .profit { color: #0f0; }
+    .warn { color: #f90; }
+</style>
+</head>
+<body>
+<h1>Fork Simulation Monitor</h1>
+<div id="logs"></div>
+
+<script>
+const logsDiv = document.getElementById("logs");
+const ws = new WebSocket("ws://localhost:8080");
+
+ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    const div = document.createElement("div");
+    div.className = "log";
+    if(msg.type) div.classList.add(msg.type);
+    div.textContent = `[${msg.time}] Block ${msg.block} | ${msg.text}`;
+    logsDiv.prepend(div);
+};
+ws.onclose = () => {
+    const div = document.createElement("div");
+    div.textContent = "🛑 Connection closed";
+    logsDiv.prepend(div);
+};
+</script>
+</body>
+</html>

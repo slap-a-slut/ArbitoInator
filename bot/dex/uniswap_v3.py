@@ -2,7 +2,7 @@
 
 from infra.rpc import AsyncRPC
 from bot.config import UNISWAP_V3_QUOTER, TOKENS, FEE_TIERS
-from eth_abi import encode_abi
+from eth_abi import encode
 from eth_utils import to_hex
 
 class UniV3:
@@ -12,7 +12,7 @@ class UniV3:
     async def quote(self, token_in: str, token_out: str, amount_in: int, fee: int) -> int:
         # quoteExactInputSingle(address,address,uint24,uint256,uint160)
         selector = "0xf7729d43"
-        params = encode_abi(
+        params = encode(
             ["address", "address", "uint24", "uint256", "uint160"],
             [token_in, token_out, fee, amount_in, 0]
         )
