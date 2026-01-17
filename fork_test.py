@@ -3,6 +3,8 @@
 import asyncio
 import json
 import os
+import math
+from pathlib import Path
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -17,6 +19,30 @@ w3 = None  # type: ignore[assignment]
 PS = None  # type: ignore[assignment]
 
 SIM_FROM_ADDRESS = "0x0000000000000000000000000000000000000000"
+
+
+def _is_finite_number(x: Any) -> bool:
+    try:
+        return isinstance(x, (int, float)) and math.isfinite(float(x))
+    except Exception:
+        return False
+
+
+def _clamp_sane(x: float, *, abs_max: float) -> float:
+    # Defensive: prevent UI totals from exploding due to unit-mix bugs.
+    # We keep a hard cap to catch accidental raw-unit mixes (e.g. 1e18),
+    # but otherwise we preserve the value and let the UI format/round it.
+    if not math.isfinite(x):
+        return 0.0
+    if abs(x) > abs_max:
+        return float('nan')
+    return float(x)
+
+
+LOG_DIR = Path("logs")
+LOG_DIR.mkdir(exist_ok=True)
+BLOCK_LOG = LOG_DIR / "blocks.jsonl"
+HIT_LOG = LOG_DIR / "hits.jsonl"
 
 
 @dataclass
@@ -51,6 +77,10 @@ class Settings:
     # RPC timeouts
     rpc_timeout_stage1_s: float = 6.0
     rpc_timeout_stage2_s: float = 10.0
+
+    # Reporting / base currency (UI should stay consistent)
+    # Profits, spent, ROI are computed and displayed in this token.
+    report_currency: str = "USDC"  # USDC|USDT
 
 
 def _load_settings() -> Settings:
@@ -88,6 +118,16 @@ def _load_settings() -> Settings:
         s.stage1_fee_tiers = tuple(int(x) for x in (raw.get("stage1_fee_tiers") or s.stage1_fee_tiers))
     except Exception:
         pass
+
+    # normalize report currency
+    try:
+        rc = raw.get("report_currency", s.report_currency)
+        rc = str(rc).strip().upper()
+        if rc not in ("USDC", "USDT"):
+            rc = "USDC"
+        s.report_currency = rc
+    except Exception:
+        s.report_currency = "USDC"
     return s
 
 
@@ -131,7 +171,12 @@ async def wait_for_new_block(last_block: int) -> int:
 
 
 async def scan_routes() -> List[Tuple[str, ...]]:
-    return strategies.Strategy().get_routes()
+    s = _load_settings()
+    rc = str(getattr(s, "report_currency", "USDC") or "USDC").upper()
+    # Ensure we always scan cycles that start/end in the reporting currency,
+    # so profit/spent symbols in the UI cannot drift.
+    base_addr = config.TOKENS.get(rc, config.TOKENS["USDC"])
+    return strategies.Strategy(bases=[base_addr]).get_routes()
 
 
 async def _scan_candidates(
@@ -360,6 +405,10 @@ async def simulate(payload: Dict[str, Any], block_number: int) -> None:
                 profit = float(pr) / float(10 ** dec)
     except Exception:
         pass
+    # Sanitize numbers early to avoid UI showing NaN/Infinity.
+    profit = float(profit) if _is_finite_number(profit) else float("nan")
+    profit = _clamp_sane(profit, abs_max=1_000_000_000.0)
+
     profit_pct = payload.get("profit_pct", None)
     token_sym = payload.get("token_in_symbol", "")
     route_str = _route_pretty(tuple(payload.get("route") or ()))
@@ -373,12 +422,53 @@ async def simulate(payload: Dict[str, Any], block_number: int) -> None:
     except Exception:
         roi_pct = None
 
+    # Compute ROI only if inputs are sane
+    if spent is not None:
+        spent = float(spent) if _is_finite_number(spent) else None
+        if spent is not None:
+            spent = _clamp_sane(spent, abs_max=1_000_000_000.0)
+
+    if spent is None or spent <= 0 or not math.isfinite(profit):
+        roi_pct = None
+    else:
+        try:
+            roi_pct = (float(profit) / float(spent)) * 100.0
+            if not math.isfinite(float(roi_pct)) or abs(float(roi_pct)) > 1e6:
+                roi_pct = None
+        except Exception:
+            roi_pct = None
+
+    # Don't emit profit events with nonsense values (NaN/inf or raw-unit explosions).
+    if profit is None or not math.isfinite(float(profit)):
+        await ui_push({
+            "type": "warn",
+            "time": datetime.utcnow().strftime("%H:%M:%S"),
+            "block": block_number,
+            "text": f"Dropped invalid profit payload (profit={profit}) route={route_str}",
+        })
+        return
+    if abs(float(profit)) > 1_000_000_000.0:
+        await ui_push({
+            "type": "warn",
+            "time": datetime.utcnow().strftime("%H:%M:%S"),
+            "block": block_number,
+            "text": f"Dropped implausibly large profit (unit mix?) profit={profit} route={route_str}",
+        })
+        return
+
+    # UI-friendly rounding (doesn't change the economics, just presentation stability)
+    profit = round(float(profit), 6)
+    if spent is not None:
+        spent = round(float(spent), 6)
+    if roi_pct is not None:
+        roi_pct = round(float(roi_pct), 2)
+
     await ui_push(
         {
             "type": "profit",
             "time": datetime.utcnow().strftime("%H:%M:%S"),
             "block": block_number,
-            "profit": float(profit) if isinstance(profit, (int, float)) else 0.0,
+            "profit": float(profit),
             "profit_symbol": str(token_sym),
             "spent": float(spent) if spent is not None else None,
             "spent_symbol": str(token_sym),
@@ -388,6 +478,19 @@ async def simulate(payload: Dict[str, Any], block_number: int) -> None:
             "text": f"profit={float(profit):.6f} {token_sym} spent={float(spent or 0):.6f} roi={float(roi_pct or 0):.4f}% route={route_str}",
         }
     )
+
+    # Persist hit for debugging (JSONL)
+    try:
+        HIT_LOG.open("a", encoding="utf-8").write(json.dumps({
+            "time": datetime.utcnow().isoformat(),
+            "block": int(block_number),
+            "route": route_str,
+            "profit": float(profit),
+            "spent": float(spent) if spent is not None else None,
+            "roi_pct": float(roi_pct) if roi_pct is not None else None,
+        }, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
     print(
         f"[Executor] Simulating tx from {tx.get('from')} to {tx.get('to')} | Profit: {payload.get('profit',0):.6f}"
     )
@@ -584,6 +687,28 @@ async def main() -> None:
                         "text": f"Scanned {int(finished_count)}/{int(candidates_count)} routes | profitable=0 | mode={s.scan_mode}",
                     }
                 )
+                # Emit RPC pool stats + block summary for debugging
+                try:
+                    if hasattr(PS.rpc, "stats"):
+                        await ui_push({
+                            "type": "rpc_stats",
+                            "time": datetime.utcnow().strftime("%H:%M:%S"),
+                            "block": block_number,
+                            "stats": PS.rpc.stats(),
+                        })
+                except Exception:
+                    pass
+                try:
+                    BLOCK_LOG.open("a", encoding="utf-8").write(json.dumps({
+                        "time": datetime.utcnow().isoformat(),
+                        "block": int(block_number),
+                        "candidates": int(candidates_count),
+                        "finished": int(finished_count),
+                        "profitable": 0,
+                        "mode": str(s.scan_mode),
+                    }, ensure_ascii=False) + "\n")
+                except Exception:
+                    pass
                 continue
 
             best_profit = max((float(p.get("profit_adj", p.get("profit", 0))) for p in profitable), default=0.0)
@@ -598,6 +723,30 @@ async def main() -> None:
                     "text": f"Scanned {int(finished_count)}/{int(candidates_count)} routes | profitable={len(profitable)} | best={best_profit:.6f} | mode={s.scan_mode}",
                 }
             )
+
+            # Emit RPC pool stats + block summary for debugging
+            try:
+                if hasattr(PS.rpc, "stats"):
+                    await ui_push({
+                        "type": "rpc_stats",
+                        "time": datetime.utcnow().strftime("%H:%M:%S"),
+                        "block": block_number,
+                        "stats": PS.rpc.stats(),
+                    })
+            except Exception:
+                pass
+            try:
+                BLOCK_LOG.open("a", encoding="utf-8").write(json.dumps({
+                    "time": datetime.utcnow().isoformat(),
+                    "block": int(block_number),
+                    "candidates": int(candidates_count),
+                    "finished": int(finished_count),
+                    "profitable": int(len(profitable)),
+                    "best_profit": float(best_profit),
+                    "mode": str(s.scan_mode),
+                }, ensure_ascii=False) + "\n")
+            except Exception:
+                pass
 
             for payload in profitable:
                 await simulate(payload, block_number)

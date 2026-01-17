@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import os
 import random
-from typing import Any, Optional, Sequence, List
+import time
+from typing import Any, Optional, Sequence, List, Dict, Set
 
 import aiohttp
 from web3 import Web3
@@ -206,6 +207,8 @@ class RPCPool:
         *,
         default_timeout_s: float = 12.0,
         max_retries_per_call: int = 1,
+        per_rpc_max_inflight: int = 10,
+        ewma_alpha: float = 0.20,
     ):
         cleaned = [str(u).strip() for u in (urls or []) if str(u).strip()]
         if not cleaned:
@@ -213,6 +216,13 @@ class RPCPool:
 
         self.urls: List[str] = cleaned
         self._clients = [AsyncRPC(u, default_timeout_s=default_timeout_s) for u in self.urls]
+
+        # Per-endpoint concurrency guard (prevents a single RPC from being flooded)
+        self._sems: List[asyncio.Semaphore] = [asyncio.Semaphore(max(1, int(per_rpc_max_inflight))) for _ in self._clients]
+
+        # Latency EWMA per endpoint (ms). Start with a modest baseline so a new RPC isn't unfairly punished.
+        self._lat_ewma_ms: List[float] = [350.0 for _ in self._clients]
+        self._ewma_alpha = float(ewma_alpha)
 
         # In-flight counters for least-load selection
         self._inflight: List[int] = [0 for _ in self._clients]
@@ -231,15 +241,24 @@ class RPCPool:
             except Exception:
                 pass
 
+    def _score(self, idx: int) -> float:
+        """Lower is better."""
+        ok = self._ok[idx]
+        fail = self._fail[idx]
+        fail_rate = float(fail) / float(ok + fail + 1)
+        # inflight dominates, then latency, then error penalty
+        return float(self._inflight[idx]) + (self._lat_ewma_ms[idx] / 250.0) + (fail_rate * 6.0)
+
     async def _pick_idx(self, banned: Set[int]) -> int:
         async with self._lock:
-            best_idx = None
-            best_val = None
-            for i, n in enumerate(self._inflight):
+            best_idx: Optional[int] = None
+            best_val: Optional[float] = None
+            for i, _n in enumerate(self._inflight):
                 if i in banned:
                     continue
-                if best_val is None or n < best_val:
-                    best_val = n
+                val = self._score(i)
+                if best_val is None or val < best_val:
+                    best_val = val
                     best_idx = i
             if best_idx is None:
                 # All banned: pick a random one to avoid dead-end
@@ -264,6 +283,7 @@ class RPCPool:
                 "inflight": self._inflight[i],
                 "ok": self._ok[i],
                 "fail": self._fail[i],
+                "lat_ms": round(float(self._lat_ewma_ms[i]), 1),
             })
         return out
 
@@ -279,7 +299,13 @@ class RPCPool:
             idx = await self._pick_idx(banned)
             c = self._clients[idx]
             try:
-                res = await c.call(method, params, timeout_s=timeout_s)
+                # Per-endpoint concurrency guard + latency tracking
+                async with self._sems[idx]:
+                    t0 = time.perf_counter()
+                    res = await c.call(method, params, timeout_s=timeout_s)
+                    dt_ms = (time.perf_counter() - t0) * 1000.0
+                # EWMA update
+                self._lat_ewma_ms[idx] = (1.0 - self._ewma_alpha) * self._lat_ewma_ms[idx] + self._ewma_alpha * float(dt_ms)
                 await self._done_idx(idx, ok=True)
                 return res
             except Exception as e:

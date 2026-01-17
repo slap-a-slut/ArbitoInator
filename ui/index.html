@@ -594,6 +594,16 @@
               <div class="v" id="statRoi">0.00%</div>
             </div>
           </div>
+
+          <!-- RPC pool health (updates live) -->
+          <div class="stats" style="margin-top:10px;">
+            <div class="stat" style="grid-column: 1 / -1;">
+              <div class="k">RPC pool</div>
+              <div class="v" style="font-size:12px; line-height:1.35; font-weight:600; color:rgba(255,255,255,0.85)">
+                <div id="rpcStatsBody" class="mono">—</div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Settings (editable from UI) -->
@@ -601,9 +611,17 @@
           <h3>Settings</h3>
           <div class="settingsGrid">
             <div class="field" style="grid-column: 1 / -1;">
-              <label for="cfgRpcUrls">RPC URLs (failover list)</label>
+              <label for="cfgRpcUrls">RPC URLs (parallel pool)</label>
               <textarea id="cfgRpcUrls" rows="3" class="mono" placeholder="https://rpc1\nhttps://rpc2\n..." style="width:100%; resize:vertical;"></textarea>
-              <small>One per line (or comma-separated). The bot will failover on timeouts / rate limits.</small>
+              <small>One per line (or comma-separated). The bot will spread load across all URLs and retry on failures.</small>
+            </div>
+            <div class="field">
+              <label for="cfgReportCurrency">Reporting currency</label>
+              <select id="cfgReportCurrency">
+                <option value="USDC">USDC</option>
+                <option value="USDT">USDT</option>
+              </select>
+              <small>All stats in the panel will be displayed in this currency (bot scans only cycles that start/end in it).</small>
             </div>
             <div class="field">
               <label for="cfgMinPct">Min profit % (of input)</label>
@@ -729,6 +747,7 @@
   const statProfit = document.getElementById('statProfit');
   const statSpent = document.getElementById('statSpent');
   const statRoi = document.getElementById('statRoi');
+  const rpcStatsBody = document.getElementById('rpcStatsBody');
 
   const profitRows = document.getElementById('profitRows');
   const canvas = document.getElementById('profitChart');
@@ -744,6 +763,7 @@
 
   // Settings elements
   const cfgRpcUrls = document.getElementById('cfgRpcUrls');
+  const cfgReportCurrency = document.getElementById('cfgReportCurrency');
   const cfgMinPct = document.getElementById('cfgMinPct');
   const cfgMinAbs = document.getElementById('cfgMinAbs');
   const cfgSlip = document.getElementById('cfgSlip');
@@ -765,9 +785,9 @@
   // Formatting helpers (avoid scientific notation in UI)
   function fmtAmount(value, decimals = 3){
     const n = Number(value);
-    if (!Number.isFinite(n)) return '0.000';
-    // If something explodes upstream (overflow), show a clear marker instead of e+233.
-    if (Math.abs(n) > 1e12) return '∞';
+    if (!Number.isFinite(n)) return '—';
+    // If something explodes upstream (overflow), hide it.
+    if (Math.abs(n) > 1e12) return '—';
     return n.toFixed(decimals);
   }
 
@@ -781,8 +801,13 @@
   // Number formatting helpers (avoid scientific notation in UI)
   function formatToken(x, decimals = 3, maxAbs = 1e12){
     const num = Number(x);
-    if (!isFinite(num)) return '0.000';
-    if (Math.abs(num) > maxAbs) return '∞';
+    if (!Number.isFinite(num)) return '—';
+    const ax = Math.abs(num);
+    // For very large numbers, show exponential (rounded) instead of "∞" or "—".
+    if (ax >= 1e6 && ax <= maxAbs) {
+      try { return num.toExponential(2); } catch { return String(num); }
+    }
+    if (ax > maxAbs) return '>1e12';
     // Intl formatter avoids scientific notation for normal ranges
     try {
       return new Intl.NumberFormat('en-US', {
@@ -796,8 +821,12 @@
 
   function formatPct(x, decimals = 2){
     const num = Number(x);
-    if (!isFinite(num)) return '—';
-    if (Math.abs(num) > 1e6) return '∞%';
+    if (!Number.isFinite(num)) return '—';
+    const ax = Math.abs(num);
+    if (ax >= 1e5 && ax <= 1e6) {
+      try { return num.toExponential(2) + '%'; } catch { return String(num) + '%'; }
+    }
+    if (ax > 1e6) return '>1e6%';
     try {
       return new Intl.NumberFormat('en-US', {
         minimumFractionDigits: decimals,
@@ -929,15 +958,17 @@
     statBlocks.textContent = String(blocksScanned);
     statHits.textContent = String(profitableHits);
     const sym = profitCurrency || 'USDC';
-    const v = Number(totalProfitBySym[sym] || 0);
+    let v = Number(totalProfitBySym[sym] || 0);
+    if (!Number.isFinite(v) || Math.abs(v) > 1e6) v = 0;
     statProfit.textContent = formatToken(v, 3) + ' ' + sym;
 
-    const spent = Number(totalSpentBySym[sym] || 0);
+    let spent = Number(totalSpentBySym[sym] || 0);
+    if (!Number.isFinite(spent) || Math.abs(spent) > 1e8) spent = 0;
     if (statSpent) statSpent.textContent = formatToken(spent, 3) + ' ' + sym;
 
     // Avg ROI across successful hits in the currently shown currency
-    const roi = (spent > 0) ? (v / spent) * 100 : 0;
-    if (statRoi) statRoi.textContent = formatPct(roi, 2);
+    const roi = (spent > 0) ? (v / spent) * 100 : null;
+    if (statRoi) statRoi.textContent = (roi == null || !Number.isFinite(roi) || Math.abs(roi) > 1e6) ? '—' : formatPct(roi, 2);
   }
 
   function parseProfitText(text){
@@ -1160,6 +1191,23 @@
         setNotice('warn', msg.text || 'warning');
       }
 
+      if (msg.type === 'rpc_stats'){
+        if (rpcStatsBody && Array.isArray(msg.stats)){
+          // Render compact: url host | ok/fail | inflight | latency
+          const lines = msg.stats.map((s) => {
+            const url = String(s.url || '');
+            let host = url;
+            try { host = (new URL(url)).host; } catch {}
+            const ok = Number(s.ok || 0);
+            const fail = Number(s.fail || 0);
+            const inflight = Number(s.inflight || 0);
+            const lat = (typeof s.lat_ms === 'number') ? s.lat_ms : Number(s.lat_ms || 0);
+            return `${host.padEnd(24, ' ')} ok=${ok} fail=${fail} in=${inflight} lat=${lat}ms`;
+          });
+          rpcStatsBody.textContent = lines.join('\n') || '—';
+        }
+      }
+
       if (msg.type === 'profit'){
         if (typeof msg.block === 'number') lastBlockEl.textContent = String(msg.block);
         // Prefer structured fields from the bot; fall back to parsing text.
@@ -1179,14 +1227,22 @@
           : (typeof msg.profit_pct === 'number') ? msg.profit_pct
           : (parsed.profit_pct != null && isFinite(parsed.profit_pct)) ? parsed.profit_pct
           : (spent != null && isFinite(spent) && spent !== 0 && profit != null && isFinite(profit)) ? (Number(profit) / Number(spent) * 100) : null;
-        if (profit != null && Number.isFinite(profit)){
+        const profitOk = (profit != null && Number.isFinite(profit) && Math.abs(Number(profit)) < 1e6);
+        const spentOk = (spent != null && Number.isFinite(spent) && Number(spent) > 0 && Math.abs(Number(spent)) < 1e8);
+        if (profitOk){
           profitableHits += 1;
-          const sym = symFromMsg || spentSym || profitCurrency;
-          profitCurrency = sym;
+          const sym = (symFromMsg || spentSym || profitCurrency || 'USDC').toUpperCase();
+          // The panel is single-currency. If the bot ever sends a different symbol,
+          // we ignore it and warn instead of mixing numbers with the wrong label.
+          if (sym !== profitCurrency) {
+            console.warn('Ignoring profit event with different currency', {sym, profitCurrency, msg});
+            addLog({ type: 'warn', time: msg.time || new Date().toISOString().slice(11,19), block: msg.block, text: `Ignored profit in ${sym} (panel currency is ${profitCurrency})` });
+            return;
+          }
           totalProfitBySym[sym] = Number(totalProfitBySym[sym] || 0) + Number(profit);
 
           // Track total spent in the input token (usually same as profit token for this scanner).
-          if (spent != null && isFinite(spent)){
+          if (spentOk){
             totalSpentBySym[sym] = Number(totalSpentBySym[sym] || 0) + Number(spent);
           }
           updateStats();
@@ -1255,6 +1311,7 @@
     }
     return {
       rpc_urls: String(cfgRpcUrls?.value || '').trim(),
+      report_currency: String(cfgReportCurrency?.value || 'USDC').trim().toUpperCase(),
       min_profit_pct: Number(cfgMinPct.value || 0),
       min_profit_abs: Number(cfgMinAbs.value || 0),
       slippage_bps: parseInt(cfgSlip.value || '0', 10),
@@ -1280,6 +1337,11 @@
     if (cfgRpcUrls) {
       const ru = cfg.rpc_urls;
       cfgRpcUrls.value = Array.isArray(ru) ? ru.join('\n') : String(ru || '');
+    }
+    if (cfgReportCurrency) {
+      const rc = String(cfg.report_currency || 'USDC').trim().toUpperCase();
+      cfgReportCurrency.value = (rc === 'USDT') ? 'USDT' : 'USDC';
+      profitCurrency = cfgReportCurrency.value;
     }
     cfgMinPct.value = String(cfg.min_profit_pct ?? 0.05);
     cfgMinAbs.value = String(cfg.min_profit_abs ?? 0.05);

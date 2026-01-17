@@ -50,6 +50,10 @@ const DEFAULT_CONFIG = {
   rpc_timeout_stage1_s: 6,
   rpc_timeout_stage2_s: 10,
 
+  // UI reporting/base currency. We force scanning cycles that start/end in this token
+  // so the web panel never mixes numbers with a different symbol.
+  report_currency: 'USDC', // USDC|USDT
+
   verbose: false,
 };
 
@@ -90,6 +94,15 @@ function writeConfig(cfg) {
   }
 
   const safe = { ...DEFAULT_CONFIG, ...cleaned };
+
+  // Normalize report currency
+  if (typeof safe.report_currency === 'string') {
+    const rc = String(safe.report_currency).trim().toUpperCase();
+    safe.report_currency = (rc === 'USDT') ? 'USDT' : 'USDC';
+  } else {
+    safe.report_currency = 'USDC';
+  }
+
   fs.writeFileSync(configPath, JSON.stringify(safe, null, 2));
   return safe;
 }
@@ -152,6 +165,7 @@ function startBot() {
       ARBITOINATOR_CONFIG: configPath,
       // Multi-RPC failover list for Python
       RPC_URLS: Array.isArray(cfg.rpc_urls) ? cfg.rpc_urls.join(',') : String(cfg.rpc_urls || ''),
+      REPORT_CURRENCY: String(cfg.report_currency || 'USDC'),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

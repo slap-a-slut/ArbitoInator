@@ -1,4 +1,7 @@
 {
+  "rpc_urls": [
+    "https://mainnet.infura.io/v3/2344765bc14348dd99fd641ebbfd2be0"
+  ],
   "min_profit_pct": 0.01,
   "min_profit_abs": 0.01,
   "slippage_bps": 5,
@@ -21,5 +24,6 @@
   "stage2_max_evals": 6,
   "rpc_timeout_stage1_s": 6,
   "rpc_timeout_stage2_s": 10,
+  "report_currency": "USDC",
   "verbose": false
 }

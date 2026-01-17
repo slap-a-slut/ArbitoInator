@@ -67,6 +67,9 @@ class PriceScanner:
 
         # cache: (block, token_in, token_out, amount_in, fee_tiers_key) -> Quote
         self._quote_cache: Dict[Tuple[str, str, str, int, Tuple[int, ...]], Optional[Quote]] = {}
+        # cache: (block, token_in, token_out, fee_tiers_key) -> True (edge is non-quotable / no pool)
+        # This prevents re-trying the same dead edge for different amounts within a block.
+        self._dead_edge: Dict[Tuple[str, str, str, Tuple[int, ...]], bool] = {}
         # cache: (block, route_tuple, amount_in, fee_tiers_key) -> payload
         self._payload_cache: Dict[Tuple[str, Tuple[str, ...], int, Tuple[int, ...]], Dict[str, Any]] = {}
 
@@ -81,6 +84,7 @@ class PriceScanner:
         self._weth_to_usdc_6 = None
         self._quote_cache.clear()
         self._payload_cache.clear()
+        self._dead_edge.clear()
 
         # Warmup (best-effort) — failures are OK
         try:
@@ -113,6 +117,9 @@ class PriceScanner:
         timeout_s: Optional[float] = None,
     ) -> Optional[Quote]:
         tiers = tuple(int(x) for x in (fee_tiers if fee_tiers else config.FEE_TIERS))
+        edge_key = (block, str(token_in).lower(), str(token_out).lower(), tiers)
+        if self._dead_edge.get(edge_key):
+            return None
         key = (block, token_in, token_out, int(amount_in), tiers)
         if key in self._quote_cache:
             return self._quote_cache[key]
@@ -125,6 +132,9 @@ class PriceScanner:
             timeout_s=timeout_s,
         )
         self._quote_cache[key] = q
+        if not q or int(q.amount_out) == 0:
+            # Mark edge dead for this block+tiers to avoid retrying on other amounts.
+            self._dead_edge[edge_key] = True
         return q
 
     async def estimate_gas_cost_token(self, gas_units: int, token_out: str, *, block: str, timeout_s: float = 7.0) -> int:

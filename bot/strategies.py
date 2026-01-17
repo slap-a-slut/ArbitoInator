@@ -14,9 +14,12 @@ from bot import config
 
 
 class Strategy:
-    def __init__(self):
+    def __init__(self, bases=None):
         # Bases to close the cycle on (profits computed in base token)
-        self.bases = [config.TOKENS["USDC"], config.TOKENS["USDT"], config.TOKENS["DAI"]]
+        if bases is None:
+            self.bases = [config.TOKENS["USDC"], config.TOKENS["USDT"], config.TOKENS["DAI"]]
+        else:
+            self.bases = list(bases)
 
         # Liquid universe
         self.universe = [
