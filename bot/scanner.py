@@ -15,7 +15,7 @@ from typing import Dict, List, Optional, Tuple, Any
 
 from bot import config
 from bot.dex.uniswap_v3 import Quote, UniV3
-from infra.rpc import AsyncRPC
+from infra.rpc import AsyncRPC, RPCPool, get_rpc_urls
 
 
 def _sym_by_addr(addr: str) -> str:
@@ -41,9 +41,23 @@ class Candidate:
 
 
 class PriceScanner:
-    def __init__(self, rpc_url: str = None):
-        url = rpc_url or config.RPC_URL
-        self.rpc = AsyncRPC(url)
+    def __init__(self, rpc_url: str = None, rpc_urls: Optional[List[str]] = None):
+        """Create a scanner.
+
+        You can pass either:
+          - rpc_url: single URL
+          - rpc_urls: list of URLs (load-balanced pool)
+        """
+
+        if rpc_urls:
+            urls = list(rpc_urls)
+        else:
+            # env/config fallback (RPC_URLS / RPC_URL)
+            urls = get_rpc_urls()
+        if rpc_url:
+            urls = [rpc_url]
+
+        self.rpc = RPCPool(urls) if len(urls) > 1 else AsyncRPC(urls[0])
         self.univ3 = UniV3(self.rpc)
 
         # Per-block caches

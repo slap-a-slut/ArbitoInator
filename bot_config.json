@@ -3,7 +3,7 @@
   "min_profit_abs": 0.01,
   "slippage_bps": 5,
   "max_gas_gwei": null,
-  "concurrency": 10,
+  "concurrency": 20,
   "block_budget_s": 12,
   "scan_mode": "auto",
   "amount_presets": [

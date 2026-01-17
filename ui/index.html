@@ -497,7 +497,8 @@
   <div class="frame">
     <div class="titlebar">
       <h1 class="title">Fork Simulation Monitor</h1>
-      <div class="pill" title="Состояние соединения и процесса">
+      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:flex-end;">
+        <div class="pill" title="Состояние соединения и процесса">
         <div style="display:flex; align-items:center; gap:10px; min-width:0;">
           <div id="connDot" class="dot off"></div>
           <div style="display:flex; flex-direction:column; min-width:0;">
@@ -506,6 +507,16 @@
           </div>
         </div>
         <div class="badge" id="runBadge">stopped</div>
+        </div>
+
+        <!-- Uptime timer (requested) -->
+        <div class="pill" style="min-width: 190px;" title="Время работы процесса">
+          <div style="display:flex; flex-direction:column; min-width:0;">
+            <span style="font-size:12px; color:var(--muted);">Uptime</span>
+            <b id="uptimeText" class="mono" style="font-size:13px;">00:00:00</b>
+          </div>
+          <div class="badge blue" id="uptimeState">—</div>
+        </div>
       </div>
     </div>
 
@@ -589,6 +600,11 @@
         <div class="settings" id="settings">
           <h3>Settings</h3>
           <div class="settingsGrid">
+            <div class="field" style="grid-column: 1 / -1;">
+              <label for="cfgRpcUrls">RPC URLs (failover list)</label>
+              <textarea id="cfgRpcUrls" rows="3" class="mono" placeholder="https://rpc1\nhttps://rpc2\n..." style="width:100%; resize:vertical;"></textarea>
+              <small>One per line (or comma-separated). The bot will failover on timeouts / rate limits.</small>
+            </div>
             <div class="field">
               <label for="cfgMinPct">Min profit % (of input)</label>
               <input id="cfgMinPct" type="number" step="0.01" min="0" />
@@ -695,6 +711,11 @@
   const runBadge = document.getElementById('runBadge');
   const stateText = document.getElementById('stateText');
 
+  // Uptime
+  const uptimeText = document.getElementById('uptimeText');
+  const uptimeState = document.getElementById('uptimeState');
+  let botStartedAtMs = null; // set from server (started_at_ms)
+
   const lastBlockEl = document.getElementById('lastBlock');
   const noticeIcon = document.getElementById('noticeIcon');
   const noticeText = document.getElementById('noticeText');
@@ -722,6 +743,7 @@
   const profitEvents = []; // {t, block, profit, route, sym}
 
   // Settings elements
+  const cfgRpcUrls = document.getElementById('cfgRpcUrls');
   const cfgMinPct = document.getElementById('cfgMinPct');
   const cfgMinAbs = document.getElementById('cfgMinAbs');
   const cfgSlip = document.getElementById('cfgSlip');
@@ -802,11 +824,36 @@
     if (running){
       startBtn.disabled = true;
       stopBtn.disabled = false;
+      if (botStartedAtMs === null) botStartedAtMs = Date.now();
     } else {
       startBtn.disabled = !wsConnected;
       stopBtn.disabled = true;
+      botStartedAtMs = null;
+    }
+
+    if (uptimeState) {
+      uptimeState.textContent = running ? 'running' : 'stopped';
+      uptimeState.className = 'badge ' + (running ? 'good' : '');
     }
   }
+
+  function formatUptime(ms){
+    const total = Math.max(0, Math.floor(ms / 1000));
+    const hh = String(Math.floor(total / 3600)).padStart(2, '0');
+    const mm = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+    const ss = String(total % 60).padStart(2, '0');
+    return `${hh}:${mm}:${ss}`;
+  }
+
+  // Update uptime ticker (top-right)
+  setInterval(() => {
+    if (!uptimeText) return;
+    if (botStartedAtMs == null){
+      uptimeText.textContent = '00:00:00';
+      return;
+    }
+    uptimeText.textContent = formatUptime(Date.now() - Number(botStartedAtMs));
+  }, 1000);
 
   function addLog({type, time, block, text}){
     logs += 1;
@@ -1054,7 +1101,10 @@
     } else {
       // sync status from server
       fetch('/status').then(r=>r.json()).then(s=>{
-        if (s && s.ok) setRunning(!!s.running);
+        if (s && s.ok) {
+          if (typeof s.started_at_ms === 'number') botStartedAtMs = s.started_at_ms;
+          setRunning(!!s.running);
+        }
         else setRunning(false);
       }).catch(()=>setRunning(false));
     }
@@ -1076,6 +1126,8 @@
       addLog(msg);
 
       if (msg.type === 'status'){
+        if (typeof msg.started_at_ms === 'number') botStartedAtMs = msg.started_at_ms;
+        if (msg.started_at_ms === null) botStartedAtMs = null;
         if (typeof msg.running === 'boolean') setRunning(msg.running);
         if (typeof msg.text === 'string' && msg.text.toLowerCase().includes('stopped')) setRunning(false);
         if (typeof msg.text === 'string' && msg.text.toLowerCase().includes('started')) setRunning(true);
@@ -1202,6 +1254,7 @@
       rmax = Number(parts[1]);
     }
     return {
+      rpc_urls: String(cfgRpcUrls?.value || '').trim(),
       min_profit_pct: Number(cfgMinPct.value || 0),
       min_profit_abs: Number(cfgMinAbs.value || 0),
       slippage_bps: parseInt(cfgSlip.value || '0', 10),
@@ -1224,6 +1277,10 @@
   }
 
   function fillForm(cfg){
+    if (cfgRpcUrls) {
+      const ru = cfg.rpc_urls;
+      cfgRpcUrls.value = Array.isArray(ru) ? ru.join('\n') : String(ru || '');
+    }
     cfgMinPct.value = String(cfg.min_profit_pct ?? 0.05);
     cfgMinAbs.value = String(cfg.min_profit_abs ?? 0.05);
     cfgSlip.value = String(cfg.slippage_bps ?? 8);

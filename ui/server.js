@@ -7,12 +7,21 @@ const { spawn, spawnSync } = require('child_process');
 // ---------------------------------
 // Bot process manager (fork_test.py)
 let botProc = null;
+let botStartedAtMs = null;
 
 // Runtime UI config (stored in project root)
 const projectRoot = path.join(__dirname, '..');
 const configPath = path.join(projectRoot, 'bot_config.json');
 
 const DEFAULT_CONFIG = {
+  // RPC failover (comma/newline separated in UI; stored as list)
+  rpc_urls: [
+    'https://rpc.flashbots.net',
+    'https://cloudflare-eth.com',
+    'https://eth.llamarpc.com',
+    'https://rpc.ankr.com/eth',
+  ],
+
   // thresholds
   min_profit_pct: 0.05,
   min_profit_abs: 0.05,
@@ -71,6 +80,15 @@ function writeConfig(cfg) {
       .filter((x) => Number.isFinite(x) && x > 0);
   }
 
+  // Parse rpc_urls from textarea/input into list
+  if (typeof cleaned.rpc_urls === 'string') {
+    cleaned.rpc_urls = cleaned.rpc_urls
+      .replace(/\n/g, ',')
+      .split(',')
+      .map((x) => String(x).trim())
+      .filter((x) => x.length > 0);
+  }
+
   const safe = { ...DEFAULT_CONFIG, ...cleaned };
   fs.writeFileSync(configPath, JSON.stringify(safe, null, 2));
   return safe;
@@ -124,14 +142,21 @@ function startBot() {
 
   const cfg = readConfig();
 
+  botStartedAtMs = Date.now();
   botProc = spawn(python, ['-u', script], {
     cwd: projectRoot,
     // Keep both env vars for backwards compatibility.
-    env: { ...process.env, BOT_CONFIG: configPath, ARBITOINATOR_CONFIG: configPath },
+    env: {
+      ...process.env,
+      BOT_CONFIG: configPath,
+      ARBITOINATOR_CONFIG: configPath,
+      // Multi-RPC failover list for Python
+      RPC_URLS: Array.isArray(cfg.rpc_urls) ? cfg.rpc_urls.join(',') : String(cfg.rpc_urls || ''),
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
-  broadcast({ type: 'status', time: nowTime(), block: null, text: 'Bot started' });
+  broadcast({ type: 'status', time: nowTime(), block: null, text: 'Bot started', running: true, started_at_ms: botStartedAtMs });
 
   const forwardLines = (buf, stream) => {
     String(buf)
@@ -151,11 +176,14 @@ function startBot() {
   botProc.stderr.on('data', (buf) => forwardLines(buf, 'stderr'));
 
   botProc.on('close', (code, signal) => {
+    botStartedAtMs = null;
     broadcast({
       type: 'status',
       time: nowTime(),
       block: null,
       text: `Bot stopped (code=${code}, signal=${signal || 'none'})`,
+      running: false,
+      started_at_ms: null,
     });
     botProc = null;
   });
@@ -167,6 +195,7 @@ function stopBot() {
   if (!isRunning()) return { ok: true, alreadyStopped: true };
   try {
     botProc.kill('SIGINT');
+    // close handler will clear started_at; keep it for clients until then
     return { ok: true };
   } catch (e) {
     return { ok: false, error: String(e) };
@@ -212,7 +241,7 @@ const server = http.createServer((req, res) => {
   // Status
   if (req.method === 'GET' && req.url === '/status') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, running: isRunning() }));
+    res.end(JSON.stringify({ ok: true, running: isRunning(), started_at_ms: botStartedAtMs }));
     return;
   }
 
@@ -267,6 +296,7 @@ wss.on('connection', (ws) => {
       block: null,
       text: 'connected',
       running: isRunning(),
+      started_at_ms: botStartedAtMs,
     })
   );
 });

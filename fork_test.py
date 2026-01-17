@@ -12,14 +12,18 @@ from infra.rpc import get_provider
 from ui_notify import ui_push
 
 
-w3 = get_provider()  # sync provider for block_number only
-PS = scanner.PriceScanner(os.getenv("RPC_URL", config.RPC_URL))
+# w3 + scanner are initialized in main() after reading UI config
+w3 = None  # type: ignore[assignment]
+PS = None  # type: ignore[assignment]
 
 SIM_FROM_ADDRESS = "0x0000000000000000000000000000000000000000"
 
 
 @dataclass
 class Settings:
+    # RPC (list for failover)
+    rpc_urls: Tuple[str, ...] = ()
+
     # Mode
     scan_mode: str = "auto"  # auto|fixed
 
@@ -69,6 +73,14 @@ def _load_settings() -> Settings:
             pass
     # normalize tuples
     try:
+        ru = raw.get("rpc_urls")
+        if isinstance(ru, (list, tuple)):
+            s.rpc_urls = tuple(str(x).strip() for x in ru if str(x).strip())
+        elif isinstance(ru, str):
+            s.rpc_urls = tuple(x.strip() for x in ru.split(",") if x.strip())
+    except Exception:
+        pass
+    try:
         s.amount_presets = tuple(float(x) for x in (raw.get("amount_presets") or s.amount_presets))
     except Exception:
         pass
@@ -102,7 +114,8 @@ def _route_pretty(route: Tuple[str, ...]) -> str:
                 sym = s
                 break
         out.append(sym or (str(addr)[:6] + "..." + str(addr)[-4:]))
-    return "→".join(out)
+    # Use plain ASCII arrow to keep UI table alignment predictable.
+    return " -> ".join(out)
 
 
 async def wait_for_new_block(last_block: int) -> int:
@@ -322,12 +335,57 @@ async def _optimize_amount_for_route(
 
 async def simulate(payload: Dict[str, Any], block_number: int) -> None:
     tx = executor.prepare_transaction(payload, SIM_FROM_ADDRESS)
+    # Provide structured fields for the web UI (spent, ROI, route),
+    # so the table/stats never show "—" or "∞" because of parsing issues.
+    try:
+        route_t = tuple(payload.get("route") or ())
+        token_in = route_t[0] if route_t else payload.get("token_in")
+        dec = _decimals_by_token(str(token_in)) if token_in else 18
+        spent_raw = int(payload.get("amount_in", 0) or 0)
+        spent = float(spent_raw) / float(10 ** dec) if spent_raw else 0.0
+    except Exception:
+        spent = None
+
+    profit = payload.get("profit", 0.0)
+    # Safety: if some code path mistakenly passes raw units,
+    # convert to token units so UI doesn't show "∞".
+    try:
+        if isinstance(profit, (int, float)) and abs(float(profit)) > 1e9:
+            pr = payload.get("profit_raw")
+            if isinstance(pr, (int, float)) and spent is not None:
+                # profit_raw is in smallest units of token_in
+                route_t = tuple(payload.get("route") or ())
+                token_in = route_t[0] if route_t else payload.get("token_in")
+                dec = _decimals_by_token(str(token_in)) if token_in else 18
+                profit = float(pr) / float(10 ** dec)
+    except Exception:
+        pass
+    profit_pct = payload.get("profit_pct", None)
+    token_sym = payload.get("token_in_symbol", "")
+    route_str = _route_pretty(tuple(payload.get("route") or ()))
+
+    roi_pct = None
+    try:
+        if spent and spent > 0 and profit is not None:
+            roi_pct = (float(profit) / float(spent)) * 100.0
+        elif isinstance(profit_pct, (int, float)):
+            roi_pct = float(profit_pct)
+    except Exception:
+        roi_pct = None
+
     await ui_push(
         {
             "type": "profit",
             "time": datetime.utcnow().strftime("%H:%M:%S"),
             "block": block_number,
-            "text": f"profit={payload.get('profit',0):.6f} {payload.get('token_in_symbol','')} route={_route_pretty(tuple(payload.get('route')))} gas={payload.get('gas_units','?')}",
+            "profit": float(profit) if isinstance(profit, (int, float)) else 0.0,
+            "profit_symbol": str(token_sym),
+            "spent": float(spent) if spent is not None else None,
+            "spent_symbol": str(token_sym),
+            "roi_pct": float(roi_pct) if roi_pct is not None else None,
+            "route": route_str,
+            "gas_units": int(payload.get("gas_units", 0) or 0),
+            "text": f"profit={float(profit):.6f} {token_sym} spent={float(spent or 0):.6f} roi={float(roi_pct or 0):.4f}% route={route_str}",
         }
     )
     print(
@@ -348,9 +406,24 @@ async def main() -> None:
     print("🚀 Fork simulation started...")
     await ui_push({"type": "status", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": None, "text": "started"})
 
+    # Init RPC endpoints (multi-RPC failover supported)
+    global w3, PS
+    s0 = _load_settings()
+    rpc_urls = list(s0.rpc_urls) if getattr(s0, "rpc_urls", None) else []
+    if not rpc_urls:
+        # env RPC_URLS / config fallback
+        raw = os.getenv("RPC_URLS")
+        if raw:
+            rpc_urls = [x.strip() for x in raw.split(",") if x.strip()]
+    if not rpc_urls:
+        rpc_urls = [os.getenv("RPC_URL", config.RPC_URL)]
+
+    w3 = get_provider(rpc_urls)
+    PS = scanner.PriceScanner(rpc_urls=rpc_urls)
+
     last_block = w3.eth.block_number
-    print(f"[RPC] connected={w3.is_connected()} | block={last_block}")
-    await ui_push({"type": "status", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": last_block, "text": f"rpc connected={w3.is_connected()}"})
+    print(f"[RPC] connected={w3.is_connected()} | block={last_block} | urls={len(rpc_urls)}")
+    await ui_push({"type": "status", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": last_block, "text": f"rpc connected={w3.is_connected()} | urls={len(rpc_urls)}"})
 
     try:
         while True:
@@ -528,197 +601,6 @@ async def main() -> None:
 
             for payload in profitable:
                 await simulate(payload, block_number)
-            log(iteration, profitable, block_number)
-
-    finally:
-        try:
-            await PS.rpc.close()
-        except Exception:
-            pass
-
-
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("🛑 Fork simulation stopped by user")
-
-
-async def simulate(payload: Dict[str, Any], block_number: int):
-    tx = executor.prepare_transaction(payload, SIM_FROM_ADDRESS)
-    await ui_push(
-        {
-            "type": "profit",
-            "time": datetime.utcnow().strftime("%H:%M:%S"),
-            "block": block_number,
-            "text": f"profit={payload.get('profit',0):.6f} route={_route_pretty(tuple(payload.get('route',()))) }",
-        }
-    )
-    _ = tx
-    await asyncio.sleep(0)
-
-
-def log(iteration: int, payloads: List[Dict[str, Any]], block_number: int):
-    now = datetime.utcnow().strftime("%H:%M:%S")
-    print(f"[{now}] Block {block_number} | Iteration {iteration} | Profitable payloads: {len(payloads)}")
-    for p in payloads:
-        print(f"  Route: {_route_pretty(tuple(p['route']))} | Profit: {p.get('profit_adj',p.get('profit',0)):.6f}")
-
-
-async def main():
-    iteration = 0
-    print("🚀 Fork simulation started...")
-    await ui_push({"type": "status", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": None, "text": "started"})
-
-    last_block = w3.eth.block_number
-    print(f"[RPC] connected={w3.is_connected()} | block={last_block}")
-    await ui_push({"type": "status", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": last_block, "text": f"rpc connected={w3.is_connected()}"})
-
-    try:
-        while True:
-            iteration += 1
-            s = _load_settings()
-
-            block_number = await wait_for_new_block(int(last_block))
-            last_block = block_number
-
-            # Optional gas gate
-            if s.max_gas_gwei is not None:
-                try:
-                    gas_gwei = float(w3.eth.gas_price) / 1e9
-                    if gas_gwei > float(s.max_gas_gwei):
-                        await ui_push({
-                            "type": "scan",
-                            "time": datetime.utcnow().strftime("%H:%M:%S"),
-                            "block": block_number,
-                            "candidates": 0,
-                            "profitable": 0,
-                            "best_profit": 0.0,
-                            "text": f"Skipped: gas {gas_gwei:.1f} gwei > max {float(s.max_gas_gwei):.1f} gwei",
-                        })
-                        continue
-                except Exception:
-                    pass
-
-            await ui_push({"type": "scan", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": block_number, "text": "Scanning routes..."})
-
-            loop = asyncio.get_running_loop()
-            start_t = loop.time()
-            deadline = start_t + float(s.block_budget_s)
-            stage1_deadline = start_t + float(s.block_budget_s) * 0.60
-
-            # Prepare block caches
-            try:
-                await PS.prepare_block(int(block_number))
-            except Exception:
-                pass
-
-            routes = await scan_routes()
-            if not routes:
-                await ui_push({"type": "scan", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": block_number, "candidates": 0, "profitable": 0, "best_profit": 0.0, "text": "No routes generated"})
-                continue
-
-            profitable: List[Dict[str, Any]] = []
-            candidates_count = 0
-            finished_count = 0
-
-            try:
-                if str(s.scan_mode).lower() == "fixed":
-                    candidates: List[Dict[str, Any]] = []
-                    for route in routes:
-                        token_in = route[0]
-                        for u in list(s.amount_presets):
-                            candidates.append({"route": route, "amount_in": _scale_amount(token_in, float(u))})
-                    candidates_count = len(candidates)
-                    payloads, finished_count = await _scan_candidates(
-                        candidates,
-                        block_number,
-                        fee_tiers=None,
-                        timeout_s=float(s.rpc_timeout_stage2_s),
-                        deadline_s=deadline,
-                        keep_all=False,
-                    )
-                    for p in payloads:
-                        p2 = _apply_safety(p, s)
-                        if strategies.risk_check(p2) and _passes_thresholds(p2, s):
-                            profitable.append(p2)
-                else:
-                    # Auto: Stage1 cheap scan
-                    stage1_candidates = [{"route": r, "amount_in": _scale_amount(r[0], float(s.stage1_amount))} for r in routes]
-                    candidates_count = len(stage1_candidates)
-
-                    stage1_payloads, finished_count = await _scan_candidates(
-                        stage1_candidates,
-                        block_number,
-                        fee_tiers=list(s.stage1_fee_tiers),
-                        timeout_s=float(s.rpc_timeout_stage1_s),
-                        deadline_s=stage1_deadline,
-                        keep_all=True,
-                    )
-
-                    stage1_map = {tuple(p.get("route") or ()): p for p in stage1_payloads if p and p.get("profit_raw", -1) != -1}
-                    ranked = sorted(stage1_map.values(), key=lambda p: int(p.get("profit_raw", -10**30)), reverse=True)
-                    topk = ranked[: int(s.stage2_top_k)]
-
-                    # Stage2 optimize amount only for top-K
-                    sem2 = asyncio.Semaphore(max(1, min(int(s.concurrency), 12)))
-
-                    async def opt_one(p):
-                        async with sem2:
-                            return await _optimize_amount_for_route(tuple(p["route"]), block_number, p, deadline_s=deadline)
-
-                    opt_tasks = [asyncio.create_task(opt_one(p)) for p in topk]
-                    best_payloads: List[Dict[str, Any]] = []
-                    try:
-                        for fut in asyncio.as_completed(opt_tasks):
-                            if loop.time() >= deadline:
-                                break
-                            bp = await fut
-                            if bp:
-                                best_payloads.append(bp)
-                    finally:
-                        for t in opt_tasks:
-                            if not t.done():
-                                t.cancel()
-                        await asyncio.gather(*opt_tasks, return_exceptions=True)
-
-                    for bp in best_payloads:
-                        bp2 = _apply_safety(bp, s)
-                        if strategies.risk_check(bp2) and _passes_thresholds(bp2, s):
-                            profitable.append(bp2)
-
-            except Exception as e:
-                print(f"[WARN] scan failed: {type(e).__name__}: {e}")
-                await ui_push({"type": "warn", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": block_number, "text": f"scan failed: {type(e).__name__}"})
-                await asyncio.sleep(0.5)
-                continue
-
-            if not profitable:
-                await ui_push({
-                    "type": "scan",
-                    "time": datetime.utcnow().strftime("%H:%M:%S"),
-                    "block": block_number,
-                    "candidates": int(candidates_count),
-                    "profitable": 0,
-                    "best_profit": 0.0,
-                    "text": f"Scanned {int(finished_count)}/{int(candidates_count)} routes | profitable=0 | mode={s.scan_mode}",
-                })
-                continue
-
-            best_profit = max((float(p.get("profit_adj", p.get("profit", 0.0))) for p in profitable), default=0.0)
-            await ui_push({
-                "type": "scan",
-                "time": datetime.utcnow().strftime("%H:%M:%S"),
-                "block": block_number,
-                "candidates": int(candidates_count),
-                "profitable": len(profitable),
-                "best_profit": float(best_profit),
-                "text": f"Scanned {int(finished_count)}/{int(candidates_count)} routes | profitable={len(profitable)} | best={best_profit:.6f} | mode={s.scan_mode}",
-            })
-
-            for payload in profitable:
-                await simulate(payload, block_number)
-
             log(iteration, profitable, block_number)
 
     finally:

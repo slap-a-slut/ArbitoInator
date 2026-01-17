@@ -1,7 +1,25 @@
 # bot/config.py
-TEST_PRIVATE_KEY = "0x59c6995e998f97a5a0044966f0945381f1a9c6b2d2f44f992a76aef1b1f0f93b"
+# NOTE:
+# Do not hardcode private keys in the repo. If/when you move to execution mode,
+# provide a key via env var (e.g. PRIVATE_KEY) and keep it out of git.
 
+# Primary RPC (kept for backwards compatibility)
 RPC_URL = "https://rpc.flashbots.net"
+
+# Optional failover list. If env RPC_URLS is set, it takes precedence.
+RPC_URLS = [
+    "https://rpc.flashbots.net",
+    "https://cloudflare-eth.com",
+    "https://eth.llamarpc.com",
+]
+
+# Optional pool (used when RPC_URLS is provided via config/env/UI)
+# Keep a few free endpoints for fallback; users can override in bot_config.json.
+RPC_URLS = [
+    "https://rpc.flashbots.net",
+    "https://cloudflare-eth.com",
+    "https://eth.llamarpc.com",
+]
 
 TOKENS = {
     # Majors
