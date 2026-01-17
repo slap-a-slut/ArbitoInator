@@ -1,14 +1,26 @@
 {
-  "min_profit_pct": 0.01,
-  "min_profit_abs": 0.01,
-  "slippage_bps": 5,
+  "rpc_urls": [
+    "https://mainnet.infura.io/v3/2344765bc14348dd99fd641ebbfd2be0",
+    "https://ethereum-rpc.publicnode.com",
+    "https://ethereum.rpc.subquery.network/public",
+    "https://eth.merkle.io",
+    "https://rpc.flashbots.net/fast",
+    "https://eth.drpc.org",
+    "https://rpc.mevblocker.io/fast",
+    "https://go.getblock.us/726d918bdb9340e5a590eebe39f7beda"
+  ],
+  "min_profit_pct": 0.001,
+  "min_profit_abs": 0.001,
+  "slippage_bps": 1,
   "max_gas_gwei": null,
   "concurrency": 20,
-  "block_budget_s": 12,
+  "block_budget_s": 10,
   "scan_mode": "auto",
   "amount_presets": [
     1,
-    5
+    3,
+    5,
+    10
   ],
   "stage1_amount": 1,
   "stage1_fee_tiers": [
@@ -17,9 +29,10 @@
   ],
   "stage2_top_k": 30,
   "stage2_amount_min": 0.5,
-  "stage2_amount_max": 50,
-  "stage2_max_evals": 6,
+  "stage2_amount_max": 100,
+  "stage2_max_evals": 20,
   "rpc_timeout_stage1_s": 6,
-  "rpc_timeout_stage2_s": 10,
+  "rpc_timeout_stage2_s": 12,
+  "report_currency": "USDC",
   "verbose": false
 }
