@@ -4,15 +4,32 @@
 # provide a key via env var (e.g. PRIVATE_KEY) and keep it out of git.
 
 # Primary RPC (kept for backwards compatibility)
-RPC_URL = "https://rpc.flashbots.net"
+RPC_URL = "https://ethereum-rpc.publicnode.com"
 
 # Optional pool (used when RPC_URLS is provided via config/env/UI).
-# Keep a few free endpoints for fallback; users can override in bot_config.json.
+# Priority order: primary -> secondary -> fallback -> fallback-only.
 RPC_URLS = [
+    "https://ethereum-rpc.publicnode.com",
+    "https://go.getblock.us",
+    "https://eth.merkle.io",
     "https://rpc.flashbots.net",
-    "https://cloudflare-eth.com",
-    "https://eth.llamarpc.com",
 ]
+
+# Priority weights: higher == more preferred (more share).
+# publicnode: 3, getblock: 2, merkle: 1, flashbots: 1 (fallback).
+RPC_PRIORITY_WEIGHTS = [3.0, 2.0, 1.0, 1.0]
+
+# Endpoints that should be used only when others are saturated/unavailable.
+RPC_FALLBACK_ONLY = ["rpc.flashbots.net"]
+
+# RPC timeouts (seconds). All RPC calls are clamped to this range.
+RPC_TIMEOUT_MIN_S = 2.0
+RPC_TIMEOUT_MAX_S = 4.0
+RPC_DEFAULT_TIMEOUT_S = 3.0
+
+# Circuit breaker: N consecutive errors -> open for cooldown.
+RPC_CB_THRESHOLD = 5
+RPC_CB_COOLDOWN_S = 30.0
 
 TOKENS = {
     # Majors

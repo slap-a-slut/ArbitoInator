@@ -1,13 +1,9 @@
 {
   "rpc_urls": [
-    "https://mainnet.infura.io/v3/2344765bc14348dd99fd641ebbfd2be0",
     "https://ethereum-rpc.publicnode.com",
-    "https://ethereum.rpc.subquery.network/public",
+    "https://go.getblock.us",
     "https://eth.merkle.io",
-    "https://rpc.flashbots.net/fast",
-    "https://eth.drpc.org",
-    "https://rpc.mevblocker.io/fast",
-    "https://go.getblock.us/726d918bdb9340e5a590eebe39f7beda"
+    "https://rpc.flashbots.net"
   ],
   "dexes": [
     "univ3",
@@ -15,11 +11,11 @@
     "sushiswap"
   ],
   "min_profit_pct": 0.002,
-  "min_profit_abs": 0.1,
-  "slippage_bps": 10,
+  "min_profit_abs": 0.01,
+  "slippage_bps": 5,
   "max_gas_gwei": null,
   "concurrency": 16,
-  "block_budget_s": 10,
+  "block_budget_s": 12,
   "scan_mode": "auto",
   "amount_presets": [
     10,

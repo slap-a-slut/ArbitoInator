@@ -14,13 +14,29 @@ from web3 import Web3
 from bot import config
 
 
+def _normalize_url(url: str) -> str:
+    u = str(url).strip()
+    if not u:
+        return u
+    if "://" not in u:
+        u = "https://" + u
+    return u
+
+
+def _url_host(url: str) -> str:
+    u = _normalize_url(url).lower()
+    if "://" in u:
+        u = u.split("://", 1)[1]
+    return u.split("/", 1)[0]
+
+
 def _split_urls(raw: Optional[str]) -> List[str]:
     if not raw:
         return []
     # Accept comma or newline separated lists.
     parts: List[str] = []
     for chunk in str(raw).replace("\n", ",").split(","):
-        u = str(chunk).strip()
+        u = _normalize_url(chunk)
         if u:
             parts.append(u)
     return parts
@@ -38,14 +54,14 @@ def get_rpc_urls() -> List[str]:
 
     urls: List[str] = []
     urls.extend(_split_urls(os.getenv("RPC_URLS")))
-    urls.extend([str(u).strip() for u in (getattr(config, "RPC_URLS", []) or []) if str(u).strip()])
+    urls.extend([_normalize_url(u) for u in (getattr(config, "RPC_URLS", []) or []) if str(u).strip()])
 
     single = os.getenv("RPC_URL")
     if single:
-        urls.append(single.strip())
+        urls.append(_normalize_url(single))
 
     if not urls:
-        urls = [config.RPC_URL]
+        urls = [_normalize_url(config.RPC_URL)]
 
     # De-dupe while preserving order
     out: List[str] = []
@@ -56,6 +72,17 @@ def get_rpc_urls() -> List[str]:
         seen.add(u)
         out.append(u)
     return out
+
+
+def _normalize_weights(weights: Optional[Sequence[float]], n: int) -> List[float]:
+    if not weights:
+        return [1.0 for _ in range(n)]
+    out = [float(w) for w in weights if w is not None]
+    if not out:
+        return [1.0 for _ in range(n)]
+    if len(out) < n:
+        out.extend([out[-1]] * (n - len(out)))
+    return out[:n]
 
 
 class AsyncRPC:
@@ -70,7 +97,7 @@ class AsyncRPC:
         self,
         url: str,
         *,
-        default_timeout_s: float = 12.0,
+        default_timeout_s: float = 3.0,
         max_retries: int = 4,
         backoff_base_s: float = 0.35,
     ):
@@ -126,6 +153,11 @@ class AsyncRPC:
 
         session = await self._get_session()
         to_s = float(timeout_s) if timeout_s is not None else self.default_timeout_s
+        min_t = float(getattr(config, "RPC_TIMEOUT_MIN_S", 2.0))
+        max_t = float(getattr(config, "RPC_TIMEOUT_MAX_S", 4.0))
+        if max_t < min_t:
+            max_t = min_t
+        to_s = max(min_t, min(max_t, to_s))
         last_err: Optional[str] = None
 
         async with self._stats_lock:
@@ -266,20 +298,43 @@ class RPCPool:
         self,
         urls: Sequence[str],
         *,
-        default_timeout_s: float = 12.0,
-        max_retries_per_call: int = 1,
+        default_timeout_s: Optional[float] = None,
+        max_retries_per_call: int = 0,
         per_rpc_max_inflight: int = 10,
         ewma_alpha: float = 0.20,
+        priority_weights: Optional[Sequence[float]] = None,
+        fallback_only: Optional[Sequence[str]] = None,
+        cb_threshold: Optional[int] = None,
+        cb_cooldown_s: Optional[float] = None,
     ):
-        cleaned = [str(u).strip() for u in (urls or []) if str(u).strip()]
+        if default_timeout_s is None:
+            default_timeout_s = float(getattr(config, "RPC_DEFAULT_TIMEOUT_S", 3.0))
+        cleaned = [_normalize_url(u) for u in (urls or []) if str(u).strip()]
         if not cleaned:
             raise ValueError("RPCPool requires at least one url")
 
         self.urls: List[str] = cleaned
-        self._clients = [AsyncRPC(u, default_timeout_s=default_timeout_s) for u in self.urls]
+        self._clients = [AsyncRPC(u, default_timeout_s=default_timeout_s, max_retries=0) for u in self.urls]
 
         # Per-endpoint concurrency guard (prevents a single RPC from being flooded)
         self._sems: List[asyncio.Semaphore] = [asyncio.Semaphore(max(1, int(per_rpc_max_inflight))) for _ in self._clients]
+        self._max_inflight: List[int] = [max(1, int(per_rpc_max_inflight)) for _ in self._clients]
+
+        weights = priority_weights if priority_weights is not None else getattr(config, "RPC_PRIORITY_WEIGHTS", None)
+        self._priority_weights: List[float] = _normalize_weights(weights, len(self._clients))
+
+        fallback_cfg = fallback_only if fallback_only is not None else getattr(config, "RPC_FALLBACK_ONLY", None)
+        self._fallback_only: Set[int] = set()
+        if fallback_cfg:
+            fallback_hosts = {_url_host(x) for x in fallback_cfg if str(x).strip()}
+            for i, url in enumerate(self.urls):
+                if _url_host(url) in fallback_hosts:
+                    self._fallback_only.add(i)
+
+        self._cb_threshold = int(cb_threshold if cb_threshold is not None else getattr(config, "RPC_CB_THRESHOLD", 5))
+        self._cb_cooldown_s = float(cb_cooldown_s if cb_cooldown_s is not None else getattr(config, "RPC_CB_COOLDOWN_S", 30.0))
+        self._cb_fail: List[int] = [0 for _ in self._clients]
+        self._cb_open_until: List[float] = [0.0 for _ in self._clients]
 
         # Latency EWMA per endpoint (ms). Start with a modest baseline so a new RPC isn't unfairly punished.
         self._lat_ewma_ms: List[float] = [350.0 for _ in self._clients]
@@ -307,23 +362,35 @@ class RPCPool:
         ok = self._ok[idx]
         fail = self._fail[idx]
         fail_rate = float(fail) / float(ok + fail + 1)
-        # inflight dominates, then latency, then error penalty
-        return float(self._inflight[idx]) + (self._lat_ewma_ms[idx] / 250.0) + (fail_rate * 6.0)
+        # Higher weight = higher preference (more share).
+        weight = max(0.1, float(self._priority_weights[idx]))
+        return (float(self._inflight[idx]) / weight) + (self._lat_ewma_ms[idx] / 250.0) + (fail_rate * 6.0)
 
-    async def _pick_idx(self, banned: Set[int]) -> int:
+    def _is_cb_open(self, idx: int, now_s: Optional[float] = None) -> bool:
+        now = float(now_s if now_s is not None else time.time())
+        return now < float(self._cb_open_until[idx])
+
+    async def _pick_idx(self, banned: Set[int]) -> Optional[int]:
         async with self._lock:
+            now = time.time()
+            candidates = [i for i in range(len(self._clients)) if i not in banned and not self._is_cb_open(i, now)]
+            if self._fallback_only and candidates:
+                non_fallback = [i for i in candidates if i not in self._fallback_only]
+                if non_fallback:
+                    # Prefer non-fallback endpoints while they have capacity.
+                    available = [i for i in non_fallback if self._inflight[i] < self._max_inflight[i]]
+                    if available:
+                        candidates = available
+
             best_idx: Optional[int] = None
             best_val: Optional[float] = None
-            for i, _n in enumerate(self._inflight):
-                if i in banned:
-                    continue
+            for i in candidates:
                 val = self._score(i)
                 if best_val is None or val < best_val:
                     best_val = val
                     best_idx = i
             if best_idx is None:
-                # All banned: pick a random one to avoid dead-end
-                best_idx = random.randrange(len(self._clients))
+                return None
             self._inflight[best_idx] += 1
             return best_idx
 
@@ -332,19 +399,29 @@ class RPCPool:
             self._inflight[idx] = max(0, self._inflight[idx] - 1)
             if ok:
                 self._ok[idx] += 1
+                self._cb_fail[idx] = 0
+                self._cb_open_until[idx] = 0.0
             else:
                 self._fail[idx] += 1
+                self._cb_fail[idx] += 1
+                if self._cb_threshold > 0 and self._cb_fail[idx] >= self._cb_threshold:
+                    self._cb_open_until[idx] = time.time() + float(self._cb_cooldown_s)
+                    self._cb_fail[idx] = 0
 
     def stats(self) -> List[Dict[str, Any]]:
         """Return per-RPC counters."""
         out: List[Dict[str, Any]] = []
         for i, url in enumerate(self.urls):
+            cb_open = self._is_cb_open(i)
             out.append({
                 "url": url,
                 "inflight": self._inflight[i],
                 "ok": self._ok[i],
                 "fail": self._fail[i],
                 "lat_ms": round(float(self._lat_ewma_ms[i]), 1),
+                "weight": float(self._priority_weights[i]),
+                "fallback_only": bool(i in self._fallback_only),
+                "cb_open": bool(cb_open),
             })
         return out
 
@@ -364,7 +441,11 @@ class RPCPool:
         max_total = len(self._clients) + self.max_retries_per_call
 
         while attempts < max_total:
+            if len(banned) >= len(self._clients):
+                break
             idx = await self._pick_idx(banned)
+            if idx is None:
+                break
             c = self._clients[idx]
             try:
                 # Per-endpoint concurrency guard + latency tracking

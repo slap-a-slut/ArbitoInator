@@ -16,10 +16,10 @@ const configPath = path.join(projectRoot, 'bot_config.json');
 const DEFAULT_CONFIG = {
   // RPC failover (comma/newline separated in UI; stored as list)
   rpc_urls: [
+    'https://ethereum-rpc.publicnode.com',
+    'https://go.getblock.us',
+    'https://eth.merkle.io',
     'https://rpc.flashbots.net',
-    'https://cloudflare-eth.com',
-    'https://eth.llamarpc.com',
-    'https://rpc.ankr.com/eth',
   ],
   dexes: ['univ3', 'univ2', 'sushiswap'],
 
