@@ -50,7 +50,14 @@ class UniV3:
             [token_in, token_out, fee, amount_in, 0],
         )
         data = "0x" + self._sel_v1 + params.hex()
-        raw = await self.rpc.eth_call(UNISWAP_V3_QUOTER, data, block=block, timeout_s=timeout_s)
+        # Quoter v1 intentionally reverts to return data; allow revert-data passthrough.
+        raw = await self.rpc.eth_call(
+            UNISWAP_V3_QUOTER,
+            data,
+            block=block,
+            timeout_s=timeout_s,
+            allow_revert_data=True,
+        )
         return int(raw, 16)
 
     async def quote_v2(
@@ -73,8 +80,18 @@ class UniV3:
             [(token_in, token_out, amount_in, fee, 0)],
         )
         data = "0x" + self._sel_v2 + params.hex()
-        raw = await self.rpc.eth_call(UNISWAP_V3_QUOTER_V2, data, block=block, timeout_s=timeout_s)
+        # QuoterV2 returns normally; if it reverts, treat that as an error (do NOT decode revert bytes).
+        raw = await self.rpc.eth_call(
+            UNISWAP_V3_QUOTER_V2,
+            data,
+            block=block,
+            timeout_s=timeout_s,
+            allow_revert_data=False,
+        )
         blob = bytes.fromhex(raw[2:] if raw.startswith("0x") else raw)
+        # QuoterV2 should return exactly 4 words (128 bytes). If not, treat as invalid.
+        if len(blob) < 32 * 4:
+            raise RuntimeError(f"QuoterV2 returned short blob: {len(blob)} bytes")
         amount_out, _sqrt_price_after, _ticks_crossed, gas_estimate = decode(
             ["uint256", "uint160", "uint32", "uint256"], blob
         )

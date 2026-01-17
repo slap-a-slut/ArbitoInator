@@ -222,18 +222,21 @@ async def _scan_candidates(
         tasks.append(asyncio.create_task(one(c)))
 
     try:
-        for fut in asyncio.as_completed(tasks):
-            if loop.time() >= deadline_s:
-                break
-            p = await fut
-            if not p:
-                continue
-            if keep_all:
-                results.append(p)
-            else:
-                # strict profitable only (actual thresholds applied later)
-                if p.get("profit_raw", -1) > 0:
+        # Avoid asyncio.as_completed(...)+break warnings ("_wait_for_one was never awaited").
+        pending = set(tasks)
+        while pending and loop.time() < deadline_s:
+            timeout = max(0.0, float(deadline_s) - float(loop.time()))
+            done, pending = await asyncio.wait(pending, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+            for d in done:
+                p = await d
+                if not p:
+                    continue
+                if keep_all:
                     results.append(p)
+                else:
+                    # strict profitable only (actual thresholds applied later)
+                    if p.get("profit_raw", -1) > 0:
+                        results.append(p)
     finally:
         for t in tasks:
             if not t.done():
@@ -652,12 +655,16 @@ async def main() -> None:
                     opt_tasks = [asyncio.create_task(opt_one(p)) for p in topk]
                     best_payloads: List[Dict[str, Any]] = []
                     try:
-                        for fut in asyncio.as_completed(opt_tasks):
-                            if loop.time() >= deadline:
-                                break
-                            bp = await fut
-                            if bp:
-                                best_payloads.append(bp)
+                        pending = set(opt_tasks)
+                        while pending and loop.time() < deadline:
+                            timeout = max(0.0, float(deadline) - float(loop.time()))
+                            done, pending = await asyncio.wait(
+                                pending, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
+                            )
+                            for d in done:
+                                bp = await d
+                                if bp:
+                                    best_payloads.append(bp)
                     finally:
                         for t in opt_tasks:
                             if not t.done():

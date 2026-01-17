@@ -1156,6 +1156,22 @@
       // unified log
       addLog(msg);
 
+      // Reset runtime UI state (sent by UI server on /restart) to avoid showing stale RPC pool
+      if (msg.type === 'reset') {
+        blocksScanned = 0;
+        profitableHits = 0;
+        totalProfitBySym = {};
+        totalSpentBySym = {};
+        deals = [];
+        chartData = [];
+        if (rpcStatsBody) rpcStatsBody.textContent = '—';
+        renderDeals();
+        drawChart();
+        updateStats();
+        setNotice('status', msg.text || 'restarting...');
+        return;
+      }
+
       if (msg.type === 'status'){
         if (typeof msg.started_at_ms === 'number') botStartedAtMs = msg.started_at_ms;
         if (msg.started_at_ms === null) botStartedAtMs = null;
@@ -1378,9 +1394,9 @@
       setNotice('warn', 'Config save failed: ' + (saved.error || 'unknown'));
       return;
     }
-    // restart if running
-    try { await post('/stop'); } catch {}
-    const started = await post('/start');
+    // Proper restart waits for the old bot process to fully exit before starting,
+    // otherwise /start may return alreadyRunning and the new config won't apply.
+    const started = await post('/restart');
     if (started.ok) setNotice('status', 'Restarted with new config');
     else setNotice('warn', 'Restart failed: ' + (started.error || 'unknown'));
   });

@@ -239,6 +239,13 @@ class PriceScanner:
         amt_in_f = float(amount_in) / float(10**dec)
         profit_pct = (profit / amt_in_f * 100.0) if amt_in_f > 0 else 0.0
 
+        # Sanity guard: if something upstream returned garbage (e.g., revert-bytes decoded as values),
+        # profit can become astronomically large. Drop such payloads early so UI doesn't show nonsense.
+        if abs(profit_raw) > 10**30 or abs(profit_pct) > 1e9:
+            out = {"route": route, "amount_in": amount_in, "profit": -1, "profit_raw": -1}
+            self._payload_cache[cache_key] = out
+            return out
+
         payload = {
             "route": route,
             "amount_in": int(amount_in),

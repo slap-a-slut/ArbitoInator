@@ -82,6 +82,13 @@ class AsyncRPC:
         self._session: Optional[aiohttp.ClientSession] = None
         self._connector: Optional[aiohttp.TCPConnector] = None
 
+        # Lightweight stats (useful even for single-RPC mode)
+        self._stats_lock = asyncio.Lock()
+        self._inflight = 0
+        self._ok = 0
+        self._fail = 0
+        self._lat_ewma_ms = 350.0
+
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session and not self._session.closed:
             return self._session
@@ -98,86 +105,140 @@ class AsyncRPC:
             await self._connector.close()
         self._connector = None
 
-    async def call(self, method: str, params: list, *, timeout_s: Optional[float] = None) -> Any:
-        self._id += 1
-        payload = {
-            "jsonrpc": "2.0",
-            "id": self._id,
-            "method": method,
-            "params": params,
-        }
+    async def call(
+        self,
+        method: str,
+        params: list,
+        *,
+        timeout_s: Optional[float] = None,
+        allow_revert_data: bool = False,
+    ) -> Any:
+        """Perform a JSON-RPC call.
 
-        last_err: Optional[str] = None
+        IMPORTANT: Some contracts (e.g., Uniswap V3 Quoter v1) intentionally revert
+        to return data for eth_call. That revert-data pass-through must be *opt-in*
+        via allow_revert_data=True; otherwise, downstream ABI decoding can turn
+        Solidity revert payloads into absurd huge numbers.
+        """
+
+        self._id += 1
+        payload = {"jsonrpc": "2.0", "id": self._id, "method": method, "params": params}
+
         session = await self._get_session()
         to_s = float(timeout_s) if timeout_s is not None else self.default_timeout_s
+        last_err: Optional[str] = None
 
-        for attempt in range(self.max_retries + 1):
-            try:
-                async def _do():
-                    async with session.post(self.url, json=payload) as resp:
-                        # hard-fail on HTTP status; we'll classify below
-                        if resp.status >= 400:
-                            text = await resp.text()
-                            raise aiohttp.ClientResponseError(
-                                request_info=resp.request_info,
-                                history=resp.history,
-                                status=resp.status,
-                                message=text,
-                                headers=resp.headers,
-                            )
-                        return await resp.json()
+        async with self._stats_lock:
+            self._inflight += 1
 
-                data = await asyncio.wait_for(_do(), timeout=to_s)
+        try:
+            for attempt in range(self.max_retries + 1):
+                t0 = time.perf_counter()
+                try:
+                    async def _do():
+                        async with session.post(self.url, json=payload) as resp:
+                            if resp.status >= 400:
+                                text = await resp.text()
+                                raise aiohttp.ClientResponseError(
+                                    request_info=resp.request_info,
+                                    history=resp.history,
+                                    status=resp.status,
+                                    message=text,
+                                    headers=resp.headers,
+                                )
+                            return await resp.json()
 
-                if isinstance(data, dict) and "error" in data:
-                    # Many Ethereum nodes return revert data inside error.data for eth_call.
-                    # Uniswap Quoter / QuoterV2 intentionally revert to surface quote results.
-                    err = data["error"]
-                    err_data = err.get("data") if isinstance(err, dict) else None
+                    data = await asyncio.wait_for(_do(), timeout=to_s)
 
-                    # Geth-style: { data: { <txHash>: { error, return } } }
-                    if isinstance(err_data, dict):
-                        if "data" in err_data and isinstance(err_data["data"], str):
-                            return err_data["data"]
-                        if "result" in err_data and isinstance(err_data["result"], str):
-                            return err_data["result"]
-                        for _k, v in err_data.items():
-                            if isinstance(v, dict):
-                                if isinstance(v.get("return"), str):
-                                    return v["return"]
-                                if isinstance(v.get("data"), str):
-                                    return v["data"]
-                    if isinstance(err_data, str):
-                        return err_data
+                    # EWMA latency update (success path and allowed-revert path)
+                    dt_ms = (time.perf_counter() - t0) * 1000.0
+                    async with self._stats_lock:
+                        self._lat_ewma_ms = 0.8 * self._lat_ewma_ms + 0.2 * float(dt_ms)
 
-                    # Real error
-                    last_err = f"rpc_error:{err}"
-                    raise RuntimeError(last_err)
+                    if isinstance(data, dict) and "error" in data:
+                        err = data["error"]
+                        err_data = err.get("data") if isinstance(err, dict) else None
 
-                return data["result"]
+                        def _extract_revert_hex(ed: Any) -> Optional[str]:
+                            if isinstance(ed, dict):
+                                if isinstance(ed.get("data"), str):
+                                    return ed["data"]
+                                if isinstance(ed.get("result"), str):
+                                    return ed["result"]
+                                for _k, v in ed.items():
+                                    if isinstance(v, dict):
+                                        if isinstance(v.get("return"), str):
+                                            return v["return"]
+                                        if isinstance(v.get("data"), str):
+                                            return v["data"]
+                            if isinstance(ed, str):
+                                return ed
+                            return None
 
-            except asyncio.TimeoutError:
-                last_err = f"timeout({to_s}s)"
-            except aiohttp.ClientResponseError as e:
-                # Rate limit / server errors should retry
-                last_err = f"http_{e.status}"
-                if e.status not in (429, 500, 502, 503, 504):
-                    break
-            except (aiohttp.ClientError, RuntimeError, ValueError) as e:
-                last_err = f"{type(e).__name__}: {e}"
+                        revert_hex = _extract_revert_hex(err_data)
+                        if revert_hex and allow_revert_data and method == "eth_call":
+                            hx = revert_hex if revert_hex.startswith("0x") else ("0x" + revert_hex)
+                            # Guard against common Solidity error selectors.
+                            if hx.startswith("0x08c379a0") or hx.startswith("0x4e487b71"):
+                                last_err = f"revert({hx[:10]})"
+                                raise RuntimeError(last_err)
+                            async with self._stats_lock:
+                                self._ok += 1
+                            return hx
 
-            if attempt < self.max_retries:
-                # exponential backoff with jitter
-                sleep_s = (self.backoff_base_s * (2 ** attempt)) + random.random() * 0.25
-                await asyncio.sleep(sleep_s)
+                        last_err = f"rpc_error:{err}"
+                        raise RuntimeError(last_err)
 
-        raise Exception(f"RPC call failed after retries: {last_err}")
+                    async with self._stats_lock:
+                        self._ok += 1
+                    return data["result"]
 
-    async def eth_call(self, to: str, data: str, block: str = "latest", *, timeout_s: Optional[float] = None) -> str:
+                except asyncio.TimeoutError:
+                    last_err = f"timeout({to_s}s)"
+                except aiohttp.ClientResponseError as e:
+                    last_err = f"http_{e.status}"
+                    if e.status not in (429, 500, 502, 503, 504):
+                        break
+                except (aiohttp.ClientError, RuntimeError, ValueError) as e:
+                    last_err = f"{type(e).__name__}: {e}"
+
+                if attempt < self.max_retries:
+                    sleep_s = (self.backoff_base_s * (2 ** attempt)) + random.random() * 0.25
+                    await asyncio.sleep(sleep_s)
+
+            async with self._stats_lock:
+                self._fail += 1
+            raise Exception(f"RPC call failed after retries: {last_err}")
+
+        finally:
+            async with self._stats_lock:
+                self._inflight = max(0, self._inflight - 1)
+
+    def stats(self) -> List[Dict[str, Any]]:
+        return [
+            {
+                "url": self.url,
+                "inflight": self._inflight,
+                "ok": self._ok,
+                "fail": self._fail,
+                "lat_ms": round(float(self._lat_ewma_ms), 1),
+            }
+        ]
+
+    async def eth_call(
+        self,
+        to: str,
+        data: str,
+        block: str = "latest",
+        *,
+        timeout_s: Optional[float] = None,
+        allow_revert_data: bool = False,
+    ) -> str:
         return await self.call(
             "eth_call",
             [{"to": to, "data": data}, block],
             timeout_s=timeout_s,
+            allow_revert_data=allow_revert_data,
         )
 
     async def get_block_number(self, *, timeout_s: Optional[float] = None) -> int:
@@ -287,7 +348,14 @@ class RPCPool:
             })
         return out
 
-    async def call(self, method: str, params: list, *, timeout_s: Optional[float] = None) -> Any:
+    async def call(
+        self,
+        method: str,
+        params: list,
+        *,
+        timeout_s: Optional[float] = None,
+        allow_revert_data: bool = False,
+    ) -> Any:
         banned: Set[int] = set()
         attempts = 0
         last_err: Optional[Exception] = None
@@ -302,7 +370,7 @@ class RPCPool:
                 # Per-endpoint concurrency guard + latency tracking
                 async with self._sems[idx]:
                     t0 = time.perf_counter()
-                    res = await c.call(method, params, timeout_s=timeout_s)
+                    res = await c.call(method, params, timeout_s=timeout_s, allow_revert_data=allow_revert_data)
                     dt_ms = (time.perf_counter() - t0) * 1000.0
                 # EWMA update
                 self._lat_ewma_ms[idx] = (1.0 - self._ewma_alpha) * self._lat_ewma_ms[idx] + self._ewma_alpha * float(dt_ms)
@@ -317,11 +385,20 @@ class RPCPool:
 
         raise last_err or Exception("RPCPool call failed")
 
-    async def eth_call(self, to: str, data: str, block: str = "latest", *, timeout_s: Optional[float] = None) -> str:
+    async def eth_call(
+        self,
+        to: str,
+        data: str,
+        block: str = "latest",
+        *,
+        timeout_s: Optional[float] = None,
+        allow_revert_data: bool = False,
+    ) -> str:
         return await self.call(
             "eth_call",
             [{"to": to, "data": data}, block],
             timeout_s=timeout_s,
+            allow_revert_data=allow_revert_data,
         )
 
     async def get_block_number(self, *, timeout_s: Optional[float] = None) -> int:

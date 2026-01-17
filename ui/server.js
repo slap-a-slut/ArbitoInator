@@ -216,6 +216,40 @@ function stopBot() {
   }
 }
 
+// Stop and WAIT until the process fully exits (so restart applies new env/config)
+function stopBotWait(timeoutMs = 12000) {
+  return new Promise((resolve) => {
+    if (!isRunning()) return resolve({ ok: true, alreadyStopped: true });
+
+    const proc = botProc;
+    let done = false;
+
+    const finish = (out) => {
+      if (done) return;
+      done = true;
+      try { proc.removeAllListeners('close'); } catch {}
+      resolve(out);
+    };
+
+    // If already closing, just wait.
+    proc.once('close', () => finish({ ok: true }));
+
+    try {
+      proc.kill('SIGINT');
+    } catch (e) {
+      return finish({ ok: false, error: String(e) });
+    }
+
+    // Hard timeout safety: if SIGINT doesn't stop it, SIGKILL.
+    setTimeout(() => {
+      if (done) return;
+      try { proc.kill('SIGKILL'); } catch {}
+      // Give it a moment to emit close
+      setTimeout(() => finish({ ok: true, forced: true }), 750);
+    }, timeoutMs);
+  });
+}
+
 // ---------------------------------
 // HTTP server
 const server = http.createServer((req, res) => {
@@ -272,6 +306,33 @@ const server = http.createServer((req, res) => {
     const out = stopBot();
     res.writeHead(out.ok ? 200 : 500, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(out));
+    return;
+  }
+
+  // Restart (stop, wait for exit, then start with latest config)
+  if (req.method === 'POST' && req.url === '/restart') {
+    (async () => {
+      // Tell the UI to clear runtime stats immediately so users don't see stale RPC pools.
+      broadcast({ type: 'reset', time: nowTime(), block: null, text: 'Restarting (applying config)...' });
+
+      // If running, stop and wait for clean exit.
+      if (isRunning()) {
+        const stopped = await stopBotWait(12000);
+        if (!stopped.ok) return stopped;
+      }
+
+      // Start fresh (will read config + env again)
+      const started = startBot();
+      return started;
+    })()
+      .then((out) => {
+        res.writeHead(out.ok ? 200 : 500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(out));
+      })
+      .catch((e) => {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: String(e) }));
+      });
     return;
   }
 

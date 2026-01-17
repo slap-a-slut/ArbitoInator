@@ -203,3 +203,66 @@
 {"time": "2026-01-17T12:37:56.684261", "block": 24254509, "candidates": 62, "finished": 62, "profitable": 5, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
 {"time": "2026-01-17T12:38:09.077711", "block": 24254510, "candidates": 62, "finished": 62, "profitable": 4, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
 {"time": "2026-01-17T12:38:24.661014", "block": 24254511, "candidates": 62, "finished": 62, "profitable": 2, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:38:50.430109", "block": 24254510, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T12:39:51.553054", "block": 24254515, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T12:48:13.527546", "block": 24254561, "candidates": 62, "finished": 25, "profitable": 1, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:48:28.017221", "block": 24254562, "candidates": 62, "finished": 57, "profitable": 1, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:48:41.909287", "block": 24254563, "candidates": 62, "finished": 60, "profitable": 1, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:48:55.700937", "block": 24254564, "candidates": 62, "finished": 53, "profitable": 1, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:49:10.763912", "block": 24254565, "candidates": 62, "finished": 7, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T12:49:28.865407", "block": 24254566, "candidates": 62, "finished": 52, "profitable": 1, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:49:42.164004", "block": 24254568, "candidates": 62, "finished": 4, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T12:49:54.582420", "block": 24254569, "candidates": 62, "finished": 8, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T12:50:07.006548", "block": 24254570, "candidates": 62, "finished": 10, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T12:50:19.516460", "block": 24254571, "candidates": 62, "finished": 58, "profitable": 1, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:50:31.896905", "block": 24254572, "candidates": 62, "finished": 59, "profitable": 1, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:50:46.216611", "block": 24254573, "candidates": 62, "finished": 30, "profitable": 1, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:50:59.384280", "block": 24254574, "candidates": 62, "finished": 54, "profitable": 1, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:51:12.408232", "block": 24254575, "candidates": 62, "finished": 51, "profitable": 1, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:51:31.583331", "block": 24254576, "candidates": 62, "finished": 26, "profitable": 1, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:51:49.416815", "block": 24254578, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T12:52:01.041760", "block": 24254580, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T12:52:22.143514", "block": 24254581, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T12:52:34.090059", "block": 24254582, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T12:52:55.219071", "block": 24254584, "candidates": 62, "finished": 1, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T12:53:20.741521", "block": 24254585, "candidates": 62, "finished": 7, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T12:53:36.142671", "block": 24254587, "candidates": 62, "finished": 25, "profitable": 1, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:53:48.975296", "block": 24254588, "candidates": 62, "finished": 56, "profitable": 1, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:54:01.324849", "block": 24254590, "candidates": 62, "finished": 62, "profitable": 2, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:54:13.621570", "block": 24254591, "candidates": 62, "finished": 60, "profitable": 1, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:54:26.550552", "block": 24254592, "candidates": 62, "finished": 62, "profitable": 2, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:54:39.357858", "block": 24254593, "candidates": 62, "finished": 62, "profitable": 1, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:54:51.803391", "block": 24254594, "candidates": 62, "finished": 62, "profitable": 2, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:55:04.650350", "block": 24254595, "candidates": 62, "finished": 62, "profitable": 2, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:55:17.591255", "block": 24254596, "candidates": 62, "finished": 62, "profitable": 2, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:55:30.532224", "block": 24254597, "candidates": 62, "finished": 62, "profitable": 1, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:55:43.429396", "block": 24254598, "candidates": 62, "finished": 62, "profitable": 2, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:55:56.074536", "block": 24254599, "candidates": 62, "finished": 62, "profitable": 2, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:56:08.797808", "block": 24254600, "candidates": 62, "finished": 61, "profitable": 1, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:56:21.077737", "block": 24254601, "candidates": 62, "finished": 62, "profitable": 1, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:56:33.814573", "block": 24254602, "candidates": 62, "finished": 62, "profitable": 1, "best_profit": 2.2826422624173606e+233, "mode": "auto"}
+{"time": "2026-01-17T12:56:55.675413", "block": 24254603, "candidates": 62, "finished": 6, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T12:57:19.221798", "block": 24254605, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T12:57:38.455830", "block": 24254607, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T12:57:57.125097", "block": 24254609, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T12:58:30.383227", "block": 24254611, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T12:58:42.011743", "block": 24254613, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T12:58:59.435425", "block": 24254614, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T12:59:27.779776", "block": 24254616, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T12:59:48.139389", "block": 24254618, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T13:00:01.299136", "block": 24254620, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T13:00:18.270868", "block": 24254621, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T13:00:44.892876", "block": 24254622, "candidates": 62, "finished": 1, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T13:01:02.724330", "block": 24254624, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T13:01:15.221507", "block": 24254626, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T13:01:27.960278", "block": 24254627, "candidates": 62, "finished": 19, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T13:01:58.049748", "block": 24254628, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T13:02:21.457231", "block": 24254631, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T13:02:35.413227", "block": 24254632, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T13:02:48.456006", "block": 24254634, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T13:03:28.243698", "block": 24254635, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T13:03:40.100203", "block": 24254638, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T13:03:52.436197", "block": 24254639, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T13:04:13.931824", "block": 24254640, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T13:04:43.679448", "block": 24254642, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T13:04:55.990533", "block": 24254644, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
