@@ -1,5 +1,6 @@
 # bot/executor.py
 import asyncio
+from bot import config
 from bot.strategies import Strategy
 
 class Executor:
@@ -10,15 +11,21 @@ class Executor:
     def __init__(self):
         self.strategy = Strategy()
 
-    def run(self, route, amount_in: int, quote_out: int, gas_cost: int = 0):
+    def run(self, route, amount_in: int, amount_out: int, gas_cost: int = 0):
         """
         route: tuple токенов
-        amount_in: входной токен
-        quote_out: выход по quoter
-        gas_cost: симулируемый gas
+        amount_in: входной токен (минимальные единицы token_in)
+        amount_out: выходной токен (минимальные единицы token_in)
+        gas_cost: симулируемый gas (в минимальных единицах token_in)
         """
-        profit = self.strategy.calc_profit(amount_in, quote_out, gas_cost)
-        return profit
+        profit_raw = self.strategy.calc_profit(amount_in, amount_out, gas_cost)
+        dec = int(config.token_decimals(route[0] if route else ""))
+        profit = float(profit_raw) / float(10 ** dec) if dec >= 0 else float(profit_raw)
+        return {
+            "profit_raw": int(profit_raw),
+            "profit": float(profit),
+            "token_symbol": config.token_symbol(route[0] if route else ""),
+        }
 
 # ----------------------------
 # Заглушка для fork_test.py
@@ -54,9 +61,8 @@ async def send_transaction(w3, tx, account):
 if __name__ == "__main__":
     executor = Executor()
     amount_in = 1_000_000  # USDC 1.0 (6 decimals)
-    quote_out = 425000000000000  # 0.000425 WETH в wei
-    gas_sim = 1000
-    profit = executor.run(("USDC", "WETH", "USDC"), amount_in, quote_out, gas_sim)
-    print(f"[Executor] Симулированный профит: {profit}")
-
+    amount_out = 1_001_500  # USDC 1.0015 (6 decimals)
+    gas_sim = 500
+    result = executor.run((config.TOKENS["USDC"], config.TOKENS["WETH"], config.TOKENS["USDC"]), amount_in, amount_out, gas_sim)
+    print(f"[Executor] Симулированный профит: {result['profit']:.6f} {result['token_symbol']}")
 

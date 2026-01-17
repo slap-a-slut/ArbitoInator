@@ -17,22 +17,23 @@ class Strategy:
     def __init__(self, bases=None):
         # Bases to close the cycle on (profits computed in base token)
         if bases is None:
-            self.bases = [config.TOKENS["USDC"], config.TOKENS["USDT"], config.TOKENS["DAI"]]
+            bases = [config.TOKENS[s] for s in getattr(config, "STRATEGY_BASES", ["USDC", "USDT", "DAI"])]
         else:
-            self.bases = list(bases)
+            bases = list(bases)
+        self.bases = [config.token_address(t) for t in bases]
 
         # Liquid universe
-        self.universe = [
-            config.TOKENS["WETH"],
-            config.TOKENS["WBTC"],
-            config.TOKENS["LINK"],
-            config.TOKENS["UNI"],
-            config.TOKENS["AAVE"],
-            config.TOKENS["LDO"],
-        ]
+        universe_syms = getattr(config, "STRATEGY_UNIVERSE", ["WETH", "WBTC", "LINK", "UNI", "AAVE", "LDO"])
+        self.universe = [config.token_address(config.TOKENS[s]) for s in universe_syms if s in config.TOKENS]
 
         # Hubs usually give more paths
-        self.hubs = [config.TOKENS["WETH"], config.TOKENS["USDC"], config.TOKENS["USDT"], config.TOKENS["DAI"]]
+        hub_syms = getattr(config, "STRATEGY_HUBS", ["WETH", "USDC", "USDT", "DAI"])
+        self.hubs = [config.token_address(config.TOKENS[s]) for s in hub_syms if s in config.TOKENS]
+
+    @staticmethod
+    def calc_profit(amount_in: int, amount_out: int, gas_cost: int = 0) -> int:
+        """Return profit in smallest units of the input token."""
+        return int(amount_out) - int(amount_in) - int(gas_cost)
 
     def get_routes(self) -> List[Tuple[str, ...]]:
         routes: List[Tuple[str, ...]] = []

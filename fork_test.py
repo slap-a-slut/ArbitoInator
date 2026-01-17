@@ -49,6 +49,7 @@ HIT_LOG = LOG_DIR / "hits.jsonl"
 class Settings:
     # RPC (list for failover)
     rpc_urls: Tuple[str, ...] = ()
+    dexes: Tuple[str, ...] = ()
 
     # Mode
     scan_mode: str = "auto"  # auto|fixed
@@ -118,6 +119,14 @@ def _load_settings() -> Settings:
         s.stage1_fee_tiers = tuple(int(x) for x in (raw.get("stage1_fee_tiers") or s.stage1_fee_tiers))
     except Exception:
         pass
+    try:
+        dx = raw.get("dexes")
+        if isinstance(dx, (list, tuple)):
+            s.dexes = tuple(str(x).strip().lower() for x in dx if str(x).strip())
+        elif isinstance(dx, str):
+            s.dexes = tuple(x.strip().lower() for x in dx.replace("\n", ",").split(",") if x.strip())
+    except Exception:
+        pass
 
     # normalize report currency
     try:
@@ -132,11 +141,7 @@ def _load_settings() -> Settings:
 
 
 def _decimals_by_token(addr: str) -> int:
-    a = str(addr).lower()
-    for sym, v in config.TOKENS.items():
-        if str(v).lower() == a:
-            return int(config.TOKEN_DECIMALS.get(sym, 18))
-    return 18
+    return int(config.token_decimals(addr))
 
 
 def _scale_amount(token_in: str, amount_units: float) -> int:
@@ -144,18 +149,25 @@ def _scale_amount(token_in: str, amount_units: float) -> int:
     return int(float(amount_units) * (10 ** dec))
 
 
-def _route_pretty(route: Tuple[str, ...]) -> str:
-    out = []
-    for addr in route:
-        sym = None
-        a = str(addr).lower()
-        for s, v in config.TOKENS.items():
-            if str(v).lower() == a:
-                sym = s
-                break
-        out.append(sym or (str(addr)[:6] + "..." + str(addr)[-4:]))
-    # Use plain ASCII arrow to keep UI table alignment predictable.
-    return " -> ".join(out)
+def _route_pretty(
+    route: Tuple[str, ...],
+    route_dex: Optional[Tuple[str, ...]] = None,
+    route_fee_bps: Optional[Tuple[int, ...]] = None,
+) -> str:
+    parts: List[str] = []
+    for i, addr in enumerate(route):
+        parts.append(config.token_symbol(addr))
+        if route_dex and i < len(route_dex):
+            dex = str(route_dex[i])
+            fee_bps = None
+            if route_fee_bps and i < len(route_fee_bps):
+                fee_bps = route_fee_bps[i]
+            if fee_bps is not None:
+                fee_pct = float(fee_bps) / 100.0
+                parts.append(f"-[{dex} {fee_pct:.2f}%]->")
+            else:
+                parts.append(f"-[{dex}]->")
+    return " ".join(parts)
 
 
 async def wait_for_new_block(last_block: int) -> int:
@@ -414,7 +426,11 @@ async def simulate(payload: Dict[str, Any], block_number: int) -> None:
 
     profit_pct = payload.get("profit_pct", None)
     token_sym = payload.get("token_in_symbol", "")
-    route_str = _route_pretty(tuple(payload.get("route") or ()))
+    route_str = _route_pretty(
+        tuple(payload.get("route") or ()),
+        payload.get("route_dex"),
+        payload.get("route_fee_bps"),
+    )
 
     roi_pct = None
     try:
@@ -504,7 +520,10 @@ def log(iteration: int, payloads: List[Dict[str, Any]], block_number: int) -> No
     now = datetime.utcnow().strftime("%H:%M:%S")
     print(f"[{now}] Block {block_number} | Iteration {iteration} | Profitable payloads: {len(payloads)}")
     for p in payloads:
-        print(f"  Route: {_route_pretty(tuple(p.get('route')))} | Profit: {p.get('profit',0):.6f}")
+        print(
+            f"  Route: {_route_pretty(tuple(p.get('route')), p.get('route_dex'), p.get('route_fee_bps'))} "
+            f"| Profit: {p.get('profit',0):.6f}"
+        )
 
 
 async def main() -> None:
@@ -525,7 +544,8 @@ async def main() -> None:
         rpc_urls = [os.getenv("RPC_URL", config.RPC_URL)]
 
     w3 = get_provider(rpc_urls)
-    PS = scanner.PriceScanner(rpc_urls=rpc_urls)
+    dexes = list(s0.dexes) if getattr(s0, "dexes", None) else None
+    PS = scanner.PriceScanner(rpc_urls=rpc_urls, dexes=dexes)
 
     last_block = w3.eth.block_number
     print(f"[RPC] connected={w3.is_connected()} | block={last_block} | urls={len(rpc_urls)}")

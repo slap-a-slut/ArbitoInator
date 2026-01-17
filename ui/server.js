@@ -21,6 +21,7 @@ const DEFAULT_CONFIG = {
     'https://eth.llamarpc.com',
     'https://rpc.ankr.com/eth',
   ],
+  dexes: ['univ3', 'univ2', 'sushiswap'],
 
   // thresholds
   min_profit_pct: 0.05,
@@ -90,6 +91,15 @@ function writeConfig(cfg) {
       .replace(/\n/g, ',')
       .split(',')
       .map((x) => String(x).trim())
+      .filter((x) => x.length > 0);
+  }
+
+  // Parse dexes from comma list into array
+  if (typeof cleaned.dexes === 'string') {
+    cleaned.dexes = cleaned.dexes
+      .replace(/\n/g, ',')
+      .split(',')
+      .map((x) => String(x).trim().toLowerCase())
       .filter((x) => x.length > 0);
   }
 

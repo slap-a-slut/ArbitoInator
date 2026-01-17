@@ -24,8 +24,15 @@
 	      --blue: #6a5cff;
 	      --violet: #a100ff;
 	      --red: #ff2b51;
-	      --shadow: 0 20px 70px rgba(0,0,0,.72);
+      --shadow: 0 20px 70px rgba(0,0,0,.72);
       --radius: 22px;
+
+      /* Deals table columns */
+      --col-time: 74px;
+      --col-route: minmax(220px, 1fr);
+      --col-spent: 120px;
+      --col-roi: 90px;
+      --col-profit: 130px;
     }
 
     *{ box-sizing: border-box; }
@@ -388,7 +395,7 @@
       border-radius: 18px;
       border: 1px solid rgba(255,255,255,0.10);
       background: rgba(0,0,0,0.18);
-      overflow:hidden;
+      overflow: auto;
     }
 
     /* Profit rows live inside the left operator stack; scrolling is handled by .dealsBody */
@@ -415,16 +422,45 @@
     }
     .row{
       display:grid;
-	      grid-template-columns: 74px 1fr 120px 90px 130px;
+      grid-template-columns: var(--col-time) var(--col-route) var(--col-spent) var(--col-roi) var(--col-profit);
       gap: 10px;
       padding: 10px 12px;
       border-bottom: 1px solid rgba(255,255,255,0.08);
       align-items:center;
       font-size: 13px;
     }
+    .row > div{ min-width: 0; }
     .row:last-child{ border-bottom: none; }
     .row .muted{ color: var(--muted); font-size: 12px; }
     .row .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+    .row.header{
+      position: relative;
+      user-select: none;
+    }
+    .row.header .col{
+      position: relative;
+      padding-right: 10px;
+    }
+    .colResizer{
+      position: absolute;
+      top: -6px;
+      right: -8px;
+      width: 14px;
+      height: calc(100% + 12px);
+      cursor: col-resize;
+      touch-action: none;
+      z-index: 2;
+    }
+    .colResizer::after{
+      content:"";
+      position: absolute;
+      top: 8px;
+      bottom: 8px;
+      left: 6px;
+      width: 1px;
+      background: rgba(255,255,255,0.12);
+    }
 
     /* Route cell: long strings should not break the layout */
     .routeCell{ min-width: 0; }
@@ -449,6 +485,15 @@
       background: rgba(0,0,0,0.22);
       border: 1px solid rgba(255,255,255,0.10);
       white-space: pre;
+      overflow-x: auto;
+    }
+
+    #rpcStatsBody{
+      overflow-x: auto;
+      white-space: nowrap;
+      display: block;
+      padding-bottom: 2px;
+      scrollbar-width: thin;
     }
 
     /* Settings */
@@ -540,13 +585,13 @@
               <h3>Deals</h3>
               <span class="badge" id="dealsHint">latest</span>
             </div>
-            <div class="table" style="margin: 0 8px 8px;">
-              <div class="row" style="background: rgba(255,255,255,0.04); font-weight:800; color: rgba(255,255,255,0.75);">
-                <div class="muted">Time</div>
-                <div class="muted">Route</div>
-                <div class="muted" style="text-align:right;">Spent</div>
-                <div class="muted" style="text-align:right;">ROI</div>
-                <div class="muted" style="text-align:right;">Profit</div>
+            <div class="table" id="dealsTable" style="margin: 0 8px 8px;">
+              <div class="row header" style="background: rgba(255,255,255,0.04); font-weight:800; color: rgba(255,255,255,0.75);">
+                <div class="col col-time muted">Time<span class="colResizer" data-col="time"></span></div>
+                <div class="col col-route muted">Route<span class="colResizer" data-col="route"></span></div>
+                <div class="col col-spent muted" style="text-align:right;">Spent<span class="colResizer" data-col="spent"></span></div>
+                <div class="col col-roi muted" style="text-align:right;">ROI<span class="colResizer" data-col="roi"></span></div>
+                <div class="col col-profit muted" style="text-align:right;">Profit</div>
               </div>
               <div class="dealsBody" id="profitRows"></div>
             </div>
@@ -614,6 +659,11 @@
               <label for="cfgRpcUrls">RPC URLs (parallel pool)</label>
               <textarea id="cfgRpcUrls" rows="3" class="mono" placeholder="https://rpc1\nhttps://rpc2\n..." style="width:100%; resize:vertical;"></textarea>
               <small>One per line (or comma-separated). The bot will spread load across all URLs and retry on failures.</small>
+            </div>
+            <div class="field" style="grid-column: 1 / -1;">
+              <label for="cfgDexes">DEX adapters</label>
+              <input id="cfgDexes" type="text" class="mono" placeholder="univ3,univ2,sushiswap" />
+              <small>Comma list. Order matters only for display; best quote is chosen per hop.</small>
             </div>
             <div class="field">
               <label for="cfgReportCurrency">Reporting currency</label>
@@ -763,6 +813,7 @@
 
   // Settings elements
   const cfgRpcUrls = document.getElementById('cfgRpcUrls');
+  const cfgDexes = document.getElementById('cfgDexes');
   const cfgReportCurrency = document.getElementById('cfgReportCurrency');
   const cfgMinPct = document.getElementById('cfgMinPct');
   const cfgMinAbs = document.getElementById('cfgMinAbs');
@@ -780,6 +831,7 @@
   const cfgT2 = document.getElementById('cfgT2');
   const saveCfgBtn = document.getElementById('saveCfgBtn');
   const applyCfgBtn = document.getElementById('applyCfgBtn');
+  const dealsTable = document.getElementById('dealsTable');
 
   // -----------------------------
   // Formatting helpers (avoid scientific notation in UI)
@@ -1327,6 +1379,7 @@
     }
     return {
       rpc_urls: String(cfgRpcUrls?.value || '').trim(),
+      dexes: String(cfgDexes?.value || '').trim(),
       report_currency: String(cfgReportCurrency?.value || 'USDC').trim().toUpperCase(),
       min_profit_pct: Number(cfgMinPct.value || 0),
       min_profit_abs: Number(cfgMinAbs.value || 0),
@@ -1354,6 +1407,10 @@
       const ru = cfg.rpc_urls;
       cfgRpcUrls.value = Array.isArray(ru) ? ru.join('\n') : String(ru || '');
     }
+    if (cfgDexes) {
+      const dx = cfg.dexes;
+      cfgDexes.value = Array.isArray(dx) ? dx.join(',') : String(dx || '');
+    }
     if (cfgReportCurrency) {
       const rc = String(cfg.report_currency || 'USDC').trim().toUpperCase();
       cfgReportCurrency.value = (rc === 'USDT') ? 'USDT' : 'USDC';
@@ -1377,6 +1434,38 @@
     cfgEvals.value = String(cfg.stage2_max_evals ?? 6);
     cfgT1.value = String(cfg.rpc_timeout_stage1_s ?? 6);
     cfgT2.value = String(cfg.rpc_timeout_stage2_s ?? 10);
+  }
+
+  function initColumnResizers(){
+    if (!dealsTable) return;
+    const minW = { time: 60, route: 180, spent: 90, roi: 70, profit: 90 };
+    const handles = dealsTable.querySelectorAll('.colResizer');
+    handles.forEach((handle) => {
+      handle.addEventListener('dblclick', () => {
+        const col = handle.dataset.col;
+        if (!col) return;
+        dealsTable.style.removeProperty(`--col-${col}`);
+      });
+      handle.addEventListener('pointerdown', (e) => {
+        const col = handle.dataset.col;
+        if (!col) return;
+        const colEl = dealsTable.querySelector(`.col-${col}`);
+        const startX = e.clientX;
+        const startWidth = colEl ? colEl.getBoundingClientRect().width : 100;
+
+        const onMove = (ev) => {
+          const next = Math.max(minW[col] || 80, startWidth + (ev.clientX - startX));
+          dealsTable.style.setProperty(`--col-${col}`, `${Math.round(next)}px`);
+        };
+        const onUp = () => {
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        e.preventDefault();
+      });
+    });
   }
 
   // Settings buttons
@@ -1424,6 +1513,7 @@
   // -----------------------------
   // Init
   drawChart();
+  initColumnResizers();
   // Load settings once on page init
   getConfig().then((c)=>{
     if (c && c.ok) fillForm(c.config || {});

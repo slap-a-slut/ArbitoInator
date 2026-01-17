@@ -9,6 +9,11 @@
     "https://rpc.mevblocker.io/fast",
     "https://go.getblock.us/726d918bdb9340e5a590eebe39f7beda"
   ],
+  "dexes": [
+    "univ3",
+    "univ2",
+    "sushiswap"
+  ],
   "min_profit_pct": 0.001,
   "min_profit_abs": 0.001,
   "slippage_bps": 1,

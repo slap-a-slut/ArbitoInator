@@ -6,13 +6,11 @@
 
 ## ⚡ Что умеет
 
-- Берёт **реальные цены с ETH mainnet (Uniswap V3)**  
-- Симулирует арбитражные маршруты (USDC → WETH → USDC)  
-- Проверяет **MEV угрозы** (sandwich/frontrun)  
-- Проверяет **slippage**  
-- Проверяет **mini-reorg stability**  
-- Симулирует **pending mempool tx**  
-- Собирает **bundle и считает суммарный профит**  
+- Берёт **реальные котировки с ETH mainnet (Uniswap V3 + V2-like DEXes)**  
+- Сканирует N-hop маршруты (2-3 hop) с расчётом профита и газа  
+- Использует пул RPC + кэши на блок, чтобы не зависать  
+- Пушит события в UI по WebSocket и пишет JSONL логи  
+- Имеет игрушечные модули MEV/slippage/reorg/mempool/bundler (эвристики)  
 
 > Полностью безопасно, деньги не тратятся.
 
@@ -21,22 +19,28 @@
 ## 🧩 Структура проекта
 
 ```
-arb-bot/
+ArbitoInator/
   contracts/        # контракты (ArbExecutor/Interfaces)
   bot/
-    scanner.py      # fetch live prices
-    strategies.py   # маршруты и profit
-    executor.py     # симулятор swap/profit
-    mempool.py      # pending tx генератор
-    bundler.py      # bundle simulator
-    dex/            # UniV3/Curve/Balancer adapters
-    risk/           # MEV, slippage, reorg
-    config.py       # токены и RPC
+    scanner.py      # live quotes + profit calc
+    strategies.py   # генерация маршрутов
+    executor.py     # заглушки транзакций для fork_test
+    mempool.py      # pending tx генератор (toy)
+    bundler.py      # bundle simulator (toy)
+    dex/            # UniV3 + UniV2-like adapters
+    risk/           # MEV/slippage/reorg (toy)
+    config.py       # токены + RPC defaults
     utils.py        # вспомогалки
-  sim/              # тесты
+  sim/              # тесты/демо
   infra/
-    rpc.py          # async RPC client
+    rpc.py          # async RPC client + pool + web3 helper
   deploy/           # build/deploy скрипты
+  ui/
+    server.js       # web UI + bot runner
+    index.html
+  fork_test.py      # основной симулятор (real quotes)
+  ui_notify.py      # Python -> UI push bridge
+  bot_config.json   # runtime config (UI/CLI)
   README.md
   requirements.txt
 ```
@@ -49,7 +53,7 @@ arb-bot/
 
 ```bash
 git clone <your-repo>
-cd arb-bot
+cd ArbitoInator
 ```
 
 2. Создаем виртуальное окружение
@@ -70,26 +74,30 @@ pip install -r requirements.txt
 
 ## 🚀 Быстрый запуск демо
 
+CLI (headless, только консоль):
 ```bash
-python bot/run_bundle_demo.py
+python fork_test.py
 ```
 
-Вывод:
-
+UI (веб-панель + запуск бота из UI):
+```bash
+node ui/server.js
 ```
-[Mempool] new tx ...
-[Demo] Simulated profit: 0.000425 USDC
-[BundleSimulator] Total TXs: 1
-[BundleSimulator] Simulated Total Profit: 0.000425 USDC
-```
+Открой `http://localhost:8080`.
 
 ---
 
 ## 🔧 Настройки
 
+- `bot_config.json`  
+  - RPC_URLS / rpc_urls → список RPC для failover  
+  - dexes → какие DEX адаптеры использовать (univ3, univ2, sushiswap)  
+  - thresholds, лимиты по газу, режимы scan_mode, etc.  
+  - report_currency → базовая валюта в UI (USDC/USDT)  
+
 - `bot/config.py`  
   - RPC_URL → ETH mainnet публичный RPC  
-  - TOKENS → поддерживаемые токены (USDC, WETH)  
+  - TOKENS → поддерживаемые токены (USDC, WETH, ...)  
   - UNISWAP_V3_QUOTER → Quoter адрес  
 
 - `bot/risk` → настройки slippage и reorg
@@ -98,7 +106,7 @@ python bot/run_bundle_demo.py
 
 ## 📈 Дальнейшие шаги
 
-- Добавить **triangular routes**  
 - Подключить **Curve и Balancer adapters**  
-- Расширить **MEV heuristics**  
-- Добавить **UI / визуализацию профита**
+- Расширить **MEV heuristics** и симуляцию mempool  
+- Добавить **детерминированный бэктест** (fork + replay)  
+- Подготовить **execution pipeline** для приватных бандлов  

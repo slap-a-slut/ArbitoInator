@@ -1,5 +1,6 @@
 import asyncio
 import random
+from bot import config
 
 # ----------------------------
 # Имитация получения котировки swap
@@ -17,8 +18,10 @@ async def simulate_swap(from_token: str, to_token: str, amount_in: int):
         "WETH": 1_000_000_000_000_000_000,  # 1 WETH = 1e18 wei
     }
 
-    from_price = token_prices.get(from_token, 1)
-    to_price = token_prices.get(to_token, 1)
+    from_sym = config.token_symbol(from_token)
+    to_sym = config.token_symbol(to_token)
+    from_price = token_prices.get(from_sym, 1)
+    to_price = token_prices.get(to_sym, 1)
 
     # Считаем базовый выход (без слippage)
     amount_out = amount_in * from_price / to_price
