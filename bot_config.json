@@ -1,21 +1,26 @@
 {
   "rpc_urls": [
+    "https://go.getblock.us/726d918bdb9340e5a590eebe39f7beda",
     "https://ethereum-rpc.publicnode.com",
     "https://go.getblock.us",
     "https://eth.merkle.io",
-    "https://rpc.flashbots.net"
+    "https://rpc.flashbots.net",
+    "https://cloudflare-eth.com",
+    "https://rpc.ankr.com/eth",
+    "https://eth.llamarpc.com"
   ],
   "dexes": [
     "univ3",
     "univ2",
     "sushiswap"
   ],
-  "min_profit_pct": 0.002,
-  "min_profit_abs": 0.01,
-  "slippage_bps": 5,
+  "min_profit_pct": 0.0,
+  "min_profit_abs": 0.0,
+  "slippage_bps": 0,
+  "mev_buffer_bps": 0,
   "max_gas_gwei": null,
-  "concurrency": 16,
-  "block_budget_s": 12,
+  "concurrency": 32,
+  "block_budget_s": 30,
   "scan_mode": "auto",
   "amount_presets": [
     10,
@@ -26,15 +31,18 @@
   ],
   "stage1_amount": 1,
   "stage1_fee_tiers": [
+    100,
     500,
     3000
   ],
-  "stage2_top_k": 100,
-  "stage2_amount_min": 10,
-  "stage2_amount_max": 10000,
-  "stage2_max_evals": 50,
-  "rpc_timeout_stage1_s": 6,
-  "rpc_timeout_stage2_s": 12,
+  "stage2_top_k": 150,
+  "stage2_amount_min": 1,
+  "stage2_amount_max": 3000,
+  "stage2_max_evals": 18,
+  "rpc_timeout_stage1_s": 4,
+  "rpc_timeout_stage2_s": 6,
+  "v2_min_reserve_ratio": 0,
+  "v2_max_price_impact_bps": 0,
   "report_currency": "USDC",
   "verbose": false
 }

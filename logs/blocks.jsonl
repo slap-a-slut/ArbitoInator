@@ -495,3 +495,816 @@
 {"time": "2026-01-17T20:53:41.273859", "block": 24256982, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
 {"time": "2026-01-17T20:53:57.194206", "block": 24256983, "candidates": 62, "finished": 6, "profitable": 0, "mode": "auto"}
 {"time": "2026-01-17T20:54:04.158577", "block": 24256984, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:01:51.120287", "block": 24257022, "candidates": 62, "finished": 3, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:02:03.306197", "block": 24257023, "candidates": 62, "finished": 33, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:02:15.490821", "block": 24257024, "candidates": 62, "finished": 50, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:02:28.185542", "block": 24257025, "candidates": 62, "finished": 13, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:02:35.845385", "block": 24257026, "candidates": 62, "finished": 61, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:02:38.055576", "block": 24257027, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:02:59.775435", "block": 24257028, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:03:11.345982", "block": 24257029, "candidates": 62, "finished": 60, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:03:14.382083", "block": 24257030, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:03:27.617370", "block": 24257031, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:03:49.340893", "block": 24257032, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:03:59.696704", "block": 24257033, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:04:00.683353", "block": 24257034, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:04:16.009666", "block": 24257035, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:04:37.139340", "block": 24257036, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:04:46.352819", "block": 24257037, "candidates": 62, "finished": 61, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:04:51.044145", "block": 24257038, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:05:01.900147", "block": 24257039, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:05:21.421196", "block": 24257040, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:05:37.455823", "block": 24257041, "candidates": 62, "finished": 15, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:05:38.477737", "block": 24257042, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:05:51.938520", "block": 24257043, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:06:10.213236", "block": 24257044, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:06:25.675986", "block": 24257045, "candidates": 62, "finished": 33, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:06:40.306704", "block": 24257046, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:06:52.483076", "block": 24257047, "candidates": 62, "finished": 22, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:06:56.051296", "block": 24257048, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:07:01.591162", "block": 24257049, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:07:22.734793", "block": 24257050, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:07:37.345813", "block": 24257051, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:07:51.555990", "block": 24257052, "candidates": 62, "finished": 56, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:07:59.442299", "block": 24257053, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:08:09.297276", "block": 24257054, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:08:16.383564", "block": 24257055, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:08:26.354880", "block": 24257056, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:08:45.642336", "block": 24257057, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:09:03.112869", "block": 24257058, "candidates": 62, "finished": 38, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:09:15.289392", "block": 24257059, "candidates": 62, "finished": 53, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:09:27.449087", "block": 24257060, "candidates": 62, "finished": 21, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:09:33.208524", "block": 24257061, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:09:38.776642", "block": 24257062, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:09:55.040875", "block": 24257063, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:10:11.377800", "block": 24257064, "candidates": 62, "finished": 22, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:10:14.000065", "block": 24257065, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:10:34.276895", "block": 24257066, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:10:59.262660", "block": 24257067, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:11:02.316889", "block": 24257068, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:11:20.150034", "block": 24257069, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:11:25.680849", "block": 24257070, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:11:49.758294", "block": 24257071, "candidates": 62, "finished": 58, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:11:58.371077", "block": 24257072, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:12:13.844669", "block": 24257073, "candidates": 62, "finished": 48, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:12:26.022704", "block": 24257074, "candidates": 62, "finished": 3, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:12:39.435668", "block": 24257075, "candidates": 62, "finished": 25, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:12:51.620313", "block": 24257076, "candidates": 62, "finished": 30, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:13:03.797456", "block": 24257077, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:13:15.974222", "block": 24257078, "candidates": 62, "finished": 57, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:13:28.155444", "block": 24257079, "candidates": 62, "finished": 18, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:13:40.333001", "block": 24257080, "candidates": 62, "finished": 31, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:13:46.346478", "block": 24257081, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:13:53.436373", "block": 24257082, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:14:01.590316", "block": 24257083, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:14:21.954503", "block": 24257084, "candidates": 62, "finished": 61, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:14:27.763863", "block": 24257085, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:14:40.240866", "block": 24257086, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:14:57.132118", "block": 24257087, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:15:10.983963", "block": 24257088, "candidates": 62, "finished": 17, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:15:13.190089", "block": 24257089, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:15:25.938974", "block": 24257090, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:15:51.616089", "block": 24257091, "candidates": 62, "finished": 4, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:16:03.793850", "block": 24257092, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:16:15.970333", "block": 24257093, "candidates": 62, "finished": 39, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:16:28.143432", "block": 24257094, "candidates": 62, "finished": 31, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:16:40.352543", "block": 24257095, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:16:52.534048", "block": 24257096, "candidates": 62, "finished": 37, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:17:04.708061", "block": 24257097, "candidates": 62, "finished": 53, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:17:08.136785", "block": 24257098, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:17:20.356589", "block": 24257099, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:17:31.597930", "block": 24257100, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:17:51.078075", "block": 24257101, "candidates": 62, "finished": 12, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:18:03.254360", "block": 24257102, "candidates": 62, "finished": 4, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:18:15.433020", "block": 24257103, "candidates": 62, "finished": 15, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:18:23.888558", "block": 24257104, "candidates": 62, "finished": 33, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:18:26.480230", "block": 24257105, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:18:44.838692", "block": 24257106, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:18:51.044437", "block": 24257107, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:19:15.236356", "block": 24257108, "candidates": 62, "finished": 49, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:19:22.607642", "block": 24257109, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:19:37.973962", "block": 24257110, "candidates": 62, "finished": 30, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:19:50.158353", "block": 24257111, "candidates": 62, "finished": 61, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:20:03.554252", "block": 24257112, "candidates": 62, "finished": 36, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:20:09.152631", "block": 24257113, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:20:13.300575", "block": 24257114, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:20:32.967047", "block": 24257115, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:20:45.899435", "block": 24257116, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:21:02.541677", "block": 24257117, "candidates": 62, "finished": 7, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:21:10.304208", "block": 24257118, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:21:26.120436", "block": 24257119, "candidates": 62, "finished": 21, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:21:34.626841", "block": 24257120, "candidates": 62, "finished": 36, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:21:39.536694", "block": 24257121, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:21:55.066123", "block": 24257122, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:22:09.124403", "block": 24257123, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:22:28.842930", "block": 24257124, "candidates": 62, "finished": 57, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:22:41.025385", "block": 24257125, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:22:53.198385", "block": 24257126, "candidates": 62, "finished": 59, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:22:59.762429", "block": 24257127, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:23:03.094646", "block": 24257128, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:23:16.944885", "block": 24257129, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:23:24.962769", "block": 24257130, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:23:51.041752", "block": 24257131, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:24:03.203702", "block": 24257132, "candidates": 62, "finished": 23, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:24:15.369919", "block": 24257133, "candidates": 62, "finished": 58, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:24:27.922706", "block": 24257134, "candidates": 62, "finished": 47, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:24:40.096384", "block": 24257135, "candidates": 62, "finished": 16, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:24:52.261885", "block": 24257136, "candidates": 62, "finished": 58, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:25:04.421523", "block": 24257137, "candidates": 62, "finished": 30, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:25:16.584469", "block": 24257138, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:25:28.758136", "block": 24257139, "candidates": 62, "finished": 52, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:25:35.693417", "block": 24257140, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:25:39.420319", "block": 24257141, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:25:56.151605", "block": 24257142, "candidates": 62, "finished": 60, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:26:14.312967", "block": 24257143, "candidates": 62, "finished": 35, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:26:26.482454", "block": 24257144, "candidates": 62, "finished": 61, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:26:39.102221", "block": 24257145, "candidates": 62, "finished": 3, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:26:51.695649", "block": 24257146, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:27:04.688124", "block": 24257147, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:27:16.886385", "block": 24257148, "candidates": 62, "finished": 49, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:27:29.056662", "block": 24257149, "candidates": 62, "finished": 58, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:27:41.226458", "block": 24257150, "candidates": 62, "finished": 39, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:27:53.401331", "block": 24257151, "candidates": 62, "finished": 61, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:27:53.569004", "block": 24257152, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:28:03.667679", "block": 24257153, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:28:21.908496", "block": 24257154, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:28:37.295426", "block": 24257155, "candidates": 62, "finished": 18, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:28:51.847354", "block": 24257156, "candidates": 62, "finished": 56, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:29:04.020532", "block": 24257157, "candidates": 62, "finished": 8, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:29:16.193033", "block": 24257158, "candidates": 62, "finished": 51, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:29:28.357706", "block": 24257159, "candidates": 62, "finished": 54, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:29:35.727502", "block": 24257160, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:29:50.303734", "block": 24257161, "candidates": 62, "finished": 46, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:30:02.476923", "block": 24257162, "candidates": 62, "finished": 61, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:30:20.620341", "block": 24257163, "candidates": 62, "finished": 5, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:30:28.814094", "block": 24257164, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:30:39.718039", "block": 24257165, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:30:58.499352", "block": 24257166, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:31:14.349268", "block": 24257167, "candidates": 62, "finished": 16, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:31:27.307966", "block": 24257168, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:31:39.476079", "block": 24257169, "candidates": 62, "finished": 33, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:31:51.645220", "block": 24257170, "candidates": 62, "finished": 58, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:32:03.809574", "block": 24257171, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:32:15.975670", "block": 24257172, "candidates": 62, "finished": 36, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:32:28.137641", "block": 24257173, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:32:33.374136", "block": 24257174, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:32:39.089044", "block": 24257175, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:32:52.544654", "block": 24257176, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:33:13.348882", "block": 24257177, "candidates": 62, "finished": 52, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:33:26.781678", "block": 24257178, "candidates": 62, "finished": 59, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:33:40.506947", "block": 24257179, "candidates": 62, "finished": 58, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:33:52.671832", "block": 24257180, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:34:00.026051", "block": 24257181, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:34:14.838670", "block": 24257182, "candidates": 62, "finished": 20, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:34:26.991362", "block": 24257183, "candidates": 62, "finished": 53, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:34:34.745554", "block": 24257184, "candidates": 62, "finished": 60, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:34:38.474623", "block": 24257185, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:35:04.837384", "block": 24257186, "candidates": 62, "finished": 8, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:35:10.728704", "block": 24257187, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:35:14.848205", "block": 24257188, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:35:26.658419", "block": 24257189, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:35:45.166072", "block": 24257190, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:35:57.041279", "block": 24257191, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:36:01.547204", "block": 24257192, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:36:18.024779", "block": 24257193, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:36:40.791749", "block": 24257194, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:36:46.403170", "block": 24257195, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:36:51.997449", "block": 24257196, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:37:03.395181", "block": 24257197, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:37:23.131307", "block": 24257198, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:37:39.176653", "block": 24257199, "candidates": 62, "finished": 18, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:37:51.334472", "block": 24257200, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:38:03.502257", "block": 24257201, "candidates": 62, "finished": 53, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:38:09.153790", "block": 24257202, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:38:13.963881", "block": 24257203, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:38:31.375819", "block": 24257204, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:38:47.740219", "block": 24257205, "candidates": 62, "finished": 16, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:38:50.266209", "block": 24257206, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:39:08.462879", "block": 24257207, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:39:21.244061", "block": 24257208, "candidates": 62, "finished": 16, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:39:38.413592", "block": 24257209, "candidates": 62, "finished": 52, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:39:50.997927", "block": 24257210, "candidates": 62, "finished": 2, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:40:03.923318", "block": 24257211, "candidates": 62, "finished": 29, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:40:16.081925", "block": 24257212, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:40:23.444109", "block": 24257213, "candidates": 62, "finished": 1, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:40:34.627731", "block": 24257214, "candidates": 62, "finished": 21, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:40:47.792562", "block": 24257215, "candidates": 62, "finished": 7, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:40:49.505962", "block": 24257216, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:41:15.625369", "block": 24257217, "candidates": 62, "finished": 13, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:41:27.781657", "block": 24257218, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:41:39.938145", "block": 24257219, "candidates": 62, "finished": 9, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:41:52.096948", "block": 24257220, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:42:04.254930", "block": 24257221, "candidates": 62, "finished": 33, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:42:11.635782", "block": 24257222, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:42:14.900917", "block": 24257223, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:42:23.975920", "block": 24257224, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:42:51.619346", "block": 24257225, "candidates": 62, "finished": 1, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:43:06.261458", "block": 24257226, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:43:18.432738", "block": 24257227, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:43:30.588581", "block": 24257228, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:43:42.742919", "block": 24257229, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:43:54.917978", "block": 24257230, "candidates": 62, "finished": 12, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:44:06.930962", "block": 24257231, "candidates": 62, "finished": 55, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:44:07.067601", "block": 24257232, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:44:14.973596", "block": 24257233, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:44:33.217079", "block": 24257234, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:44:51.572125", "block": 24257235, "candidates": 62, "finished": 28, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:45:03.728434", "block": 24257236, "candidates": 62, "finished": 28, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:45:11.500113", "block": 24257237, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:45:23.840703", "block": 24257238, "candidates": 62, "finished": 22, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:45:26.313711", "block": 24257239, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:45:35.727095", "block": 24257240, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:45:58.267405", "block": 24257241, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:46:04.447968", "block": 24257242, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:46:13.549779", "block": 24257243, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:46:34.405954", "block": 24257244, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:46:44.892234", "block": 24257245, "candidates": 62, "finished": 60, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:46:50.697462", "block": 24257246, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:47:05.951170", "block": 24257247, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:47:22.558257", "block": 24257248, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:47:39.360532", "block": 24257249, "candidates": 62, "finished": 35, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:47:51.512207", "block": 24257250, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:48:03.665853", "block": 24257251, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:48:11.774928", "block": 24257252, "candidates": 62, "finished": 15, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:48:15.406930", "block": 24257253, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:48:27.146965", "block": 24257254, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:48:46.610722", "block": 24257255, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:49:02.640289", "block": 24257256, "candidates": 62, "finished": 48, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:49:14.793279", "block": 24257257, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:49:31.220305", "block": 24257258, "candidates": 62, "finished": 23, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:49:43.372746", "block": 24257259, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:49:55.524861", "block": 24257260, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:50:06.657413", "block": 24257261, "candidates": 62, "finished": 16, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:50:06.801739", "block": 24257262, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:50:14.348374", "block": 24257263, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:50:28.584477", "block": 24257264, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:50:48.251636", "block": 24257265, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:51:02.338243", "block": 24257266, "candidates": 62, "finished": 23, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:51:14.492171", "block": 24257267, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:51:27.088820", "block": 24257268, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:51:35.981428", "block": 24257269, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:51:50.464247", "block": 24257270, "candidates": 62, "finished": 19, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:52:03.411093", "block": 24257271, "candidates": 62, "finished": 37, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:52:15.983054", "block": 24257272, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:52:23.502134", "block": 24257273, "candidates": 62, "finished": 60, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:52:25.585542", "block": 24257274, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:52:40.612625", "block": 24257275, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:53:02.151137", "block": 24257276, "candidates": 62, "finished": 51, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:53:14.311108", "block": 24257277, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:53:24.416263", "block": 24257278, "candidates": 62, "finished": 51, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:53:30.548829", "block": 24257279, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:53:40.247019", "block": 24257280, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:54:02.963226", "block": 24257281, "candidates": 62, "finished": 16, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:54:08.328736", "block": 24257282, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:54:14.375804", "block": 24257283, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:54:31.448645", "block": 24257284, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:54:36.311851", "block": 24257285, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:54:58.214524", "block": 24257286, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:55:09.938728", "block": 24257287, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:55:22.916198", "block": 24257288, "candidates": 62, "finished": 22, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:55:25.803910", "block": 24257289, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:55:53.211420", "block": 24257290, "candidates": 62, "finished": 59, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:56:05.376709", "block": 24257291, "candidates": 62, "finished": 48, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:56:17.541893", "block": 24257292, "candidates": 62, "finished": 59, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:56:29.701972", "block": 24257293, "candidates": 62, "finished": 30, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:56:41.863712", "block": 24257294, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:56:54.026805", "block": 24257295, "candidates": 62, "finished": 28, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:57:06.187506", "block": 24257296, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:57:18.354083", "block": 24257297, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:57:30.515695", "block": 24257298, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:57:38.311283", "block": 24257299, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:57:50.502581", "block": 24257300, "candidates": 62, "finished": 58, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:58:02.664287", "block": 24257301, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:58:14.825794", "block": 24257302, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:58:20.402394", "block": 24257303, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:58:30.405698", "block": 24257304, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:58:42.414161", "block": 24257305, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:58:54.821308", "block": 24257306, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:59:07.275894", "block": 24257307, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:59:16.180379", "block": 24257308, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:59:33.840212", "block": 24257309, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:59:44.738380", "block": 24257310, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T21:59:52.835099", "block": 24257311, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:00:01.999277", "block": 24257312, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:00:21.948277", "block": 24257313, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:00:34.311883", "block": 24257314, "candidates": 62, "finished": 21, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:00:39.488397", "block": 24257315, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:00:51.028649", "block": 24257316, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:01:14.514440", "block": 24257317, "candidates": 62, "finished": 1, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:01:27.981482", "block": 24257318, "candidates": 62, "finished": 34, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:01:35.750709", "block": 24257319, "candidates": 62, "finished": 54, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:01:41.119660", "block": 24257320, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:01:50.697198", "block": 24257321, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:02:11.963080", "block": 24257322, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:02:22.618801", "block": 24257323, "candidates": 62, "finished": 58, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:02:25.908103", "block": 24257324, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:02:37.799255", "block": 24257325, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:03:03.289306", "block": 24257326, "candidates": 62, "finished": 1, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:03:15.451954", "block": 24257327, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:03:27.616299", "block": 24257328, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:03:39.779325", "block": 24257329, "candidates": 62, "finished": 25, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:03:52.637091", "block": 24257330, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:04:04.796122", "block": 24257331, "candidates": 62, "finished": 57, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:04:16.945539", "block": 24257332, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:04:17.098351", "block": 24257333, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:04:25.452935", "block": 24257334, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:04:46.572988", "block": 24257335, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:05:03.814591", "block": 24257336, "candidates": 62, "finished": 29, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:05:18.175686", "block": 24257337, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:05:30.333790", "block": 24257338, "candidates": 62, "finished": 60, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:05:37.838211", "block": 24257339, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:05:39.567185", "block": 24257340, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:05:55.412201", "block": 24257341, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:06:13.790115", "block": 24257342, "candidates": 62, "finished": 50, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:06:27.503123", "block": 24257343, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:06:39.664797", "block": 24257344, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:06:51.828261", "block": 24257345, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:07:03.986031", "block": 24257346, "candidates": 62, "finished": 53, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:07:16.146425", "block": 24257347, "candidates": 62, "finished": 52, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:07:28.302934", "block": 24257348, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:07:40.465050", "block": 24257349, "candidates": 62, "finished": 54, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:07:52.627142", "block": 24257350, "candidates": 62, "finished": 50, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:08:04.800485", "block": 24257351, "candidates": 62, "finished": 60, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:08:16.965819", "block": 24257352, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:08:29.127776", "block": 24257353, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:08:34.208416", "block": 24257354, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:08:39.069696", "block": 24257355, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:08:51.145099", "block": 24257356, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:09:11.070336", "block": 24257357, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:09:26.354645", "block": 24257358, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:09:39.289269", "block": 24257359, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:09:51.451443", "block": 24257360, "candidates": 62, "finished": 53, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:10:04.051630", "block": 24257361, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:10:16.216245", "block": 24257362, "candidates": 62, "finished": 49, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:10:23.089604", "block": 24257363, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:10:34.710979", "block": 24257364, "candidates": 62, "finished": 22, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:10:39.559491", "block": 24257365, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:11:01.460929", "block": 24257366, "candidates": 62, "finished": 3, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:11:13.622259", "block": 24257367, "candidates": 62, "finished": 61, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:11:29.705562", "block": 24257368, "candidates": 62, "finished": 53, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:11:41.868379", "block": 24257369, "candidates": 62, "finished": 53, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:11:54.031398", "block": 24257370, "candidates": 62, "finished": 47, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:12:01.393750", "block": 24257371, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:12:12.008937", "block": 24257372, "candidates": 62, "finished": 27, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:12:14.502540", "block": 24257373, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:12:26.155132", "block": 24257374, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:12:51.487653", "block": 24257375, "candidates": 62, "finished": 17, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:13:03.652850", "block": 24257376, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:13:15.815556", "block": 24257377, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:13:27.972458", "block": 24257378, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:13:40.126204", "block": 24257379, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:13:52.279231", "block": 24257380, "candidates": 62, "finished": 35, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:14:04.436272", "block": 24257381, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:14:16.598940", "block": 24257382, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:14:28.755508", "block": 24257383, "candidates": 62, "finished": 49, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:14:40.917322", "block": 24257384, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:14:53.077239", "block": 24257385, "candidates": 62, "finished": 50, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:15:05.384733", "block": 24257386, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:15:05.530110", "block": 24257387, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:15:16.151436", "block": 24257388, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:15:33.555623", "block": 24257389, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:15:48.921586", "block": 24257390, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:15:56.966019", "block": 24257391, "candidates": 62, "finished": 58, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:16:01.011788", "block": 24257392, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:16:14.145021", "block": 24257393, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:16:36.931802", "block": 24257394, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:16:49.513443", "block": 24257395, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:17:03.360700", "block": 24257396, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:17:15.515550", "block": 24257397, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:17:23.111775", "block": 24257398, "candidates": 62, "finished": 52, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:17:26.336499", "block": 24257399, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:17:41.048651", "block": 24257400, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:17:58.066575", "block": 24257401, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:18:12.544514", "block": 24257402, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:18:27.794431", "block": 24257403, "candidates": 62, "finished": 49, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:18:35.160484", "block": 24257404, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:18:51.952729", "block": 24257405, "candidates": 62, "finished": 53, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:19:04.112102", "block": 24257406, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:19:16.655347", "block": 24257407, "candidates": 62, "finished": 11, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:19:28.814206", "block": 24257408, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:19:40.972754", "block": 24257409, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:19:53.130186", "block": 24257410, "candidates": 62, "finished": 52, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:19:56.507388", "block": 24257411, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:20:03.230724", "block": 24257412, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:20:22.601260", "block": 24257413, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:20:34.397713", "block": 24257414, "candidates": 62, "finished": 21, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:20:38.440319", "block": 24257415, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:20:51.817127", "block": 24257416, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:21:14.793715", "block": 24257417, "candidates": 62, "finished": 9, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:21:28.489433", "block": 24257418, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:21:36.173189", "block": 24257419, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:21:50.636509", "block": 24257420, "candidates": 62, "finished": 1, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:21:55.204845", "block": 24257421, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:22:03.478069", "block": 24257422, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:22:26.464385", "block": 24257423, "candidates": 62, "finished": 19, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:22:38.620269", "block": 24257424, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:22:50.782501", "block": 24257425, "candidates": 62, "finished": 39, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:23:03.359801", "block": 24257426, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:23:15.518255", "block": 24257427, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:23:28.337317", "block": 24257428, "candidates": 62, "finished": 37, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:23:39.209203", "block": 24257429, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:23:39.756541", "block": 24257430, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:23:49.182876", "block": 24257431, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:24:05.200826", "block": 24257432, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:24:25.851865", "block": 24257433, "candidates": 62, "finished": 4, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:24:38.405566", "block": 24257434, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:24:51.336058", "block": 24257435, "candidates": 62, "finished": 61, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:24:59.156259", "block": 24257436, "candidates": 62, "finished": 61, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:25:14.788995", "block": 24257437, "candidates": 62, "finished": 16, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:25:19.450765", "block": 24257438, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:25:26.947794", "block": 24257439, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:25:45.121602", "block": 24257440, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:26:04.254990", "block": 24257441, "candidates": 62, "finished": 8, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:26:16.409814", "block": 24257442, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:26:28.572173", "block": 24257443, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:26:40.734689", "block": 24257444, "candidates": 62, "finished": 57, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:26:52.893362", "block": 24257445, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:27:05.053655", "block": 24257446, "candidates": 62, "finished": 32, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:27:17.207274", "block": 24257447, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:27:29.373470", "block": 24257448, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:27:41.535063", "block": 24257449, "candidates": 62, "finished": 56, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:27:55.609760", "block": 24257450, "candidates": 62, "finished": 59, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:27:55.755894", "block": 24257451, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:28:10.525599", "block": 24257452, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:28:14.005313", "block": 24257453, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:28:38.504966", "block": 24257454, "candidates": 62, "finished": 17, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:28:50.659900", "block": 24257455, "candidates": 62, "finished": 31, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:29:03.298549", "block": 24257456, "candidates": 62, "finished": 50, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:29:08.279066", "block": 24257457, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:29:20.007237", "block": 24257458, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:29:26.717815", "block": 24257459, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:29:45.065302", "block": 24257460, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:29:56.304153", "block": 24257461, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:30:02.265644", "block": 24257462, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:30:21.975443", "block": 24257463, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:30:32.803708", "block": 24257464, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:30:47.970017", "block": 24257465, "candidates": 62, "finished": 61, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:30:50.434839", "block": 24257466, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:31:02.575577", "block": 24257467, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:31:26.724522", "block": 24257468, "candidates": 62, "finished": 16, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:31:38.884846", "block": 24257469, "candidates": 62, "finished": 33, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:31:51.040798", "block": 24257470, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:32:00.193466", "block": 24257471, "candidates": 62, "finished": 60, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:32:03.179542", "block": 24257472, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:32:20.354091", "block": 24257473, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:32:51.216073", "block": 24257474, "candidates": 62, "finished": 16, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:33:03.373271", "block": 24257475, "candidates": 62, "finished": 7, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:33:15.664256", "block": 24257476, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:33:27.858865", "block": 24257477, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:33:38.264391", "block": 24257478, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:33:50.417771", "block": 24257479, "candidates": 62, "finished": 36, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:34:02.565958", "block": 24257480, "candidates": 62, "finished": 35, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:34:17.780128", "block": 24257481, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:34:23.423506", "block": 24257482, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:34:25.903136", "block": 24257483, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:34:38.271373", "block": 24257484, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:34:57.072672", "block": 24257485, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:35:13.871533", "block": 24257486, "candidates": 62, "finished": 31, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:35:26.821934", "block": 24257487, "candidates": 62, "finished": 23, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:35:35.700186", "block": 24257488, "candidates": 62, "finished": 21, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:35:45.688800", "block": 24257489, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:35:49.661472", "block": 24257490, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:36:13.664817", "block": 24257491, "candidates": 62, "finished": 35, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:36:20.865195", "block": 24257492, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:36:25.980663", "block": 24257493, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:36:45.610781", "block": 24257494, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:37:03.124850", "block": 24257495, "candidates": 62, "finished": 25, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:37:15.277898", "block": 24257496, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:37:22.636336", "block": 24257497, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:37:34.189488", "block": 24257498, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:37:45.760439", "block": 24257499, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:38:01.728849", "block": 24257500, "candidates": 62, "finished": 16, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:38:14.637918", "block": 24257501, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:38:22.989449", "block": 24257502, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:38:33.082565", "block": 24257503, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:38:38.206266", "block": 24257504, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:38:57.184518", "block": 24257505, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:39:14.702535", "block": 24257506, "candidates": 62, "finished": 13, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:39:26.855828", "block": 24257507, "candidates": 62, "finished": 34, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:39:34.208657", "block": 24257508, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:39:52.658116", "block": 24257509, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-17T22:40:01.984978", "block": 24257510, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:23:46.458299", "block": 24257511, "candidates": 62, "finished": 1, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:23:59.170499", "block": 24260720, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:24:11.355706", "block": 24260721, "candidates": 62, "finished": 17, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:24:17.607493", "block": 24260722, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:24:17.773348", "block": 24260723, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:24:25.526080", "block": 24260724, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:25:34.046410", "block": 24260729, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:26:08.986274", "block": 24260732, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:49:38.841025", "block": 24260848, "candidates": 62, "finished": 2, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:49:51.041145", "block": 24260849, "candidates": 62, "finished": 22, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:50:03.678868", "block": 24260850, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:50:16.321681", "block": 24260851, "candidates": 62, "finished": 15, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:50:28.534731", "block": 24260852, "candidates": 62, "finished": 4, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:50:32.101604", "block": 24260853, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:50:38.577446", "block": 24260854, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:51:02.857021", "block": 24260855, "candidates": 62, "finished": 34, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:51:11.675184", "block": 24260856, "candidates": 62, "finished": 61, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:51:13.624376", "block": 24260857, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:51:34.208171", "block": 24260858, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:51:51.302417", "block": 24260859, "candidates": 62, "finished": 3, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:52:03.518535", "block": 24260860, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:52:15.723519", "block": 24260861, "candidates": 62, "finished": 29, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:52:27.936679", "block": 24260862, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:52:43.205094", "block": 24260863, "candidates": 62, "finished": 57, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:52:55.401004", "block": 24260864, "candidates": 62, "finished": 36, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:53:07.614739", "block": 24260865, "candidates": 62, "finished": 55, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:53:15.936392", "block": 24260866, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:53:27.888554", "block": 24260867, "candidates": 62, "finished": 16, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:53:28.121089", "block": 24260868, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:53:51.531645", "block": 24260869, "candidates": 62, "finished": 27, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:54:03.752950", "block": 24260870, "candidates": 62, "finished": 35, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:54:16.395146", "block": 24260871, "candidates": 62, "finished": 49, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:54:28.608460", "block": 24260872, "candidates": 62, "finished": 25, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:54:40.855333", "block": 24260873, "candidates": 62, "finished": 36, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:54:53.090918", "block": 24260874, "candidates": 62, "finished": 60, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:55:09.871537", "block": 24260876, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:55:22.608259", "block": 24260877, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:55:37.419224", "block": 24260878, "candidates": 62, "finished": 23, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:55:50.832436", "block": 24260879, "candidates": 62, "finished": 35, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:56:03.015949", "block": 24260880, "candidates": 62, "finished": 16, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:56:15.731915", "block": 24260881, "candidates": 62, "finished": 2, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:56:19.775891", "block": 24260882, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:56:32.661631", "block": 24260883, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:56:37.401030", "block": 24260884, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:57:00.190607", "block": 24260885, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:57:13.986451", "block": 24260886, "candidates": 62, "finished": 1, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:57:26.174488", "block": 24260887, "candidates": 62, "finished": 17, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:57:39.220931", "block": 24260888, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:57:51.402892", "block": 24260889, "candidates": 62, "finished": 16, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:58:03.580029", "block": 24260890, "candidates": 62, "finished": 59, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:58:15.776604", "block": 24260891, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:58:28.773025", "block": 24260892, "candidates": 62, "finished": 17, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:58:40.334670", "block": 24260893, "candidates": 62, "finished": 30, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:58:40.545783", "block": 24260894, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:59:00.675487", "block": 24260895, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:59:02.908467", "block": 24260896, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:59:28.021776", "block": 24260897, "candidates": 62, "finished": 61, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:59:40.235826", "block": 24260898, "candidates": 62, "finished": 24, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T09:59:52.413772", "block": 24260899, "candidates": 62, "finished": 53, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:00:04.923964", "block": 24260900, "candidates": 62, "finished": 55, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:00:14.259554", "block": 24260901, "candidates": 62, "finished": 18, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:00:14.475005", "block": 24260902, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:00:28.981820", "block": 24260903, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:00:46.817878", "block": 24260904, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:01:03.290790", "block": 24260905, "candidates": 62, "finished": 49, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:01:15.496477", "block": 24260906, "candidates": 62, "finished": 59, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:01:27.685081", "block": 24260907, "candidates": 62, "finished": 39, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:01:39.861930", "block": 24260908, "candidates": 62, "finished": 35, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:01:52.612874", "block": 24260909, "candidates": 62, "finished": 30, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:02:06.032260", "block": 24260910, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:02:18.213311", "block": 24260911, "candidates": 62, "finished": 61, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:02:25.890855", "block": 24260912, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:02:38.528185", "block": 24260913, "candidates": 62, "finished": 51, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:02:52.312372", "block": 24260914, "candidates": 62, "finished": 31, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:03:04.490889", "block": 24260915, "candidates": 62, "finished": 20, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:03:16.663872", "block": 24260916, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:03:28.853518", "block": 24260917, "candidates": 62, "finished": 1, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:03:41.030246", "block": 24260918, "candidates": 62, "finished": 3, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:03:53.223782", "block": 24260919, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:04:05.393978", "block": 24260920, "candidates": 62, "finished": 52, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:04:17.556065", "block": 24260921, "candidates": 62, "finished": 11, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:04:24.946036", "block": 24260922, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:04:39.116067", "block": 24260923, "candidates": 62, "finished": 3, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:04:46.928155", "block": 24260924, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:05:02.825836", "block": 24260925, "candidates": 62, "finished": 57, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:05:15.462063", "block": 24260926, "candidates": 62, "finished": 58, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:05:30.171358", "block": 24260927, "candidates": 62, "finished": 22, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:05:37.131446", "block": 24260928, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:05:38.208865", "block": 24260929, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:05:59.004715", "block": 24260930, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:06:19.091197", "block": 24260931, "candidates": 62, "finished": 58, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:06:31.281401", "block": 24260932, "candidates": 62, "finished": 56, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:06:43.593200", "block": 24260933, "candidates": 62, "finished": 59, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:06:55.782621", "block": 24260934, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:07:07.949928", "block": 24260935, "candidates": 62, "finished": 19, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:07:20.111011", "block": 24260936, "candidates": 62, "finished": 38, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:07:32.293520", "block": 24260937, "candidates": 62, "finished": 34, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:07:44.476619", "block": 24260938, "candidates": 62, "finished": 17, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:07:56.649657", "block": 24260939, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:08:09.319559", "block": 24260940, "candidates": 62, "finished": 57, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:08:21.497518", "block": 24260941, "candidates": 62, "finished": 34, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:08:33.672603", "block": 24260942, "candidates": 62, "finished": 61, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:08:45.857434", "block": 24260943, "candidates": 62, "finished": 35, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:08:58.573390", "block": 24260944, "candidates": 62, "finished": 5, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:09:10.751512", "block": 24260945, "candidates": 62, "finished": 55, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:09:22.941716", "block": 24260946, "candidates": 62, "finished": 33, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:09:35.126220", "block": 24260947, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:09:47.318250", "block": 24260948, "candidates": 62, "finished": 2, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:09:59.500707", "block": 24260949, "candidates": 62, "finished": 57, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:10:11.713509", "block": 24260950, "candidates": 62, "finished": 59, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:10:19.102605", "block": 24260951, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:10:31.283706", "block": 24260952, "candidates": 62, "finished": 2, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:10:43.479653", "block": 24260953, "candidates": 62, "finished": 61, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:10:55.677749", "block": 24260954, "candidates": 62, "finished": 39, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:11:07.884155", "block": 24260955, "candidates": 62, "finished": 23, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:11:15.290360", "block": 24260956, "candidates": 62, "finished": 16, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:11:17.195349", "block": 24260957, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:11:30.707354", "block": 24260958, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:11:54.252918", "block": 24260959, "candidates": 62, "finished": 18, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:12:06.430063", "block": 24260960, "candidates": 62, "finished": 33, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:12:18.585261", "block": 24260961, "candidates": 62, "finished": 61, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:12:30.780822", "block": 24260962, "candidates": 62, "finished": 30, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:12:42.963655", "block": 24260963, "candidates": 62, "finished": 48, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:12:55.536854", "block": 24260964, "candidates": 62, "finished": 34, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:13:01.783891", "block": 24260965, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:13:07.073967", "block": 24260966, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:13:15.319055", "block": 24260967, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:13:28.310221", "block": 24260968, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:13:46.782284", "block": 24260969, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:14:02.756020", "block": 24260970, "candidates": 62, "finished": 21, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:14:15.542686", "block": 24260971, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:14:27.721920", "block": 24260972, "candidates": 62, "finished": 34, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:14:39.929240", "block": 24260973, "candidates": 62, "finished": 59, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:14:52.125834", "block": 24260974, "candidates": 62, "finished": 34, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:15:04.762082", "block": 24260975, "candidates": 62, "finished": 27, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:15:12.230957", "block": 24260976, "candidates": 62, "finished": 48, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:15:16.868579", "block": 24260977, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:15:25.756236", "block": 24260978, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:15:46.107309", "block": 24260979, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:16:02.905920", "block": 24260980, "candidates": 62, "finished": 29, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:16:15.098401", "block": 24260981, "candidates": 62, "finished": 55, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:16:29.748559", "block": 24260982, "candidates": 62, "finished": 17, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:16:35.985511", "block": 24260983, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:16:40.796893", "block": 24260984, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:17:01.507152", "block": 24260985, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:17:10.360612", "block": 24260986, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:17:13.923809", "block": 24260987, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:17:26.718667", "block": 24260988, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:17:45.862946", "block": 24260989, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:17:58.724764", "block": 24260990, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:18:16.370930", "block": 24260991, "candidates": 62, "finished": 52, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:18:28.534832", "block": 24260992, "candidates": 62, "finished": 48, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:18:40.723788", "block": 24260993, "candidates": 62, "finished": 20, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:18:52.916200", "block": 24260994, "candidates": 62, "finished": 9, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:19:05.100007", "block": 24260995, "candidates": 62, "finished": 47, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:19:17.283060", "block": 24260996, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:19:24.667965", "block": 24260997, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:19:35.870510", "block": 24260998, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:19:46.549072", "block": 24260999, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:20:00.024949", "block": 24261000, "candidates": 62, "finished": 7, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:20:16.842005", "block": 24261001, "candidates": 62, "finished": 32, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:20:29.518293", "block": 24261002, "candidates": 62, "finished": 30, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:20:34.134483", "block": 24261003, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:20:43.985082", "block": 24261004, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:21:04.223042", "block": 24261005, "candidates": 62, "finished": 21, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:21:16.400272", "block": 24261006, "candidates": 62, "finished": 22, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:21:28.581676", "block": 24261007, "candidates": 62, "finished": 53, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:21:34.907837", "block": 24261008, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:21:37.613944", "block": 24261009, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:21:56.819557", "block": 24261010, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:22:13.016665", "block": 24261011, "candidates": 62, "finished": 0, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:22:25.191733", "block": 24261012, "candidates": 62, "finished": 49, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:22:35.007894", "block": 24261013, "candidates": 62, "finished": 1, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:22:50.045934", "block": 24261014, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T10:23:03.483507", "block": 24261015, "candidates": 62, "finished": 17, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T12:47:27.996835", "block": 24261734, "candidates": 62, "finished": 2, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T12:47:40.181259", "block": 24261735, "candidates": 62, "finished": 27, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T12:47:52.397021", "block": 24261736, "candidates": 62, "finished": 33, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T12:48:05.239230", "block": 24261737, "candidates": 62, "finished": 5, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T12:48:15.833269", "block": 24261738, "candidates": 62, "finished": 21, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T12:48:16.462868", "block": 24261739, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T12:48:26.834418", "block": 24261740, "candidates": 62, "finished": 62, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T12:55:14.793195", "block": 24261773, "candidates": 62, "finished": 16, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T12:55:48.913479", "block": 24261776, "candidates": 62, "finished": 2, "profitable": 0, "mode": "auto"}
+{"time": "2026-01-18T13:35:33.831726", "block": 24261973, "candidates": 62, "finished": 1, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:35:52.030787", "block": 24261974, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:36:10.673648", "block": 24261975, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:36:28.912595", "block": 24261977, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:36:47.143371", "block": 24261978, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:36:58.111358", "block": 24261980, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:36:58.300202", "block": 24261981, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:37:12.051287", "block": 24261982, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:37:14.885904", "block": 24261983, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:37:45.898678", "block": 24261984, "candidates": 62, "finished": 55, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:38:04.102232", "block": 24261985, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:38:22.312658", "block": 24261987, "candidates": 62, "finished": 48, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:38:40.508054", "block": 24261988, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:38:55.769285", "block": 24261990, "candidates": 62, "finished": 61, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:38:55.997672", "block": 24261991, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:39:02.538866", "block": 24261992, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:39:32.132183", "block": 24261993, "candidates": 62, "finished": 42, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:39:50.336369", "block": 24261994, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:40:01.342518", "block": 24261995, "candidates": 62, "finished": 0, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:40:15.078345", "block": 24261996, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:40:15.387051", "block": 24261998, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:40:44.500154", "block": 24261999, "candidates": 62, "finished": 0, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:41:02.698984", "block": 24262000, "candidates": 62, "finished": 56, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:41:20.879431", "block": 24262002, "candidates": 62, "finished": 59, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:41:39.872684", "block": 24262003, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:41:58.085628", "block": 24262005, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:42:16.292614", "block": 24262006, "candidates": 62, "finished": 61, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:42:34.934968", "block": 24262008, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:42:53.131800", "block": 24262009, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:43:11.359699", "block": 24262011, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:43:29.590820", "block": 24262012, "candidates": 62, "finished": 24, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:43:47.786041", "block": 24262013, "candidates": 62, "finished": 57, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:43:58.811797", "block": 24262015, "candidates": 62, "finished": 0, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:44:09.857487", "block": 24262016, "candidates": 62, "finished": 60, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:44:10.101500", "block": 24262017, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:44:14.046929", "block": 24262018, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:44:23.779021", "block": 24262018, "candidates": 62, "finished": 0, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:44:35.594216", "block": 24262019, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:44:43.692341", "block": 24262019, "candidates": 62, "finished": 58, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:44:58.916668", "block": 24262020, "candidates": 62, "finished": 56, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:45:01.906380", "block": 24262020, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:45:12.204708", "block": 24262022, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 1, "safety_opps": 1, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:45:13.771877", "block": 24262023, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:45:17.109958", "block": 24262021, "candidates": 62, "finished": 49, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:45:28.113008", "block": 24262023, "candidates": 62, "finished": 24, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:45:42.716447", "block": 24262024, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:45:46.311925", "block": 24262024, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:46:00.931294", "block": 24262025, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:46:04.492935", "block": 24262025, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:46:10.272894", "block": 24262027, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:46:19.187711", "block": 24262026, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:46:22.774449", "block": 24262028, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:46:26.887184", "block": 24262029, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:46:38.034981", "block": 24262028, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:46:51.043481", "block": 24262030, "candidates": 62, "finished": 0, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:46:56.244309", "block": 24262029, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:47:10.542386", "block": 24262031, "candidates": 62, "finished": 41, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:47:28.747808", "block": 24262032, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:47:47.415144", "block": 24262034, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:48:05.610825", "block": 24262035, "candidates": 62, "finished": 42, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:48:23.816079", "block": 24262037, "candidates": 62, "finished": 59, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:48:42.612793", "block": 24262038, "candidates": 62, "finished": 28, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:49:00.822771", "block": 24262040, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:49:19.021370", "block": 24262042, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:49:26.737745", "block": 24262043, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:49:26.932961", "block": 24262044, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:49:45.951432", "block": 24262045, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:49:50.093904", "block": 24262046, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:50:12.819244", "block": 24262047, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 1, "safety_opps": 1, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:50:26.148199", "block": 24262048, "candidates": 62, "finished": 0, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:50:44.788296", "block": 24262049, "candidates": 62, "finished": 27, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:50:49.133241", "block": 24262050, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:50:50.264918", "block": 24262051, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:51:09.050653", "block": 24262052, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:51:21.735994", "block": 24262053, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:51:27.052085", "block": 24262054, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:51:53.875400", "block": 24262055, "candidates": 62, "finished": 0, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:52:12.075749", "block": 24262056, "candidates": 62, "finished": 54, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:52:30.271279", "block": 24262057, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:52:48.449962", "block": 24262059, "candidates": 62, "finished": 61, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:53:06.660588", "block": 24262060, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:53:24.910802", "block": 24262062, "candidates": 62, "finished": 51, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:53:43.146076", "block": 24262063, "candidates": 62, "finished": 59, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:54:01.765616", "block": 24262065, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 1, "safety_opps": 1, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:54:19.991245", "block": 24262066, "candidates": 62, "finished": 26, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:54:27.733110", "block": 24262068, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:54:28.403171", "block": 24262069, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:54:49.574252", "block": 24262070, "candidates": 62, "finished": 0, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:54:54.660474", "block": 24262071, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:55:23.216315", "block": 24262072, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:55:34.683390", "block": 24262073, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:55:34.890116", "block": 24262074, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:55:54.849372", "block": 24262075, "candidates": 62, "finished": 42, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:55:58.297163", "block": 24262076, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:56:21.087844", "block": 24262077, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:56:30.636841", "block": 24262078, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:56:30.828397", "block": 24262079, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:56:43.652932", "block": 24262080, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:56:54.322592", "block": 24262081, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:57:21.565356", "block": 24262082, "candidates": 62, "finished": 3, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:57:39.774877", "block": 24262083, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:57:57.973434", "block": 24262085, "candidates": 62, "finished": 58, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:58:16.174825", "block": 24262086, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:58:27.223538", "block": 24262087, "candidates": 62, "finished": 0, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T13:58:45.463060", "block": 24262089, "candidates": 62, "finished": 28, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:15:25.308871", "block": 24262090, "candidates": 62, "finished": 61, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:36:40.899444", "block": 24262174, "candidates": 62, "finished": 0, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:37:00.405989", "block": 24262280, "candidates": 62, "finished": 25, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:37:11.452238", "block": 24262281, "candidates": 62, "finished": 52, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:37:11.665671", "block": 24262282, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:37:26.147475", "block": 24262283, "candidates": 62, "finished": 0, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:37:28.706352", "block": 24262284, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:37:58.407145", "block": 24262285, "candidates": 62, "finished": 24, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:38:16.579482", "block": 24262286, "candidates": 62, "finished": 32, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:38:34.779565", "block": 24262288, "candidates": 62, "finished": 24, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:38:53.007274", "block": 24262289, "candidates": 62, "finished": 4, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:39:11.230530", "block": 24262291, "candidates": 62, "finished": 29, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:39:22.214831", "block": 24262292, "candidates": 62, "finished": 0, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:39:40.373192", "block": 24262293, "candidates": 62, "finished": 60, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:39:58.596626", "block": 24262295, "candidates": 62, "finished": 62, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:40:16.824853", "block": 24262296, "candidates": 62, "finished": 24, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:40:35.062362", "block": 24262298, "candidates": 62, "finished": 60, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:40:53.279156", "block": 24262299, "candidates": 62, "finished": 59, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:41:11.489549", "block": 24262301, "candidates": 62, "finished": 24, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:41:29.690718", "block": 24262302, "candidates": 62, "finished": 55, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:41:40.716867", "block": 24262304, "candidates": 62, "finished": 0, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:41:58.900238", "block": 24262305, "candidates": 62, "finished": 35, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T14:42:17.109943", "block": 24262306, "candidates": 62, "finished": 61, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T15:40:56.263928", "block": 24262596, "candidates": 223, "finished": 64, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T15:41:26.673113", "block": 24262598, "candidates": 223, "finished": 189, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T15:41:56.914249", "block": 24262601, "candidates": 223, "finished": 1, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T15:42:20.615908", "block": 24262603, "candidates": 223, "finished": 223, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T15:42:20.924816", "block": 24262605, "candidates": 223, "finished": 223, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T15:42:25.556762", "block": 24262606, "candidates": 223, "finished": 223, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T15:42:56.974133", "block": 24262607, "candidates": 223, "finished": 223, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T15:42:57.207826", "block": 24262608, "candidates": 223, "finished": 223, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T15:43:04.857716", "block": 24262609, "candidates": 223, "finished": 223, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T15:43:34.542917", "block": 24262610, "candidates": 223, "finished": 197, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T15:44:04.893691", "block": 24262611, "candidates": 223, "finished": 196, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}
+{"time": "2026-01-18T15:44:05.105308", "block": 24262614, "candidates": 223, "finished": 223, "profitable": 0, "raw_opps": 0, "safety_opps": 0, "gas_opps": 0, "final_opps": 0, "mode": "auto"}

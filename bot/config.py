@@ -31,6 +31,13 @@ RPC_DEFAULT_TIMEOUT_S = 3.0
 RPC_CB_THRESHOLD = 5
 RPC_CB_COOLDOWN_S = 30.0
 
+# V2-style pool filters
+V2_MIN_RESERVE_RATIO = 20.0  # reserve_in must be >= amount_in * ratio
+V2_MAX_PRICE_IMPACT_BPS = 300  # 3.00%
+
+# Profit safety buffer (applied in fork_test thresholds)
+MEV_BUFFER_BPS = 5.0  # 0.05%
+
 TOKENS = {
     # Majors
     "WETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
@@ -46,6 +53,13 @@ TOKENS = {
     "UNI":  "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
     "AAVE": "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DdAE9",
     "LDO":  "0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32",
+    "MKR":  "0x9f8F72aA9304c8B593d555F12eF6589cC3A579A2",
+    "COMP": "0xc00e94Cb662C3520282E6f5717214004A7f26888",
+    "SUSHI": "0x6B3595068778DD592e39A122f4f5a5CF09C90fE2",
+    "CRV":  "0xD533a949740bb3306d119CC777fa900bA034cd52",
+    "SNX":  "0xC011A72400E58ecD99Ee497CF89E3775d4bd732F",
+    "BAL":  "0xba100000625a3754423978a60c9317c58a424e3D",
+    "MATIC": "0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0",
 }
 
 # Fast decimals lookup (avoid chain calls)
@@ -59,11 +73,18 @@ TOKEN_DECIMALS = {
     "UNI": 18,
     "AAVE": 18,
     "LDO": 18,
+    "MKR": 18,
+    "COMP": 18,
+    "SUSHI": 18,
+    "CRV": 18,
+    "SNX": 18,
+    "BAL": 18,
+    "MATIC": 18,
 }
 
 # Strategy defaults (symbols). Override in user config if needed.
 STRATEGY_BASES = ["USDC", "USDT", "DAI"]
-STRATEGY_UNIVERSE = ["WETH", "WBTC", "LINK", "UNI", "AAVE", "LDO"]
+STRATEGY_UNIVERSE = ["WETH", "WBTC", "LINK", "UNI", "AAVE", "LDO", "MKR", "COMP", "SUSHI", "CRV", "SNX", "BAL", "MATIC"]
 STRATEGY_HUBS = ["WETH", "USDC", "USDT", "DAI"]
 
 # Fast reverse lookup (address -> symbol). Lower-case for stable comparisons.
@@ -128,7 +149,7 @@ UNISWAP_V3_QUOTER = "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6"
 UNISWAP_V3_QUOTER_V2 = "0x61fFE014bA17989E743c5F6cB21bF9697530B21e"
 
 # Fee tiers (в bps)
-FEE_TIERS = [500, 3000, 10000]  # 0.05%, 0.3%, 1%
+FEE_TIERS = [100, 500, 3000, 10000]  # 0.01%, 0.05%, 0.3%, 1%
 
 # Supported DEX adapters (names used in UI/config).
 DEXES = ["univ3", "univ2", "sushiswap"]

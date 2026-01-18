@@ -12,6 +12,8 @@ let botStartedAtMs = null;
 // Runtime UI config (stored in project root)
 const projectRoot = path.join(__dirname, '..');
 const configPath = path.join(projectRoot, 'bot_config.json');
+const uiStatePath = path.join(projectRoot, 'logs', 'ui_state.json');
+const UI_STATE_MAX_BYTES = 512 * 1024;
 
 const DEFAULT_CONFIG = {
   // RPC failover (comma/newline separated in UI; stored as list)
@@ -27,6 +29,7 @@ const DEFAULT_CONFIG = {
   min_profit_pct: 0.05,
   min_profit_abs: 0.05,
   slippage_bps: 8,
+  mev_buffer_bps: 5,
   max_gas_gwei: null,
 
   // performance
@@ -48,8 +51,12 @@ const DEFAULT_CONFIG = {
   stage2_max_evals: 6,
 
   // rpc timeouts
-  rpc_timeout_stage1_s: 6,
-  rpc_timeout_stage2_s: 10,
+  rpc_timeout_stage1_s: 3,
+  rpc_timeout_stage2_s: 4,
+
+  // V2 filters
+  v2_min_reserve_ratio: 20,
+  v2_max_price_impact_bps: 300,
 
   // UI reporting/base currency. We force scanning cycles that start/end in this token
   // so the web panel never mixes numbers with a different symbol.
@@ -115,6 +122,31 @@ function writeConfig(cfg) {
 
   fs.writeFileSync(configPath, JSON.stringify(safe, null, 2));
   return safe;
+}
+
+function readUiState() {
+  try {
+    if (!fs.existsSync(uiStatePath)) return null;
+    const stat = fs.statSync(uiStatePath);
+    if (stat.size > UI_STATE_MAX_BYTES) return null;
+    const raw = fs.readFileSync(uiStatePath, 'utf8') || '';
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed;
+  } catch (e) {
+    return null;
+  }
+}
+
+function writeUiState(state) {
+  if (!state || typeof state !== 'object') return { ok: false, error: 'invalid state' };
+  try { fs.mkdirSync(path.dirname(uiStatePath), { recursive: true }); } catch {}
+  try {
+    fs.writeFileSync(uiStatePath, JSON.stringify(state));
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
 }
 
 function isRunning() {
@@ -281,6 +313,61 @@ const server = http.createServer((req, res) => {
         broadcast({ type: 'status', time: nowTime(), block: null, text: 'Config saved' });
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: true, config: saved }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: String(e) }));
+      }
+    });
+    return;
+  }
+  // Read UI state (server-side persistence)
+  if (req.method === 'GET' && req.url === '/ui_state') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, state: readUiState() }));
+    return;
+  }
+
+  // Write UI state
+  if (req.method === 'POST' && req.url === '/ui_state') {
+    let body = '';
+    let tooLarge = false;
+    req.on('data', (chunk) => {
+      if (tooLarge) return;
+      body += chunk;
+      if (body.length > UI_STATE_MAX_BYTES) {
+        tooLarge = true;
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'payload too large' }));
+        try { req.destroy(); } catch {}
+      }
+    });
+    req.on('end', () => {
+      if (tooLarge) return;
+      try {
+        const data = JSON.parse(body || '{}');
+        const incoming = (data && typeof data === 'object' && data.state) ? data.state : data;
+        if (!incoming || typeof incoming !== 'object') {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: 'invalid state' }));
+          return;
+        }
+
+        if (typeof incoming.saved_at_ms !== 'number') {
+          incoming.saved_at_ms = Date.now();
+        }
+
+        const existing = readUiState();
+        const existingTs = (existing && typeof existing.saved_at_ms === 'number') ? existing.saved_at_ms : 0;
+        const incomingTs = (typeof incoming.saved_at_ms === 'number') ? incoming.saved_at_ms : 0;
+        if (existingTs && (!incomingTs || incomingTs < existingTs)) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, stored: false, skipped: true }));
+          return;
+        }
+
+        const out = writeUiState(incoming);
+        res.writeHead(out.ok ? 200 : 500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: out.ok, stored: out.ok, error: out.error || null }));
       } catch (e) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: false, error: String(e) }));

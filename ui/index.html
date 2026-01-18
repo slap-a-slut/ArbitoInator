@@ -3,29 +3,26 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Fork Simulation Monitor</title>
-  <!-- Optional fonts (adds "forbidden" vibe but keeps readability).
-       If Google Fonts is blocked, fallbacks will be used automatically. -->
+  <title>ArbitoInator Monitor</title>
+  <!-- Modern sans + mono. If Google Fonts is blocked, fallbacks are used. -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=UnifrakturCook:wght@700&family=Cinzel:wght@500;700;900&family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root{
-	      /* Forbidden / noir palette */
-	      --bg: #05050a;
-	      --panel: rgba(255,255,255,0.045);
-	      --panel-2: rgba(255,255,255,0.07);
-	      --stroke: rgba(255,255,255,0.12);
-	      --text: rgba(255,255,255,0.92);
-	      --muted: rgba(255,255,255,0.62);
-	      --good: #3fe08f;
-	      --warn: #f6c25a;
-	      --bad: #ff3b6a;
-	      --blue: #6a5cff;
-	      --violet: #a100ff;
-	      --red: #ff2b51;
-      --shadow: 0 20px 70px rgba(0,0,0,.72);
-      --radius: 22px;
+      --bg: #0b0c0f;
+      --panel: rgba(18,20,26,0.92);
+      --panel-2: rgba(24,26,34,0.90);
+      --stroke: rgba(255,255,255,0.08);
+      --text: #f5f5f7;
+      --muted: #b5b7c2;
+      --good: #32d74b;
+      --warn: #ff9f0a;
+      --bad: #ff453a;
+      --blue: #0a84ff;
+      --red: #ff453a;
+      --shadow: 0 24px 60px rgba(0,0,0,0.45);
+      --radius: 20px;
 
       /* Deals table columns */
       --col-time: 74px;
@@ -38,49 +35,38 @@
     *{ box-sizing: border-box; }
     body{
       margin:0;
-	      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-	      background:
-	        radial-gradient(950px 580px at 15% 15%, rgba(161,0,255,.18), transparent 65%),
-	        radial-gradient(900px 520px at 85% 12%, rgba(255,43,81,.14), transparent 68%),
-	        radial-gradient(700px 500px at 70% 85%, rgba(106,92,255,.10), transparent 70%),
-	        linear-gradient(180deg, rgba(0,0,0,.35), rgba(0,0,0,.10)),
-	        var(--bg);
+      font-family: "Manrope", "Avenir Next", "Helvetica Neue", sans-serif;
+      background:
+        radial-gradient(900px 520px at 85% -10%, rgba(10,132,255,0.20), transparent 60%),
+        radial-gradient(800px 520px at 10% 110%, rgba(10,132,255,0.12), transparent 62%),
+        linear-gradient(180deg, #0b0c0f 0%, #0f1116 100%);
       color: var(--text);
-	      min-height: 100vh;
+      min-height: 100vh;
     }
 
-	    /* Subtle "forbidden" overlays: scanlines + noise */
-	    body::before{
-	      content:"";
-	      position:fixed;
-	      inset:0;
-	      pointer-events:none;
-	      background:
-	        repeating-linear-gradient(
-	          to bottom,
-	          rgba(255,255,255,0.03) 0px,
-	          rgba(255,255,255,0.03) 1px,
-	          rgba(0,0,0,0) 3px,
-	          rgba(0,0,0,0) 6px
-	        );
-	      opacity: .06;
-	      mix-blend-mode: overlay;
-	    }
-	    body::after{
-	      content:"";
-	      position:fixed;
-	      inset:0;
-	      pointer-events:none;
-	      background-image:
-	        radial-gradient(circle at 20% 30%, rgba(255,43,81,.10), transparent 40%),
-	        radial-gradient(circle at 80% 65%, rgba(161,0,255,.10), transparent 45%);
-	      opacity: .32;
-	      filter: blur(18px);
-	    }
+    body::before{
+      content:"";
+      position:fixed;
+      inset:0;
+      pointer-events:none;
+      background:
+        radial-gradient(600px 320px at 15% 10%, rgba(255,255,255,0.04), transparent 60%),
+        radial-gradient(520px 360px at 85% 85%, rgba(255,255,255,0.03), transparent 62%);
+      opacity: 0.7;
+    }
+    body::after{
+      content:"";
+      position:fixed;
+      inset:0;
+      pointer-events:none;
+      background: linear-gradient(120deg, rgba(255,255,255,0.03), rgba(255,255,255,0.0) 35%, rgba(255,255,255,0.02));
+      opacity: 0.4;
+      mix-blend-mode: screen;
+    }
 
     .frame{
-      max-width: 1200px;
-      margin: 28px auto;
+      max-width: 1280px;
+      margin: 24px auto;
       padding: 0 18px 28px;
     }
 
@@ -89,53 +75,34 @@
       align-items:center;
       justify-content: space-between;
       gap: 18px;
-      padding: 18px 18px 14px;
-      border-radius: calc(var(--radius) + 8px);
-      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+      padding: 18px 18px 16px;
+      border-radius: calc(var(--radius) + 6px);
+      background: var(--panel-2);
       border: 1px solid var(--stroke);
       box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
     }
 
     .title{
-	      /* "Forbidden" but readable: gothic header + classy serif fallback */
-	      font-family: "UnifrakturCook", "Cinzel", ui-sans-serif, system-ui;
-	      font-weight: 700;
-	      letter-spacing: .06em;
-      text-transform: uppercase;
-      font-size: clamp(22px, 3vw, 42px);
+      font-weight: 700;
+      letter-spacing: .01em;
+      font-size: clamp(20px, 2.6vw, 36px);
       margin:0;
-      line-height:1.1;
-	      text-shadow:
-          0 0 18px rgba(161,0,255,.22),
-          0 0 22px rgba(255,43,81,.14),
-          0 0 32px rgba(255,43,81,.10);
+      line-height:1.15;
     }
 
-    /* slight "glitch/flicker" for the forbidden vibe (very subtle) */
-    @media (prefers-reduced-motion: no-preference){
-      .title{
-        animation: titleFlicker 7.5s infinite;
-      }
-      @keyframes titleFlicker{
-        0%, 96%, 100%{ filter: none; opacity: 1; }
-        97%{ filter: saturate(1.2) contrast(1.05); opacity: .96; }
-        98%{ filter: saturate(1.0) contrast(1.0); opacity: 1; }
-        99%{ filter: saturate(1.15) contrast(1.08); opacity: .97; }
-      }
+    .mono{
+      font-family: "IBM Plex Mono", "SF Mono", "Menlo", "Monaco", "Consolas", monospace;
     }
-
-	    .mono{
-	      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-	    }
 
     .pill{
       display:flex;
       align-items:center;
       gap:10px;
-      padding: 10px 12px;
+      padding: 10px 14px;
       border-radius: 999px;
       border: 1px solid var(--stroke);
-      background: rgba(255,255,255,0.04);
+      background: rgba(255,255,255,0.03);
       color: var(--muted);
       min-width: 280px;
       justify-content: space-between;
@@ -145,15 +112,15 @@
       width: 10px; height: 10px;
       border-radius: 999px;
       background: rgba(255,255,255,0.2);
-      box-shadow: 0 0 0 6px rgba(255,255,255,0.06);
+      box-shadow: 0 0 0 6px rgba(255,255,255,0.04);
     }
-    .dot.ok{ background: var(--good); box-shadow: 0 0 0 6px rgba(68,194,119,0.18); }
+    .dot.ok{ background: var(--good); box-shadow: 0 0 0 6px rgba(50,215,75,0.20); }
     .dot.off{ background: rgba(255,255,255,0.22); box-shadow: 0 0 0 6px rgba(255,255,255,0.06); }
 
     .grid{
       display:grid;
       grid-template-columns: 1.05fr 0.95fr;
-      gap: 18px;
+      gap: 20px;
       margin-top: 16px;
       align-items: start;
     }
@@ -168,7 +135,7 @@
 
     .cardHeader{
       padding: 14px 16px;
-      border-bottom: 1px solid rgba(255,255,255,0.10);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
       display:flex;
       align-items:center;
       justify-content: space-between;
@@ -177,11 +144,11 @@
 
     .cardHeader h2{
       margin:0;
-      font-size: 14px;
-      letter-spacing: .06em;
-      text-transform: uppercase;
+      font-size: 13px;
+      letter-spacing: .02em;
+      text-transform: none;
       color: var(--muted);
-      font-weight: 800;
+      font-weight: 600;
     }
 
     /* Left column becomes an operator stack: logs -> chart -> deals */
@@ -198,22 +165,22 @@
       overflow:auto;
       padding: 12px 12px 14px;
       border-radius: 16px;
-      border: 1px solid rgba(255,255,255,0.10);
-      background: rgba(0,0,0,0.14);
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(8,10,14,0.6);
     }
 
     .chartBox{
       border-radius: 16px;
-      border: 1px solid rgba(255,255,255,0.10);
-      background: rgba(0,0,0,0.14);
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(8,10,14,0.6);
       overflow:hidden;
       height: 220px;
     }
 
     .dealsWrap{
       border-radius: 16px;
-      border: 1px solid rgba(255,255,255,0.10);
-      background: rgba(0,0,0,0.14);
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(8,10,14,0.6);
       overflow:hidden;
       min-height: 0;
       flex: 1;
@@ -223,7 +190,7 @@
 
     .tableHead{
       padding: 10px 12px;
-      border-bottom: 1px solid rgba(255,255,255,0.10);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
       display:flex;
       align-items:center;
       justify-content: space-between;
@@ -232,10 +199,10 @@
     .tableHead h3{
       margin:0;
       font-size: 12px;
-      letter-spacing: .08em;
-      text-transform: uppercase;
-      color: rgba(255,255,255,0.62);
-      font-weight: 900;
+      letter-spacing: .04em;
+      text-transform: none;
+      color: var(--muted);
+      font-weight: 600;
     }
 
     .dealsBody{
@@ -247,8 +214,8 @@
     .logItem{
       padding: 10px 12px;
       border-radius: 14px;
-      border: 1px solid rgba(255,255,255,0.10);
-      background: rgba(0,0,0,0.16);
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(12,14,18,0.7);
       margin-bottom: 10px;
     }
     .logItem .meta{
@@ -266,15 +233,15 @@
       padding: 4px 10px;
       border-radius: 999px;
       font-size: 12px;
-      border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(255,255,255,0.04);
       color: var(--muted);
       white-space: nowrap;
     }
-    .badge.good{ color: rgba(68,194,119,1); border-color: rgba(68,194,119,0.35); background: rgba(68,194,119,0.10);} 
-    .badge.warn{ color: rgba(245,197,66,1); border-color: rgba(245,197,66,0.35); background: rgba(245,197,66,0.10);} 
-    .badge.bad{ color: rgba(225,84,74,1); border-color: rgba(225,84,74,0.35); background: rgba(225,84,74,0.10);} 
-    .badge.blue{ color: rgba(47,107,255,1); border-color: rgba(47,107,255,0.40); background: rgba(47,107,255,0.12);} 
+    .badge.good{ color: var(--good); border-color: rgba(50,215,75,0.35); background: rgba(50,215,75,0.10);} 
+    .badge.warn{ color: var(--warn); border-color: rgba(255,159,10,0.35); background: rgba(255,159,10,0.10);} 
+    .badge.bad{ color: var(--bad); border-color: rgba(255,69,58,0.35); background: rgba(255,69,58,0.10);} 
+    .badge.blue{ color: var(--blue); border-color: rgba(10,132,255,0.45); background: rgba(10,132,255,0.12);} 
 
     .rightTop{
       padding: 14px 16px 10px;
@@ -290,8 +257,8 @@
       gap: 10px;
       padding: 12px 14px;
       border-radius: 16px;
-      background: rgba(0,0,0,0.14);
-      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(8,10,14,0.6);
+      border: 1px solid rgba(255,255,255,0.06);
     }
     .kv span{ color: var(--muted); font-size: 12px; }
     .kv b{ font-size: 14px; }
@@ -303,8 +270,8 @@
       gap: 12px;
       padding: 12px 14px;
       border-radius: 16px;
-      background: rgba(0,0,0,0.14);
-      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(8,10,14,0.6);
+      border: 1px solid rgba(255,255,255,0.06);
     }
 
     .notice .left{
@@ -333,28 +300,28 @@
       width: 100%;
       border-radius: 999px;
       padding: 12px 16px;
-      font-weight: 800;
-      letter-spacing: .04em;
-      text-transform: uppercase;
-      border: 1px solid rgba(255,255,255,0.14);
-      background: rgba(255,255,255,0.06);
-      color: rgba(255,255,255,0.88);
+      font-weight: 600;
+      letter-spacing: .01em;
+      text-transform: none;
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
       cursor:pointer;
       transition: transform .08s ease, background .12s ease, opacity .12s ease;
       user-select:none;
     }
     .btn:active{ transform: translateY(1px); }
-	    .btn:hover{ background: rgba(255,255,255,0.08); }
-	    .btn.primary{ 
-	      background: linear-gradient(180deg, rgba(63,224,143,0.28), rgba(63,224,143,0.14));
-	      border-color: rgba(63,224,143,0.40);
-	      box-shadow: 0 0 0 1px rgba(63,224,143,0.06), 0 0 26px rgba(63,224,143,0.10);
-	    } 
-	    .btn.danger{ 
-	      background: linear-gradient(180deg, rgba(255,43,81,0.22), rgba(255,43,81,0.10));
-	      border-color: rgba(255,43,81,0.40);
-	      box-shadow: 0 0 0 1px rgba(255,43,81,0.06), 0 0 26px rgba(255,43,81,0.10);
-	    } 
+    .btn:hover{ background: rgba(255,255,255,0.08); }
+    .btn.primary{ 
+      background: linear-gradient(180deg, rgba(10,132,255,0.30), rgba(10,132,255,0.14));
+      border-color: rgba(10,132,255,0.45);
+      box-shadow: 0 0 0 1px rgba(10,132,255,0.06), 0 0 22px rgba(10,132,255,0.12);
+    } 
+    .btn.danger{ 
+      background: linear-gradient(180deg, rgba(255,69,58,0.26), rgba(255,69,58,0.12));
+      border-color: rgba(255,69,58,0.45);
+      box-shadow: 0 0 0 1px rgba(255,69,58,0.06), 0 0 22px rgba(255,69,58,0.12);
+    } 
     .btn:disabled{
       opacity: .40;
       cursor: not-allowed;
@@ -374,17 +341,17 @@
     .stat{
       padding: 12px 12px;
       border-radius: 16px;
-	      background: rgba(0,0,0,0.22);
-	      border: 1px solid rgba(161,0,255,0.22);
-	      box-shadow: 0 0 0 1px rgba(255,255,255,0.02), 0 0 24px rgba(161,0,255,0.08);
+      background: rgba(10,12,16,0.7);
+      border: 1px solid rgba(255,255,255,0.06);
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.02);
     }
     .stat .k{ color: rgba(255,255,255,0.70); font-size: 12px; }
-    .stat .v{ font-size: 18px; font-weight: 900; margin-top: 4px; }
+    .stat .v{ font-size: 18px; font-weight: 700; margin-top: 4px; }
 
     .chartWrap{
       border-radius: 18px;
-      border: 1px solid rgba(255,255,255,0.10);
-      background: rgba(0,0,0,0.18);
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(8,10,14,0.6);
       padding: 10px;
       margin-bottom: 10px;
     }
@@ -393,8 +360,8 @@
 
     .table{
       border-radius: 18px;
-      border: 1px solid rgba(255,255,255,0.10);
-      background: rgba(0,0,0,0.18);
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(10,12,16,0.6);
       overflow: auto;
     }
 
@@ -428,6 +395,13 @@
       border-bottom: 1px solid rgba(255,255,255,0.08);
       align-items:center;
       font-size: 13px;
+    }
+    .row.header{
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: rgba(16,18,24,0.92);
+      backdrop-filter: blur(6px);
     }
     .row > div{ min-width: 0; }
     .row:last-child{ border-bottom: none; }
@@ -482,8 +456,8 @@
       margin-top: 6px;
       padding: 8px 10px;
       border-radius: 12px;
-      background: rgba(0,0,0,0.22);
-      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(12,14,18,0.8);
+      border: 1px solid rgba(255,255,255,0.06);
       white-space: pre;
       overflow-x: auto;
     }
@@ -500,15 +474,15 @@
     .settings{
       margin-top: 12px;
       border-radius: 18px;
-      border: 1px solid rgba(255,255,255,0.10);
-      background: rgba(0,0,0,0.18);
+      border: 1px solid rgba(255,255,255,0.06);
+      background: rgba(10,12,16,0.6);
       padding: 12px;
     }
     .settings h3{
       margin: 0 0 10px;
       font-size: 12px;
-      letter-spacing: .06em;
-      text-transform: uppercase;
+      letter-spacing: .02em;
+      text-transform: none;
       color: var(--muted);
     }
     .settingsGrid{
@@ -518,14 +492,22 @@
     }
     .field{ display:flex; flex-direction:column; gap:6px; }
     .field label{ font-size: 12px; color: var(--muted); }
-    .field input{
+    .field input,
+    .field select,
+    .field textarea{
       border-radius: 12px;
-      border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.10);
+      background: rgba(255,255,255,0.05);
       color: var(--text);
       padding: 10px 10px;
       outline: none;
       font-size: 13px;
+    }
+    .field input:focus,
+    .field select:focus,
+    .field textarea:focus{
+      border-color: rgba(10,132,255,0.55);
+      box-shadow: 0 0 0 2px rgba(10,132,255,0.15);
     }
     .field small{ color: rgba(255,255,255,0.55); font-size: 11px; }
     .settingsActions{ display:flex; gap: 10px; margin-top: 12px; }
@@ -541,7 +523,7 @@
 <body>
   <div class="frame">
     <div class="titlebar">
-      <h1 class="title">Fork Simulation Monitor</h1>
+      <h1 class="title">ArbitoInator Monitor</h1>
       <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:flex-end;">
         <div class="pill" title="Состояние соединения и процесса">
         <div style="display:flex; align-items:center; gap:10px; min-width:0;">
@@ -640,6 +622,25 @@
             </div>
           </div>
 
+          <div class="stats">
+            <div class="stat">
+              <div class="k">Raw opps</div>
+              <div class="v" id="statRaw">0</div>
+            </div>
+            <div class="stat">
+              <div class="k">After slippage+MEV</div>
+              <div class="v" id="statSafety">0</div>
+            </div>
+            <div class="stat">
+              <div class="k">After gas/limits</div>
+              <div class="v" id="statGas">0</div>
+            </div>
+            <div class="stat">
+              <div class="k">Ready to execute</div>
+              <div class="v" id="statReady">0</div>
+            </div>
+          </div>
+
           <!-- RPC pool health (updates live) -->
           <div class="stats" style="margin-top:10px;">
             <div class="stat" style="grid-column: 1 / -1;">
@@ -687,6 +688,11 @@
               <label for="cfgSlip">Slippage safety (bps)</label>
               <input id="cfgSlip" type="number" step="1" min="0" />
               <small>5 = 0.05%</small>
+            </div>
+            <div class="field">
+              <label for="cfgMev">MEV buffer (bps)</label>
+              <input id="cfgMev" type="number" step="1" min="0" />
+              <small>extra safety margin on top of slippage</small>
             </div>
             <div class="field">
               <label for="cfgGas">Max gas (gwei)</label>
@@ -746,6 +752,16 @@
               <input id="cfgT2" type="number" step="0.5" min="1" />
               <small>longer timeout to not miss profit</small>
             </div>
+            <div class="field">
+              <label for="cfgV2Ratio">V2 min reserve ratio</label>
+              <input id="cfgV2Ratio" type="number" step="1" min="0" />
+              <small>reserve_in >= amount_in * ratio</small>
+            </div>
+            <div class="field">
+              <label for="cfgV2Impact">V2 max price impact (bps)</label>
+              <input id="cfgV2Impact" type="number" step="1" min="0" />
+              <small>drop quotes with high impact</small>
+            </div>
           </div>
           <div class="settingsActions">
             <button id="saveCfgBtn" class="btn">save</button>
@@ -797,18 +813,34 @@
   const statProfit = document.getElementById('statProfit');
   const statSpent = document.getElementById('statSpent');
   const statRoi = document.getElementById('statRoi');
+  const statRaw = document.getElementById('statRaw');
+  const statSafety = document.getElementById('statSafety');
+  const statGas = document.getElementById('statGas');
+  const statReady = document.getElementById('statReady');
   const rpcStatsBody = document.getElementById('rpcStatsBody');
 
   const profitRows = document.getElementById('profitRows');
   const canvas = document.getElementById('profitChart');
   const ctx = canvas.getContext('2d');
 
+  const STORAGE_KEY = 'arbito_ui_state_v2';
+  const MAX_LOGS = 120;
+  const MAX_PROFITS = 200;
+  let saveTimer = null;
+  let lastSavedAtMs = 0;
+
   let logs = 0;
   let blocksScanned = 0;
+  let lastCountedBlock = null;
   let profitableHits = 0;
+  let rawOpps = 0;
+  let safetyOpps = 0;
+  let gasOpps = 0;
+  let readyOpps = 0;
   const totalProfitBySym = {}; // {USDC: 1.23, USDT: 0.10, ...}
   const totalSpentBySym = {};  // {USDC: 10.0, USDT: 5.0, ...}
   let profitCurrency = 'USDC'; // currently displayed currency
+  const logItems = [];
   const profitEvents = []; // {t, block, profit, route, sym}
 
   // Settings elements
@@ -818,6 +850,7 @@
   const cfgMinPct = document.getElementById('cfgMinPct');
   const cfgMinAbs = document.getElementById('cfgMinAbs');
   const cfgSlip = document.getElementById('cfgSlip');
+  const cfgMev = document.getElementById('cfgMev');
   const cfgGas = document.getElementById('cfgGas');
   const cfgConc = document.getElementById('cfgConc');
   const cfgMode = document.getElementById('cfgMode');
@@ -829,6 +862,8 @@
   const cfgEvals = document.getElementById('cfgEvals');
   const cfgT1 = document.getElementById('cfgT1');
   const cfgT2 = document.getElementById('cfgT2');
+  const cfgV2Ratio = document.getElementById('cfgV2Ratio');
+  const cfgV2Impact = document.getElementById('cfgV2Impact');
   const saveCfgBtn = document.getElementById('saveCfgBtn');
   const applyCfgBtn = document.getElementById('applyCfgBtn');
   const dealsTable = document.getElementById('dealsTable');
@@ -936,9 +971,244 @@
     uptimeText.textContent = formatUptime(Date.now() - Number(botStartedAtMs));
   }, 1000);
 
-  function addLog({type, time, block, text}){
-    logs += 1;
-    logCount.textContent = String(logs);
+  function schedulePersist(){
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(persistState, 400);
+  }
+
+  function sendStateToServer(state){
+    try {
+      fetch('/ui_state', {
+        method: 'POST',
+        headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({ state: state || {} }),
+      }).catch(()=>{});
+    } catch (e) {
+      // ignore server sync failures
+    }
+  }
+
+  function persistState(){
+    try {
+      const savedAtMs = Date.now();
+      const state = {
+        v: 3,
+        saved_at_ms: savedAtMs,
+        logs: logItems.slice(-MAX_LOGS),
+        profitEvents: profitEvents.slice(-MAX_PROFITS),
+        blocksScanned: blocksScanned,
+        lastCountedBlock: lastCountedBlock,
+        profitableHits: profitableHits,
+        rawOpps: rawOpps,
+        safetyOpps: safetyOpps,
+        gasOpps: gasOpps,
+        readyOpps: readyOpps,
+        profitCurrency: profitCurrency,
+        totalProfitBySym: { ...totalProfitBySym },
+        totalSpentBySym: { ...totalSpentBySym },
+        lastBlock: lastBlockEl ? lastBlockEl.textContent : null,
+        notice: {
+          kind: opBadge ? opBadge.textContent : '',
+          text: noticeText ? noticeText.textContent : '',
+        },
+      };
+      lastSavedAtMs = savedAtMs;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      sendStateToServer(state);
+    } catch (e) {
+      // ignore storage failures
+    }
+  }
+
+  function clearObject(obj){
+    Object.keys(obj).forEach((k) => { delete obj[k]; });
+  }
+
+  function normalizeProfitEvent(evt){
+    if (!evt || typeof evt !== 'object') return null;
+    const profit = (evt.profit != null && Number.isFinite(Number(evt.profit))) ? Number(evt.profit) : null;
+    const spent = (evt.spent != null && Number.isFinite(Number(evt.spent))) ? Number(evt.spent) : null;
+    const roi = (evt.roi_pct != null && Number.isFinite(Number(evt.roi_pct))) ? Number(evt.roi_pct) : null;
+    return {
+      t: (evt.t != null) ? String(evt.t) : '',
+      block: (typeof evt.block === 'number') ? evt.block : null,
+      profit: profit,
+      sym: (typeof evt.sym === 'string') ? evt.sym.toUpperCase() : null,
+      route: (typeof evt.route === 'string') ? evt.route : (typeof evt.route_full === 'string') ? evt.route_full : '—',
+      spent: spent,
+      spent_sym: (typeof evt.spent_sym === 'string') ? evt.spent_sym.toUpperCase() : (typeof evt.token_in_sym === 'string') ? evt.token_in_sym.toUpperCase() : null,
+      roi_pct: roi,
+      route_short: (typeof evt.route_short === 'string') ? evt.route_short : null,
+      route_full: (typeof evt.route_full === 'string') ? evt.route_full : null,
+    };
+  }
+
+  function computeTotalsFromEvents(){
+    const profitBySym = {};
+    const spentBySym = {};
+    let hits = 0;
+    profitEvents.forEach((evt) => {
+      if (!evt || typeof evt !== 'object') return;
+      const sym = String(evt.sym || profitCurrency || 'USDC').toUpperCase();
+      if (evt.profit != null && Number.isFinite(Number(evt.profit))){
+        profitBySym[sym] = Number(profitBySym[sym] || 0) + Number(evt.profit);
+        hits += 1;
+      }
+      if (evt.spent != null && Number.isFinite(Number(evt.spent))){
+        spentBySym[sym] = Number(spentBySym[sym] || 0) + Number(evt.spent);
+      }
+    });
+    return { profitBySym, spentBySym, hits };
+  }
+
+  function rebuildTotalsFromEvents(){
+    const totals = computeTotalsFromEvents();
+    clearObject(totalProfitBySym);
+    clearObject(totalSpentBySym);
+    Object.assign(totalProfitBySym, totals.profitBySym);
+    Object.assign(totalSpentBySym, totals.spentBySym);
+    profitableHits = totals.hits;
+  }
+
+  function rebuildProfitTable(){
+    if (!profitRows) return;
+    profitRows.textContent = '';
+    const list = profitEvents.slice(-10);
+    for (let i = list.length - 1; i >= 0; i--){
+      const row = renderProfitRow(list[i]);
+      if (row) profitRows.appendChild(row);
+    }
+  }
+
+  function restoreStateFromData(state){
+    if (!state || typeof state !== 'object') return false;
+    const savedAt = (typeof state.saved_at_ms === 'number') ? state.saved_at_ms : 0;
+    if (lastSavedAtMs && savedAt === 0) return false;
+    if (savedAt && savedAt < lastSavedAtMs) return false;
+    if (savedAt) lastSavedAtMs = savedAt;
+
+    if (Array.isArray(state.logs)){
+      logItems.length = 0;
+      if (logsDiv) logsDiv.textContent = '';
+      state.logs.slice(-MAX_LOGS).forEach((entry) => {
+        const e = {
+          type: (entry && typeof entry.type === 'string') ? entry.type : 'log',
+          time: (entry && entry.time != null) ? String(entry.time) : '',
+          block: (entry && typeof entry.block === 'number') ? entry.block : null,
+          text: (entry && entry.text != null) ? String(entry.text) : '',
+        };
+        logItems.push(e);
+        renderLogEntry(e);
+      });
+      logs = logItems.length;
+      if (logCount) logCount.textContent = String(logs);
+    }
+
+    if (typeof state.blocksScanned === 'number' && Number.isFinite(state.blocksScanned)){
+      blocksScanned = state.blocksScanned;
+    }
+    if (state.lastCountedBlock !== undefined && state.lastCountedBlock !== null){
+      const lb = Number(state.lastCountedBlock);
+      if (Number.isFinite(lb)) lastCountedBlock = lb;
+    }
+    if (typeof state.rawOpps === 'number' && Number.isFinite(state.rawOpps)){
+      rawOpps = state.rawOpps;
+    }
+    if (typeof state.safetyOpps === 'number' && Number.isFinite(state.safetyOpps)){
+      safetyOpps = state.safetyOpps;
+    }
+    if (typeof state.gasOpps === 'number' && Number.isFinite(state.gasOpps)){
+      gasOpps = state.gasOpps;
+    }
+    if (typeof state.readyOpps === 'number' && Number.isFinite(state.readyOpps)){
+      readyOpps = state.readyOpps;
+    }
+
+    if (typeof state.profitCurrency === 'string' && state.profitCurrency.trim()){
+      profitCurrency = state.profitCurrency.trim().toUpperCase();
+    }
+
+    if (lastBlockEl && state.lastBlock != null){
+      lastBlockEl.textContent = String(state.lastBlock);
+      if (lastCountedBlock === null || lastCountedBlock === undefined){
+        const lb = Number(state.lastBlock);
+        if (Number.isFinite(lb)) lastCountedBlock = lb;
+      }
+    }
+
+    if (state.notice && typeof state.notice === 'object'){
+      const kind = (typeof state.notice.kind === 'string') ? state.notice.kind : 'status';
+      const text = (typeof state.notice.text === 'string') ? state.notice.text : '';
+      setNotice(kind, text);
+    }
+
+    if (Array.isArray(state.profitEvents)){
+      profitEvents.length = 0;
+      state.profitEvents.slice(-MAX_PROFITS).forEach((evt) => {
+        const norm = normalizeProfitEvent(evt);
+        if (norm) profitEvents.push(norm);
+      });
+    }
+
+    const hasProfitTotals = (state.totalProfitBySym && typeof state.totalProfitBySym === 'object');
+    const hasSpentTotals = (state.totalSpentBySym && typeof state.totalSpentBySym === 'object');
+    if (hasProfitTotals){
+      clearObject(totalProfitBySym);
+      Object.entries(state.totalProfitBySym).forEach(([k, v]) => {
+        const n = Number(v);
+        if (Number.isFinite(n)) totalProfitBySym[String(k).toUpperCase()] = n;
+      });
+    }
+    if (hasSpentTotals){
+      clearObject(totalSpentBySym);
+      Object.entries(state.totalSpentBySym).forEach(([k, v]) => {
+        const n = Number(v);
+        if (Number.isFinite(n)) totalSpentBySym[String(k).toUpperCase()] = n;
+      });
+    }
+
+    if (typeof state.profitableHits === 'number' && Number.isFinite(state.profitableHits)){
+      profitableHits = state.profitableHits;
+    } else if (!hasProfitTotals && !hasSpentTotals) {
+      rebuildTotalsFromEvents();
+    } else if (!hasProfitTotals || !hasSpentTotals) {
+      const totals = computeTotalsFromEvents();
+      if (!hasProfitTotals){
+        clearObject(totalProfitBySym);
+        Object.assign(totalProfitBySym, totals.profitBySym);
+      }
+      if (!hasSpentTotals){
+        clearObject(totalSpentBySym);
+        Object.assign(totalSpentBySym, totals.spentBySym);
+      }
+      if (!Number.isFinite(state.profitableHits)) profitableHits = totals.hits;
+    }
+
+    rebuildProfitTable();
+    drawChart();
+    updateStats();
+    return true;
+  }
+
+  function restoreState(){
+    let raw = null;
+    try { raw = localStorage.getItem(STORAGE_KEY); } catch { return false; }
+    if (!raw) return false;
+    let state;
+    try { state = JSON.parse(raw); } catch { return false; }
+    return restoreStateFromData(state);
+  }
+
+  function fetchServerState(){
+    fetch('/ui_state')
+      .then((r) => r.json())
+      .then((out) => {
+        if (out && out.ok && out.state) restoreStateFromData(out.state);
+      })
+      .catch(()=>{});
+  }
+
+  function renderLogEntry({type, time, block, text}){
 
     const item = document.createElement('div');
     item.className = 'logItem';
@@ -982,13 +1252,26 @@
     logsDiv.appendChild(item);
 
     // Keep feed lightweight (remove oldest from the top)
-    while (logsDiv.children.length > 120){
+    while (logsDiv.children.length > MAX_LOGS){
       logsDiv.removeChild(logsDiv.firstChild);
     }
 
     if (nearBottom){
       logsDiv.scrollTop = logsDiv.scrollHeight;
     }
+  }
+
+  function addLog({type, time, block, text}){
+    const entry = { type: type || 'log', time: time || '', block: block ?? null, text: text || '' };
+    logItems.push(entry);
+    if (logItems.length > MAX_LOGS) logItems.shift();
+    renderLogEntry(entry);
+    while (logsDiv.children.length > MAX_LOGS){
+      logsDiv.removeChild(logsDiv.firstChild);
+    }
+    logs = logItems.length;
+    logCount.textContent = String(logs);
+    schedulePersist();
   }
 
   function setNotice(kind, msg){
@@ -1004,6 +1287,8 @@
       else noticeIcon.textContent = 'ℹ';
       noticeIcon.className = 'badge ' + (kind === 'profit' ? 'good' : kind === 'warn' ? 'warn' : kind === 'scan' ? 'blue' : '');
     }
+
+    schedulePersist();
   }
 
   function updateStats(){
@@ -1021,6 +1306,20 @@
     // Avg ROI across successful hits in the currently shown currency
     const roi = (spent > 0) ? (v / spent) * 100 : null;
     if (statRoi) statRoi.textContent = (roi == null || !Number.isFinite(roi) || Math.abs(roi) > 1e6) ? '—' : formatPct(roi, 2);
+
+    const fmtOpp = (count) => {
+      const c = Number(count || 0);
+      if (!Number.isFinite(c)) return '0';
+      if (blocksScanned > 0) {
+        const per = c / blocksScanned;
+        return `${Math.round(c)} (${per.toFixed(3)}/blk)`;
+      }
+      return String(Math.round(c));
+    };
+    if (statRaw) statRaw.textContent = fmtOpp(rawOpps);
+    if (statSafety) statSafety.textContent = fmtOpp(safetyOpps);
+    if (statGas) statGas.textContent = fmtOpp(gasOpps);
+    if (statReady) statReady.textContent = fmtOpp(readyOpps);
   }
 
   function parseProfitText(text){
@@ -1038,13 +1337,14 @@
     return { profit, spent, profit_pct, sym, route };
   }
 
-  function pushProfitRow(evt){
+  function renderProfitRow(evt){
+    if (!evt) return null;
     const row = document.createElement('div');
     row.className = 'row';
 
     const c1 = document.createElement('div');
     c1.className = 'mono';
-    c1.textContent = evt.t;
+    c1.textContent = evt.t || '';
 
     const c2 = document.createElement('div');
     c2.className = 'routeCell';
@@ -1093,7 +1393,13 @@
     row.appendChild(c3);
     row.appendChild(c4);
     row.appendChild(c5);
+    return row;
+  }
 
+  function pushProfitRow(evt){
+    if (!profitRows) return;
+    const row = renderProfitRow(evt);
+    if (!row) return;
     // newest at top
     profitRows.prepend(row);
     while (profitRows.children.length > 10){
@@ -1211,13 +1517,17 @@
       // Reset runtime UI state (sent by UI server on /restart) to avoid showing stale RPC pool
       if (msg.type === 'reset') {
         blocksScanned = 0;
+        lastCountedBlock = null;
         profitableHits = 0;
-        totalProfitBySym = {};
-        totalSpentBySym = {};
-        deals = [];
-        chartData = [];
+        rawOpps = 0;
+        safetyOpps = 0;
+        gasOpps = 0;
+        readyOpps = 0;
+        clearObject(totalProfitBySym);
+        clearObject(totalSpentBySym);
+        profitEvents.length = 0;
+        if (profitRows) profitRows.textContent = '';
         if (rpcStatsBody) rpcStatsBody.textContent = '—';
-        renderDeals();
         drawChart();
         updateStats();
         setNotice('status', msg.text || 'restarting...');
@@ -1237,7 +1547,20 @@
       if (msg.type === 'scan'){
         if (typeof msg.block === 'number'){
           lastBlockEl.textContent = String(msg.block);
-          blocksScanned += 1;
+          const isResult = (
+            typeof msg.raw_opps === 'number' ||
+            typeof msg.candidates === 'number' ||
+            typeof msg.profitable === 'number' ||
+            typeof msg.best_profit === 'number'
+          );
+          if (isResult && msg.block !== lastCountedBlock){
+            blocksScanned += 1;
+            lastCountedBlock = msg.block;
+          }
+          if (typeof msg.raw_opps === 'number') rawOpps += msg.raw_opps;
+          if (typeof msg.safety_opps === 'number') safetyOpps += msg.safety_opps;
+          if (typeof msg.gas_opps === 'number') gasOpps += msg.gas_opps;
+          if (typeof msg.final_opps === 'number') readyOpps += msg.final_opps;
           updateStats();
           const candidates = (typeof msg.candidates === 'number') ? msg.candidates : null;
           const profitable = (typeof msg.profitable === 'number') ? msg.profitable : null;
@@ -1270,7 +1593,10 @@
             const fail = Number(s.fail || 0);
             const inflight = Number(s.inflight || 0);
             const lat = (typeof s.lat_ms === 'number') ? s.lat_ms : Number(s.lat_ms || 0);
-            return `${host.padEnd(24, ' ')} ok=${ok} fail=${fail} in=${inflight} lat=${lat}ms`;
+            const weight = (typeof s.weight === 'number') ? s.weight : Number(s.weight || 0);
+            const cb = s.cb_open ? 'cb=on' : 'cb=off';
+            const fb = s.fallback_only ? 'fb=1' : 'fb=0';
+            return `${host.padEnd(24, ' ')} w=${weight} ${fb} ${cb} ok=${ok} fail=${fail} in=${inflight} lat=${lat}ms`;
           });
           rpcStatsBody.textContent = lines.join('\n') || '—';
         }
@@ -1327,6 +1653,7 @@
             route_full: (typeof msg.route_full === 'string') ? msg.route_full : route,
           };
           profitEvents.push(evt);
+          if (profitEvents.length > MAX_PROFITS) profitEvents.shift();
           drawChart();
           pushProfitRow(evt);
           setNotice('profit', '✅ Profitable opportunity found');
@@ -1384,6 +1711,7 @@
       min_profit_pct: Number(cfgMinPct.value || 0),
       min_profit_abs: Number(cfgMinAbs.value || 0),
       slippage_bps: parseInt(cfgSlip.value || '0', 10),
+      mev_buffer_bps: parseInt(cfgMev.value || '0', 10),
       max_gas_gwei: (cfgGas.value === '' ? null : Number(cfgGas.value)),
       concurrency: parseInt(cfgConc.value || '12', 10),
       block_budget_s: Number(cfgBudget.value || 10),
@@ -1397,8 +1725,10 @@
       stage2_amount_max: (rmax == null || !isFinite(rmax)) ? null : rmax,
       stage2_max_evals: parseInt(cfgEvals.value || '6', 10),
 
-      rpc_timeout_stage1_s: Number(cfgT1.value || 6),
-      rpc_timeout_stage2_s: Number(cfgT2.value || 10),
+      rpc_timeout_stage1_s: Number(cfgT1.value || 3),
+      rpc_timeout_stage2_s: Number(cfgT2.value || 4),
+      v2_min_reserve_ratio: Number(cfgV2Ratio.value || 0),
+      v2_max_price_impact_bps: Number(cfgV2Impact.value || 0),
     };
   }
 
@@ -1419,6 +1749,7 @@
     cfgMinPct.value = String(cfg.min_profit_pct ?? 0.05);
     cfgMinAbs.value = String(cfg.min_profit_abs ?? 0.05);
     cfgSlip.value = String(cfg.slippage_bps ?? 8);
+    cfgMev.value = String(cfg.mev_buffer_bps ?? 5);
     cfgGas.value = (cfg.max_gas_gwei == null ? '' : String(cfg.max_gas_gwei));
     cfgConc.value = String(cfg.concurrency ?? 12);
     cfgMode.value = String(cfg.scan_mode ?? 'auto');
@@ -1432,8 +1763,14 @@
     const rmax = cfg.stage2_amount_max ?? 50;
     cfgRange.value = String(rmin) + '..' + String(rmax);
     cfgEvals.value = String(cfg.stage2_max_evals ?? 6);
-    cfgT1.value = String(cfg.rpc_timeout_stage1_s ?? 6);
-    cfgT2.value = String(cfg.rpc_timeout_stage2_s ?? 10);
+    cfgT1.value = String(cfg.rpc_timeout_stage1_s ?? 3);
+    cfgT2.value = String(cfg.rpc_timeout_stage2_s ?? 4);
+    cfgV2Ratio.value = String(cfg.v2_min_reserve_ratio ?? 20);
+    cfgV2Impact.value = String(cfg.v2_max_price_impact_bps ?? 300);
+    updateStats();
+    drawChart();
+    rebuildProfitTable();
+    schedulePersist();
   }
 
   function initColumnResizers(){
@@ -1512,13 +1849,15 @@
 
   // -----------------------------
   // Init
-  drawChart();
+  const restored = restoreState();
+  if (!restored) drawChart();
   initColumnResizers();
   // Load settings once on page init
   getConfig().then((c)=>{
     if (c && c.ok) fillForm(c.config || {});
   }).catch(()=>{});
 
+  fetchServerState();
   connectWS();
 </script>
 </body>

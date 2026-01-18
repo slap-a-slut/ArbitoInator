@@ -335,10 +335,13 @@ class PriceScanner:
         gas_units += 25_000  # cushion
         gas_cost_in = await self.estimate_gas_cost_token(gas_units, route[0], block=block)
 
-        profit_raw = int(amt) - int(amount_in) - int(gas_cost_in)
+        profit_raw_no_gas = int(amt) - int(amount_in)
+        profit_raw = int(profit_raw_no_gas) - int(gas_cost_in)
         dec = _decimals(route[0])
+        profit_no_gas = float(profit_raw_no_gas) / float(10**dec)
         profit = float(profit_raw) / float(10**dec)
         amt_in_f = float(amount_in) / float(10**dec)
+        profit_pct_no_gas = (profit_no_gas / amt_in_f * 100.0) if amt_in_f > 0 else 0.0
         profit_pct = (profit / amt_in_f * 100.0) if amt_in_f > 0 else 0.0
 
         # Sanity guard: if something upstream returned garbage (e.g., revert-bytes decoded as values),
@@ -354,6 +357,9 @@ class PriceScanner:
             "amount_out": int(amt),
             "gas_cost": int(gas_cost_in),
             "gas_units": int(gas_units),
+            "profit_raw_no_gas": int(profit_raw_no_gas),
+            "profit_no_gas": float(profit_no_gas),
+            "profit_pct_no_gas": float(profit_pct_no_gas),
             "profit_raw": int(profit_raw),
             "profit": float(profit),
             "profit_pct": float(profit_pct),

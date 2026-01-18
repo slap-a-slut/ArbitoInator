@@ -145,9 +145,28 @@ class UniV2Like:
         else:
             reserve_in, reserve_out = reserves.reserve1, reserves.reserve0
 
+        min_ratio = float(getattr(config, "V2_MIN_RESERVE_RATIO", 0.0))
+        if min_ratio > 0.0:
+            try:
+                if int(reserve_in) < int(amount_in) * float(min_ratio):
+                    return None
+            except Exception:
+                return None
+
         amount_out = self._amount_out(int(amount_in), reserve_in, reserve_out)
         if amount_out <= 0:
             return None
+
+        max_impact_bps = float(getattr(config, "V2_MAX_PRICE_IMPACT_BPS", 0.0))
+        if max_impact_bps > 0.0:
+            try:
+                ideal_out = (int(amount_in) * int(reserve_out)) / float(reserve_in)
+                if ideal_out > 0:
+                    impact_bps = max(0.0, (ideal_out - float(amount_out)) / float(ideal_out) * 10_000.0)
+                    if impact_bps > float(max_impact_bps):
+                        return None
+            except Exception:
+                return None
 
         return DexQuote(
             dex=self.name,

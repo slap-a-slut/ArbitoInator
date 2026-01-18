@@ -58,6 +58,7 @@ class Settings:
     min_profit_pct: float = 0.05  # percent of input (e.g. 0.05 == 0.05%)
     min_profit_abs: float = 0.05  # in base token units (usually USD if base is USDC/USDT)
     slippage_bps: float = 8.0
+    mev_buffer_bps: float = 5.0
     max_gas_gwei: Optional[float] = None
 
     # Performance
@@ -78,6 +79,10 @@ class Settings:
     # RPC timeouts
     rpc_timeout_stage1_s: float = 6.0
     rpc_timeout_stage2_s: float = 10.0
+
+    # V2 filters
+    v2_min_reserve_ratio: float = 20.0
+    v2_max_price_impact_bps: float = 300.0
 
     # Reporting / base currency (UI should stay consistent)
     # Profits, spent, ROI are computed and displayed in this token.
@@ -137,6 +142,19 @@ def _load_settings() -> Settings:
         s.report_currency = rc
     except Exception:
         s.report_currency = "USDC"
+    # numeric fields
+    try:
+        s.mev_buffer_bps = float(raw.get("mev_buffer_bps", s.mev_buffer_bps))
+    except Exception:
+        pass
+    try:
+        s.v2_min_reserve_ratio = float(raw.get("v2_min_reserve_ratio", s.v2_min_reserve_ratio))
+    except Exception:
+        pass
+    try:
+        s.v2_max_price_impact_bps = float(raw.get("v2_max_price_impact_bps", s.v2_max_price_impact_bps))
+    except Exception:
+        pass
     return s
 
 
@@ -261,12 +279,42 @@ async def _scan_candidates(
 def _apply_safety(p: Dict[str, Any], s: Settings) -> Dict[str, Any]:
     """Apply slippage safety to profit values (conservative)."""
     try:
+        route_t = tuple(p.get("route") or ())
+        token_in = route_t[0] if route_t else p.get("token_in")
+        if not token_in:
+            return p
         amt_in = int(p.get("amount_in", 0))
-        dec = _decimals_by_token(p.get("route")[0])
-        safety_raw = int(amt_in * float(s.slippage_bps) / 10_000.0)
+        dec = _decimals_by_token(str(token_in))
+        slip_raw = int(amt_in * float(s.slippage_bps) / 10_000.0)
+        mev_raw = int(amt_in * float(s.mev_buffer_bps) / 10_000.0)
+        safety_raw = int(slip_raw + mev_raw)
+        gas_cost = int(p.get("gas_cost", 0) or 0)
+
+        profit_raw_no_gas = p.get("profit_raw_no_gas", None)
+        if profit_raw_no_gas is None:
+            try:
+                profit_raw_no_gas = int(p.get("amount_out", 0)) - int(amt_in)
+            except Exception:
+                profit_raw_no_gas = int(p.get("profit_raw", 0) or 0) + int(gas_cost)
+
+        profit_raw_safety = int(profit_raw_no_gas) - int(safety_raw)
+        profit_raw_adj = int(profit_raw_safety) - int(gas_cost)
+
+        amt_in_f = float(amt_in) / float(10 ** dec) if dec > 0 else 0.0
+        profit_safety = float(profit_raw_safety) / float(10 ** dec)
+        profit_adj = float(profit_raw_adj) / float(10 ** dec)
+        profit_pct_safety = (profit_safety / amt_in_f * 100.0) if amt_in_f > 0 else 0.0
+        profit_pct_adj = (profit_adj / amt_in_f * 100.0) if amt_in_f > 0 else 0.0
+
         p2 = dict(p)
-        p2["profit_raw_adj"] = int(p.get("profit_raw", 0)) - safety_raw
-        p2["profit_adj"] = float(p2["profit_raw_adj"]) / float(10 ** dec)
+        p2["slippage_raw"] = int(slip_raw)
+        p2["mev_buffer_raw"] = int(mev_raw)
+        p2["profit_raw_safety"] = int(profit_raw_safety)
+        p2["profit_safety"] = float(profit_safety)
+        p2["profit_pct_safety"] = float(profit_pct_safety)
+        p2["profit_raw_adj"] = int(profit_raw_adj)
+        p2["profit_adj"] = float(profit_adj)
+        p2["profit_pct_adj"] = float(profit_pct_adj)
         return p2
     except Exception:
         return p
@@ -291,6 +339,36 @@ def _passes_thresholds(p: Dict[str, Any], s: Settings) -> bool:
         return True
     except Exception:
         return False
+
+
+def _funnel_counts(payloads: List[Dict[str, Any]], s: Settings) -> Dict[str, int]:
+    counts = {"raw": 0, "safety": 0, "gas": 0, "ready": 0}
+    for p in payloads:
+        try:
+            pr_raw = p.get("profit_raw_no_gas", None)
+            if pr_raw is None:
+                pr_raw = int(p.get("amount_out", 0)) - int(p.get("amount_in", 0))
+            pr_raw = int(pr_raw)
+        except Exception:
+            pr_raw = -1
+        try:
+            pr_safety = int(p.get("profit_raw_safety", pr_raw))
+        except Exception:
+            pr_safety = -1
+        try:
+            pr_adj = int(p.get("profit_raw_adj", p.get("profit_raw", -1)))
+        except Exception:
+            pr_adj = -1
+
+        if pr_raw > 0:
+            counts["raw"] += 1
+        if pr_safety > 0:
+            counts["safety"] += 1
+        if pr_adj > 0:
+            counts["gas"] += 1
+        if strategies.risk_check(p) and _passes_thresholds(p, s):
+            counts["ready"] += 1
+    return counts
 
 
 async def _optimize_amount_for_route(
@@ -406,7 +484,7 @@ async def simulate(payload: Dict[str, Any], block_number: int) -> None:
     except Exception:
         spent = None
 
-    profit = payload.get("profit", 0.0)
+    profit = payload.get("profit_adj", payload.get("profit", 0.0))
     # Safety: if some code path mistakenly passes raw units,
     # convert to token units so UI doesn't show "∞".
     try:
@@ -520,9 +598,10 @@ def log(iteration: int, payloads: List[Dict[str, Any]], block_number: int) -> No
     now = datetime.utcnow().strftime("%H:%M:%S")
     print(f"[{now}] Block {block_number} | Iteration {iteration} | Profitable payloads: {len(payloads)}")
     for p in payloads:
+        prof = float(p.get("profit_adj", p.get("profit", 0)))
         print(
             f"  Route: {_route_pretty(tuple(p.get('route')), p.get('route_dex'), p.get('route_fee_bps'))} "
-            f"| Profit: {p.get('profit',0):.6f}"
+            f"| Profit: {prof:.6f}"
         )
 
 
@@ -555,6 +634,11 @@ async def main() -> None:
         while True:
             iteration += 1
             s = _load_settings()
+            try:
+                config.V2_MIN_RESERVE_RATIO = float(s.v2_min_reserve_ratio)
+                config.V2_MAX_PRICE_IMPACT_BPS = float(s.v2_max_price_impact_bps)
+            except Exception:
+                pass
 
             # 0) wait new block
             block_number = await wait_for_new_block(last_block)
@@ -612,6 +696,7 @@ async def main() -> None:
             profitable: List[Dict[str, Any]] = []
             candidates_count = 0
             finished_count = 0
+            funnel_counts = {"raw": 0, "safety": 0, "gas": 0, "ready": 0}
 
             try:
                 if str(s.scan_mode).lower() == "fixed":
@@ -627,10 +712,12 @@ async def main() -> None:
                         fee_tiers=None,
                         timeout_s=float(s.rpc_timeout_stage2_s),
                         deadline_s=deadline,
-                        keep_all=False,
+                        keep_all=True,
                     )
-                    for p in payloads:
-                        p2 = _apply_safety(p, s)
+                    payloads = [p for p in payloads if p and p.get("profit_raw", -1) != -1]
+                    payloads2 = [_apply_safety(p, s) for p in payloads]
+                    funnel_counts = _funnel_counts(payloads2, s)
+                    for p2 in payloads2:
                         if strategies.risk_check(p2) and _passes_thresholds(p2, s):
                             profitable.append(p2)
 
@@ -691,8 +778,10 @@ async def main() -> None:
                                 t.cancel()
                         await asyncio.gather(*opt_tasks, return_exceptions=True)
 
-                    for bp in best_payloads:
-                        bp2 = _apply_safety(bp, s)
+                    best_payloads = [bp for bp in best_payloads if bp and bp.get("profit_raw", -1) != -1]
+                    best_payloads2 = [_apply_safety(bp, s) for bp in best_payloads]
+                    funnel_counts = _funnel_counts(best_payloads2, s)
+                    for bp2 in best_payloads2:
                         if strategies.risk_check(bp2) and _passes_thresholds(bp2, s):
                             profitable.append(bp2)
 
@@ -711,7 +800,15 @@ async def main() -> None:
                         "candidates": int(candidates_count),
                         "profitable": 0,
                         "best_profit": 0.0,
-                        "text": f"Scanned {int(finished_count)}/{int(candidates_count)} routes | profitable=0 | mode={s.scan_mode}",
+                        "raw_opps": int(funnel_counts["raw"]),
+                        "safety_opps": int(funnel_counts["safety"]),
+                        "gas_opps": int(funnel_counts["gas"]),
+                        "final_opps": int(funnel_counts["ready"]),
+                        "text": (
+                            f"Scanned {int(finished_count)}/{int(candidates_count)} routes | "
+                            f"raw={int(funnel_counts['raw'])} safety={int(funnel_counts['safety'])} "
+                            f"gas={int(funnel_counts['gas'])} ready={int(funnel_counts['ready'])} | mode={s.scan_mode}"
+                        ),
                     }
                 )
                 # Emit RPC pool stats + block summary for debugging
@@ -732,6 +829,10 @@ async def main() -> None:
                         "candidates": int(candidates_count),
                         "finished": int(finished_count),
                         "profitable": 0,
+                        "raw_opps": int(funnel_counts["raw"]),
+                        "safety_opps": int(funnel_counts["safety"]),
+                        "gas_opps": int(funnel_counts["gas"]),
+                        "final_opps": int(funnel_counts["ready"]),
                         "mode": str(s.scan_mode),
                     }, ensure_ascii=False) + "\n")
                 except Exception:
@@ -747,7 +848,16 @@ async def main() -> None:
                     "candidates": int(candidates_count),
                     "profitable": len(profitable),
                     "best_profit": float(best_profit),
-                    "text": f"Scanned {int(finished_count)}/{int(candidates_count)} routes | profitable={len(profitable)} | best={best_profit:.6f} | mode={s.scan_mode}",
+                    "raw_opps": int(funnel_counts["raw"]),
+                    "safety_opps": int(funnel_counts["safety"]),
+                    "gas_opps": int(funnel_counts["gas"]),
+                    "final_opps": int(funnel_counts["ready"]),
+                    "text": (
+                        f"Scanned {int(finished_count)}/{int(candidates_count)} routes | "
+                        f"raw={int(funnel_counts['raw'])} safety={int(funnel_counts['safety'])} "
+                        f"gas={int(funnel_counts['gas'])} ready={int(funnel_counts['ready'])} | "
+                        f"best={best_profit:.6f} | mode={s.scan_mode}"
+                    ),
                 }
             )
 
@@ -770,6 +880,10 @@ async def main() -> None:
                     "finished": int(finished_count),
                     "profitable": int(len(profitable)),
                     "best_profit": float(best_profit),
+                    "raw_opps": int(funnel_counts["raw"]),
+                    "safety_opps": int(funnel_counts["safety"]),
+                    "gas_opps": int(funnel_counts["gas"]),
+                    "final_opps": int(funnel_counts["ready"]),
                     "mode": str(s.scan_mode),
                 }, ensure_ascii=False) + "\n")
             except Exception:
