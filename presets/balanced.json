@@ -8,6 +8,8 @@
     "debug_funnel": true,
     "dex_adapters": ["univ3", "univ2", "sushiswap"],
     "enable_multidex_beam": true,
+    "trigger_prefer_cross_dex": true,
+    "trigger_require_cross_dex": false,
     "max_hops": 3,
     "beam_k": 12,
     "edge_top_m": 2,

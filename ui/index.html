@@ -81,6 +81,9 @@
       border: 1px solid var(--stroke);
       box-shadow: var(--shadow);
       backdrop-filter: blur(14px);
+      position: sticky;
+      top: 18px;
+      z-index: 30;
     }
 
     .title{
@@ -297,9 +300,9 @@
     }
 
     .btn{
-      width: 100%;
+      width: auto;
       border-radius: 999px;
-      padding: 12px 16px;
+      padding: 10px 14px;
       font-weight: 600;
       letter-spacing: .01em;
       text-transform: none;
@@ -326,6 +329,10 @@
       opacity: .40;
       cursor: not-allowed;
       transform: none;
+    }
+    .btn.tiny{
+      padding: 6px 10px;
+      font-size: 12px;
     }
 
     .dashboard{
@@ -525,206 +532,350 @@
     .checkRow input{ accent-color: var(--accent); }
     .settingsActions{ display:flex; gap: 10px; margin-top: 12px; }
 
+    /* New layout */
+    .topbar{
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding: 14px 16px;
+      border-radius: calc(var(--radius) + 6px);
+      background: var(--panel-2);
+      border: 1px solid var(--stroke);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+    }
+    .brand{ display:flex; flex-direction: column; gap: 6px; }
+    .badgeRow{ display:flex; align-items:center; gap: 8px; flex-wrap: wrap; }
+    .topStatus{ display:flex; gap: 10px; flex-wrap: wrap; align-items:center; }
+    .topActions{ display:flex; gap: 8px; flex-wrap: wrap; align-items:center; }
+    .topbar .pill{ min-width: 180px; }
+    .statusRow{ display:flex; align-items:center; gap: 10px; }
+    .statusText{ display:flex; flex-direction: column; min-width: 0; }
+    .statusText span{ font-size: 12px; color: var(--muted); }
+    .miniStatus{ display:flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .miniStatus span{ font-size: 11px; color: var(--muted); }
+    .miniStatus b{ font-size: 13px; }
+
+    .nowPanel{ margin-top: 16px; padding: 14px; }
+    .nowHeader{ display:flex; align-items:center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .nowMeta{ display:flex; gap: 12px; flex-wrap: wrap; }
+    .kpiGrid{ display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; margin-top: 12px; }
+    .kpiCard{ border-radius: 16px; border: 1px solid rgba(255,255,255,0.06); background: rgba(8,10,14,0.55); padding: 12px; }
+    .kpiTitle{ font-size: 12px; color: rgba(255,255,255,0.7); letter-spacing: .04em; text-transform: uppercase; margin-bottom: 8px; }
+    .kpiRow{ display:flex; align-items:center; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--muted); }
+    .kpiRow b{ color: var(--text); font-weight: 600; }
+
+    .warningsStrip{ display:flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .warnPill{
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(255,159,10,0.12);
+      border: 1px solid rgba(255,159,10,0.35);
+      color: var(--warn);
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .warnPill.show{ display: inline-flex; }
+
+    .splitLists{ display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; margin-top: 12px; }
+    .listCard{ border-radius: 14px; border: 1px solid rgba(255,255,255,0.06); background: rgba(8,10,14,0.55); padding: 10px; }
+    .listCard .label{ font-size: 11px; color: rgba(255,255,255,0.6); margin-bottom: 6px; text-transform: uppercase; letter-spacing: .04em; }
+    .listCard .list{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; line-height: 1.35; max-height: 160px; overflow: auto; white-space: pre; }
+
+    .secondaryStatsDetails{ margin-top: 10px; }
+    .secondaryStatsDetails summary{ cursor: pointer; font-size: 12px; color: var(--muted); }
+    .secondaryStatsDetails[open] summary{ color: var(--text); }
+    .secondaryGrid{ display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 8px; margin-top: 8px; }
+    .statMini{ display:flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.06); background: rgba(8,10,14,0.5); }
+    .statMini span{ font-size: 11px; color: var(--muted); }
+    .statMini b{ font-size: 13px; color: var(--text); }
+
+    .rpcDetails{ margin-top: 10px; }
+    .rpcDetails summary{ cursor: pointer; font-size: 12px; color: var(--muted); }
+    .rpcDetails[open] summary{ color: var(--text); }
+
+    .opsPanel{ margin-top: 16px; }
+    .opsStack{ display:flex; flex-direction: column; gap: 12px; }
+    .opsCard > summary{ padding: 10px 14px; }
+
+    .settingsPanel{ margin-top: 16px; padding: 12px; }
+    .settingsHeader{ display:flex; align-items:flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .settingsHeadLeft{ display:flex; flex-direction: column; gap: 10px; }
+    .settingsSearch{ display:flex; align-items:center; gap: 6px; }
+    .settingsSearch input{ min-width: 240px; }
+    .quickButtons{ display:flex; gap: 8px; flex-wrap: wrap; }
+
+    .sectionCard{
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 16px;
+      background: rgba(8,10,14,0.55);
+      margin-top: 12px;
+      overflow: hidden;
+    }
+    .sectionCard > summary{
+      list-style: none;
+      cursor: pointer;
+      padding: 10px 14px;
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      gap: 10px;
+      user-select: none;
+    }
+    .sectionCard[open] > summary{ background: rgba(255,255,255,0.03); }
+    .sectionTitle{ display:flex; flex-direction: column; gap: 2px; font-size: 13px; }
+    .sectionHint{ font-size: 11px; color: rgba(255,255,255,0.55); }
+    .sectionBody{ padding: 12px 14px; border-top: 1px solid rgba(255,255,255,0.06); }
+    .basicGrid, .advancedGrid{ display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+
+    .advancedToggle{ margin-top: 10px; }
+    .advancedToggle > summary{
+      list-style: none;
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--muted);
+      padding: 8px 0;
+      user-select: none;
+    }
+    .advancedToggle[open] > summary{ color: var(--text); }
+
+    .toggleRow{ display:flex; gap: 12px; flex-wrap: wrap; align-items:center; }
+    .warnBadge{
+      display:none;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(255,159,10,0.12);
+      border: 1px solid rgba(255,159,10,0.35);
+      color: var(--warn);
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .warnBadge.show{ display:inline-flex; }
+
+    .field.hidden{ display:none; }
+    .field.match{ outline: 1px solid rgba(10,132,255,0.6); border-radius: 12px; padding: 6px; }
+
     @media (max-width: 980px){
       .grid{ grid-template-columns: 1fr; }
+      .topbar{ position: static; }
       .pill{ min-width: auto; width: 100%; }
       .logFeed{ height: 360px; }
       .chartBox{ height: 200px; }
+      .kpiGrid{ grid-template-columns: 1fr; }
+      .splitLists{ grid-template-columns: 1fr; }
+      .secondaryGrid{ grid-template-columns: 1fr; }
+      .basicGrid, .advancedGrid{ grid-template-columns: 1fr; }
+      .settingsSearch input{ min-width: 100%; }
     }
   </style>
 </head>
 <body>
   <div class="frame">
-    <div class="titlebar">
-      <h1 class="title">ArbitoInator Monitor</h1>
-      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:flex-end;">
-        <div class="pill" title="Состояние соединения и процесса">
-        <div style="display:flex; align-items:center; gap:10px; min-width:0;">
-          <div id="connDot" class="dot off"></div>
-          <div style="display:flex; flex-direction:column; min-width:0;">
-            <span style="font-size:12px; color:var(--muted);">Connection</span>
-            <b id="connText" style="font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">offline</b>
-          </div>
+    <header class="topbar">
+      <div class="brand">
+        <h1 class="title">ArbitoInator</h1>
+        <div class="badgeRow">
+          <span class="badge" id="currentPresetBadge">preset: —</span>
+          <span class="badge blue" id="currentScanSourceBadge">scan: —</span>
         </div>
-        <div class="badge" id="runBadge">stopped</div>
+      </div>
+      <div class="topStatus">
+        <div class="pill" title="Connection status">
+          <div class="statusRow">
+            <div id="connDot" class="dot off"></div>
+            <div class="statusText">
+              <span>Connection</span>
+              <b id="connText">offline</b>
+            </div>
+          </div>
+          <div class="badge" id="runBadge">stopped</div>
         </div>
 
-        <!-- Uptime timer (requested) -->
-        <div class="pill" style="min-width: 190px;" title="Время работы процесса">
-          <div style="display:flex; flex-direction:column; min-width:0;">
-            <span style="font-size:12px; color:var(--muted);">Uptime</span>
-            <b id="uptimeText" class="mono" style="font-size:13px;">00:00:00</b>
+        <div class="pill" title="Process uptime">
+          <div class="statusText">
+            <span>Uptime</span>
+            <b id="uptimeText" class="mono">00:00:00</b>
           </div>
           <div class="badge blue" id="uptimeState">—</div>
         </div>
+
+        <div class="pill" title="RPC + WS status">
+          <div class="miniStatus">
+            <span>RPC</span>
+            <b id="rpcStatusBadge">—</b>
+          </div>
+          <div class="miniStatus">
+            <span>WS</span>
+            <b id="wsStatusBadge">—</b>
+          </div>
+        </div>
       </div>
-    </div>
 
-    <div class="grid">
-      <!-- LEFT: operator stack (logs -> chart -> deals) -->
-      <section class="card" style="min-height:0;">
-        <div class="cardHeader">
-          <h2>Оперативная лента</h2>
-          <span class="badge blue" id="logCount">0</span>
-        </div>
+      <div class="topActions">
+        <button id="startBtn" class="btn primary" disabled>start</button>
+        <button id="stopBtn" class="btn danger" disabled>stop</button>
+        <button id="applyCfgBtnTop" class="btn primary">apply & restart</button>
+        <button id="copyDebugBtn" class="btn">Copy debug summary</button>
+      </div>
+    </header>
 
-        <div class="leftStack">
-          <div class="logFeed" id="logs" aria-label="Logs"></div>
-
-          <div class="chartBox" title="Profit timeline (последние события)">
-            <canvas id="profitChart" width="900" height="260"></canvas>
-          </div>
-
-          <div class="dealsWrap" aria-label="Последние профитные события">
-            <div class="tableHead">
-              <h3>Deals</h3>
-              <span class="badge" id="dealsHint">latest</span>
-            </div>
-            <div class="table" id="dealsTable" style="margin: 0 8px 8px;">
-              <div class="row header" style="background: rgba(255,255,255,0.04); font-weight:800; color: rgba(255,255,255,0.75);">
-                <div class="col col-time muted">Time<span class="colResizer" data-col="time"></span></div>
-                <div class="col col-route muted">Route<span class="colResizer" data-col="route"></span></div>
-                <div class="col col-spent muted" style="text-align:right;">Spent<span class="colResizer" data-col="spent"></span></div>
-                <div class="col col-roi muted" style="text-align:right;">ROI<span class="colResizer" data-col="roi"></span></div>
-                <div class="col col-profit muted" style="text-align:right;">Profit</div>
-              </div>
-              <div class="dealsBody" id="profitRows"></div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- RIGHT: status + dashboard -->
-      <section class="card">
-        <div class="rightTop">
+    <section class="card nowPanel">
+      <div class="nowHeader">
+        <div class="nowMeta">
           <div class="kv">
-            <span>Last scanned Block</span>
+            <span>Last scanned block</span>
             <b class="mono" id="lastBlock">—</b>
           </div>
-          <div class="notice" id="notice">
-            <div class="left">
-              <span class="badge" id="noticeIcon" aria-hidden="true">ℹ</span>
-              <div class="msg" id="noticeText">No data yet. Press Start to begin.</div>
-            </div>
-            <div class="badge" id="opBadge">idle</div>
+          <div class="kv">
+            <span>State</span>
+            <b id="stateText" class="mono">stopped</b>
           </div>
         </div>
-
-        <div class="dashboard">
-          <!-- Stats stay on the right -->
-          <div class="stats">
-            <div class="stat">
-              <div class="k">Blocks scanned</div>
-              <div class="v" id="statBlocks">0</div>
-            </div>
-            <div class="stat">
-              <div class="k">Profitable hits</div>
-              <div class="v" id="statHits">0</div>
-            </div>
-            <div class="stat">
-              <div class="k">Total profit</div>
-              <div class="v" id="statProfit">0.000000</div>
-            </div>
-            <div class="stat">
-              <div class="k">Total spent</div>
-              <div class="v" id="statSpent">0.000</div>
-            </div>
-            <div class="stat">
-              <div class="k">Avg ROI</div>
-              <div class="v" id="statRoi">0.00%</div>
-            </div>
+        <div class="notice" id="notice">
+          <div class="left">
+            <span class="badge" id="noticeIcon" aria-hidden="true">ℹ</span>
+            <div class="msg" id="noticeText">No data yet. Press Start to begin.</div>
           </div>
+          <div class="badge" id="opBadge">idle</div>
+        </div>
+      </div>
 
-          <div class="stats">
-            <div class="stat">
-              <div class="k">Raw opps</div>
-              <div class="v" id="statRaw">0</div>
-            </div>
-            <div class="stat">
-              <div class="k">After slippage+MEV</div>
-              <div class="v" id="statSafety">0</div>
-            </div>
-            <div class="stat">
-              <div class="k">After gas/limits</div>
-              <div class="v" id="statGas">0</div>
-            </div>
-            <div class="stat">
-              <div class="k">Ready to execute</div>
-              <div class="v" id="statReady">0</div>
-            </div>
+      <div class="kpiGrid">
+        <div class="kpiCard">
+          <div class="kpiTitle">Mempool</div>
+          <div class="kpiRow"><span>WS</span><b id="mpWs">—</b></div>
+          <div class="kpiRow"><span>Hashes/sec</span><b id="mpRate">0</b></div>
+          <div class="kpiRow"><span>Fetch success</span><b id="mpFetch">0%</b></div>
+          <div class="kpiRow"><span>Decoded swaps</span><b id="mpDecoded">0</b></div>
+        </div>
+        <div class="kpiCard">
+          <div class="kpiTitle">Triggers</div>
+          <div class="kpiRow"><span>Queued / Running (now)</span><b id="mpTriggers">0/0</b></div>
+          <div class="kpiRow"><span>Total seen / processed</span><b id="mpTotal">0/0</b></div>
+          <div class="kpiRow"><span>Dropped / TTL</span><b id="mpDropped">0/0</b></div>
+          <div class="kpiRow"><span>Last classification</span><b id="mpLastOutcome">—</b></div>
+          <div class="kpiRow"><span>Avg trigger latency</span><b id="mpLatency">—</b></div>
+        </div>
+        <div class="kpiCard">
+          <div class="kpiTitle">Hits</div>
+          <div class="kpiRow"><span>Profitable hits</span><b id="statHits">0</b></div>
+          <div class="kpiRow"><span>Total profit</span><b id="statProfit">0.000000</b></div>
+          <div class="kpiRow"><span>Avg ROI</span><b id="statRoi">0.00%</b></div>
+          <div class="kpiRow"><span>Last route</span><b id="lastHitRoute">—</b></div>
+          <div class="kpiRow"><span>Backend</span><b id="lastHitBackend">—</b></div>
+          <div class="kpiRow"><span>Persistent hits</span><b id="mpPersist">—</b></div>
+        </div>
+      </div>
+
+      <details class="secondaryStatsDetails">
+        <summary>More stats</summary>
+        <div class="secondaryGrid">
+          <div class="statMini"><span>Blocks scanned</span><b id="statBlocks">0</b></div>
+          <div class="statMini"><span>Total spent</span><b id="statSpent">0.000</b></div>
+          <div class="statMini"><span>Raw opps</span><b id="statRaw">0</b></div>
+          <div class="statMini"><span>After slippage+MEV</span><b id="statSafety">0</b></div>
+          <div class="statMini"><span>After gas/limits</span><b id="statGas">0</b></div>
+          <div class="statMini"><span>Ready to execute</span><b id="statReady">0</b></div>
+        </div>
+      </details>
+
+      <div class="warningsStrip" id="warningsStrip">
+        <span class="warnPill" id="warnScheduledZero">Triggers scheduled=0 streak</span>
+        <span class="warnPill" id="warnWsDown">Mempool WS offline</span>
+        <span class="warnPill" id="warnPersistentHit">Persistent-hit warning</span>
+        <span class="warnPill" id="warnRequireCrossDex">Require cross-DEX enabled</span>
+      </div>
+
+      <div class="splitLists">
+        <div class="listCard">
+          <div class="label">Decoded swaps (last 10)</div>
+          <div class="list" id="mpSwaps">—</div>
+        </div>
+        <div class="listCard">
+          <div class="label">Trigger scans (last 10)</div>
+          <div class="list" id="mpTriggerScans">—</div>
+        </div>
+      </div>
+
+      <details class="rpcDetails">
+        <summary>RPC pool details</summary>
+        <div id="rpcStatsBody" class="mono">—</div>
+      </details>
+      <div class="mempoolDetail" id="mpDetail">Select a trigger to view details.</div>
+    </section>
+
+    <section class="card opsPanel">
+      <details class="sectionCard opsCard" data-section="ops" open>
+        <summary>
+          <div class="sectionTitle">
+            <span>Ops feed</span>
+            <span class="badge blue" id="logCount">0</span>
           </div>
+          <span class="badge">logs</span>
+        </summary>
+        <div class="sectionBody">
+          <div class="opsStack">
+            <div class="logFeed" id="logs" aria-label="Logs"></div>
 
-          <!-- RPC pool health (updates live) -->
-          <div class="stats" style="margin-top:10px;">
-            <div class="stat" style="grid-column: 1 / -1;">
-              <div class="k">RPC pool</div>
-              <div class="v" style="font-size:12px; line-height:1.35; font-weight:600; color:rgba(255,255,255,0.85)">
-                <div id="rpcStatsBody" class="mono">—</div>
-              </div>
+            <div class="chartBox" title="Profit timeline (recent events)">
+              <canvas id="profitChart" width="900" height="260"></canvas>
             </div>
-          </div>
 
-          <div class="mempoolPanel">
-            <div class="panelHead">
-              <h3>Mempool</h3>
-              <button id="copyDebugBtn" class="btn">Copy debug summary</button>
-            </div>
-            <div class="stats mempoolStats">
-              <div class="stat">
-                <div class="k">WS</div>
-                <div class="v" id="mpWs">—</div>
+            <div class="dealsWrap" aria-label="Latest profit events">
+              <div class="tableHead">
+                <h3>Deals</h3>
+                <span class="badge" id="dealsHint">latest</span>
               </div>
-              <div class="stat">
-                <div class="k">Hashes/sec</div>
-                <div class="v" id="mpRate">0</div>
-              </div>
-              <div class="stat">
-                <div class="k">Fetch success</div>
-                <div class="v" id="mpFetch">0%</div>
-              </div>
-              <div class="stat">
-                <div class="k">Triggers</div>
-                <div class="v" id="mpTriggers">0/0</div>
-              </div>
-              <div class="stat">
-                <div class="k">Triggers total</div>
-                <div class="v" id="mpTotal">0/0</div>
-              </div>
-              <div class="stat">
-                <div class="k">Dropped/TTL</div>
-                <div class="v" id="mpDropped">0/0</div>
-              </div>
-              <div class="stat">
-                <div class="k">Avg latency</div>
-                <div class="v" id="mpLatency">0ms</div>
-              </div>
-              <div class="stat">
-                <div class="k">Decoded swaps</div>
-                <div class="v" id="mpDecoded">0</div>
-              </div>
-              <div class="stat">
-                <div class="k">Persistent hits</div>
-                <div class="v" id="mpPersist">0</div>
+              <div class="table" id="dealsTable" style="margin: 0 8px 8px;">
+                <div class="row header" style="background: rgba(255,255,255,0.04); font-weight:800; color: rgba(255,255,255,0.75);">
+                  <div class="col col-time muted">Time<span class="colResizer" data-col="time"></span></div>
+                  <div class="col col-route muted">Route<span class="colResizer" data-col="route"></span></div>
+                  <div class="col col-spent muted" style="text-align:right;">Spent<span class="colResizer" data-col="spent"></span></div>
+                  <div class="col col-roi muted" style="text-align:right;">ROI<span class="colResizer" data-col="roi"></span></div>
+                  <div class="col col-profit muted" style="text-align:right;">Profit</div>
+                </div>
+                <div class="dealsBody" id="profitRows"></div>
               </div>
             </div>
-            <div class="mempoolLists">
-              <div class="mempoolList">
-                <div class="label">Decoded swaps</div>
-                <div class="list" id="mpSwaps">—</div>
-              </div>
-              <div class="mempoolList">
-                <div class="label">Trigger scans</div>
-                <div class="list" id="mpTriggerScans">—</div>
-              </div>
-            </div>
-            <div class="mempoolDetail" id="mpDetail">Select a trigger to view details.</div>
           </div>
         </div>
+      </details>
+    </section>
 
-        <!-- Settings (editable from UI) -->
-        <div class="settings" id="settings">
-          <h3>Settings</h3>
-          <div class="settingsGrid">
+    <section class="card settingsPanel" id="settings">
+      <div class="settingsHeader">
+        <div class="settingsHeadLeft">
+          <h2>Settings</h2>
+          <div class="settingsSearch">
+            <input id="settingsSearch" type="search" placeholder="Search settings..." />
+            <button id="settingsSearchClear" class="btn tiny">Clear</button>
+          </div>
+        </div>
+        <div class="quickButtons">
+          <button id="recDebugBtn" class="btn">Debug (fast signal)</button>
+          <button id="recCrossDexBtn" class="btn">Cross-DEX hunt</button>
+          <button id="recStrictBtn" class="btn">Strict realistic</button>
+        </div>
+      </div>
+
+      <details class="sectionCard" data-section="mode" open>
+        <summary>
+          <div class="sectionTitle">
+            <span>Mode & Presets</span>
+            <span class="sectionHint">Quick start + run context</span>
+          </div>
+          <span class="badge">basic</span>
+        </summary>
+        <div class="sectionBody">
+          <div class="basicGrid">
             <div class="field" style="grid-column: 1 / -1;">
               <label for="cfgPreset">Preset</label>
               <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
@@ -735,11 +886,81 @@
               </div>
               <small id="cfgPresetDesc">Select a preset to populate the fields below.</small>
             </div>
-            <div class="field" style="grid-column: 1 / -1;">
-              <label for="cfgRpcUrls">RPC URLs (parallel pool)</label>
-              <textarea id="cfgRpcUrls" rows="3" class="mono" placeholder="https://rpc1\nhttps://rpc2\n..." style="width:100%; resize:vertical;"></textarea>
-              <small>One per line (or comma-separated). The bot will spread load across all URLs and retry on failures.</small>
+            <div class="field">
+              <label for="cfgScanSource">Scan source</label>
+              <select id="cfgScanSource">
+                <option value="block">block scanning</option>
+                <option value="mempool">mempool-triggered</option>
+                <option value="hybrid">hybrid</option>
+              </select>
+              <small>block = current pipeline; mempool = pending tx triggers; hybrid = both</small>
             </div>
+            <div class="field">
+              <label for="cfgMode">Scan mode</label>
+              <select id="cfgMode">
+                <option value="auto">auto (Stage1 + Stage2 optimize)</option>
+                <option value="fixed">fixed (preset amounts)</option>
+              </select>
+              <small>auto = fast + smart; fixed = brute force</small>
+            </div>
+            <div class="field">
+              <label for="cfgReportCurrency">Reporting currency</label>
+              <select id="cfgReportCurrency">
+                <option value="USDC">USDC</option>
+                <option value="USDT">USDT</option>
+              </select>
+              <small>Stats are shown in this currency.</small>
+            </div>
+            <div class="field">
+              <label for="cfgBudget">Block budget (sec)</label>
+              <input id="cfgBudget" type="number" step="0.5" min="1" />
+              <small>hard limit per block (prevents hanging)</small>
+            </div>
+          </div>
+
+          <details class="advancedToggle" data-advanced="mode">
+            <summary>Advanced</summary>
+            <div class="advancedGrid">
+              <div class="field">
+                <label for="cfgAmts">Amounts (comma list)</label>
+                <input id="cfgAmts" type="text" placeholder="1,3,10" />
+                <small>token_in units; increases search coverage</small>
+              </div>
+              <div class="field">
+                <label for="cfgS1Amt">Stage1 amount</label>
+                <input id="cfgS1Amt" type="number" step="0.1" min="0" />
+                <small>cheap filter amount</small>
+              </div>
+              <div class="field">
+                <label for="cfgTopK">Stage2 top-K</label>
+                <input id="cfgTopK" type="number" step="1" min="1" max="500" />
+                <small>how many routes get optimized</small>
+              </div>
+              <div class="field">
+                <label for="cfgRange">Stage2 amount range</label>
+                <input id="cfgRange" type="text" placeholder="0.5..50" />
+                <small>min..max (units of token_in)</small>
+              </div>
+              <div class="field">
+                <label for="cfgEvals">Stage2 max evals</label>
+                <input id="cfgEvals" type="number" step="1" min="2" max="12" />
+                <small>RPC calls per route for optimization</small>
+              </div>
+            </div>
+          </details>
+        </div>
+      </details>
+
+      <details class="sectionCard" data-section="routing" open>
+        <summary>
+          <div class="sectionTitle">
+            <span>Routing & Search</span>
+            <span class="sectionHint">Routes, hops, and beam controls</span>
+          </div>
+          <span class="badge">basic</span>
+        </summary>
+        <div class="sectionBody">
+          <div class="basicGrid">
             <div class="field" style="grid-column: 1 / -1;">
               <label for="cfgDexes">DEX adapters</label>
               <input id="cfgDexes" type="text" class="mono" placeholder="univ3,univ2,sushiswap" />
@@ -754,22 +975,6 @@
               <small>off = UniV3-only (legacy)</small>
             </div>
             <div class="field">
-              <label for="cfgTriggerPreferCrossDex">Trigger scan bias</label>
-              <label class="checkRow">
-                <input id="cfgTriggerPreferCrossDex" type="checkbox" />
-                <span>prefer cross-DEX routes (mempool)</span>
-              </label>
-              <small>adds a score bonus for mixed DEX paths</small>
-            </div>
-            <div class="field">
-              <label for="cfgTriggerRequire3Hops">Trigger scan hops</label>
-              <label class="checkRow">
-                <input id="cfgTriggerRequire3Hops" type="checkbox" />
-                <span>require 3-hop routes for triggers</span>
-              </label>
-              <small>triangular cycles only; 2-hop is skipped</small>
-            </div>
-            <div class="field">
               <label for="cfgMaxHops">Max hops</label>
               <input id="cfgMaxHops" type="number" step="1" min="2" max="4" />
               <small>2–4; higher = more cycles</small>
@@ -779,24 +984,106 @@
               <input id="cfgBeamK" type="number" step="1" min="1" max="50" />
               <small>max combined paths per route</small>
             </div>
-            <div class="field">
-              <label for="cfgEdgeTopM">Edge top-M</label>
-              <input id="cfgEdgeTopM" type="number" step="1" min="1" max="5" />
-              <small>top quotes per hop (trigger scans use per-DEX cap)</small>
+          </div>
+
+          <details class="advancedToggle" data-advanced="routing">
+            <summary>Advanced</summary>
+            <div class="advancedGrid">
+              <div class="field">
+                <label for="cfgEdgeTopM">Edge top-M</label>
+                <input id="cfgEdgeTopM" type="number" step="1" min="1" max="5" />
+                <small>top quotes per hop (trigger scans use per-DEX cap)</small>
+              </div>
+              <div class="field">
+                <label for="cfgProbeAmount">Probe amount</label>
+                <input id="cfgProbeAmount" type="number" step="0.1" min="0" />
+                <small>prefilter amount in base token units</small>
+              </div>
+            </div>
+          </details>
+        </div>
+      </details>
+
+      <details class="sectionCard" data-section="mempool" open>
+        <summary>
+          <div class="sectionTitle">
+            <span>Mempool & Triggers</span>
+            <span class="sectionHint">Pending tx filters and trigger focus</span>
+          </div>
+          <span class="badge">basic</span>
+        </summary>
+        <div class="sectionBody">
+          <div class="basicGrid">
+            <div class="field" style="grid-column: 1 / -1;">
+              <label for="cfgMempoolWs">Mempool WS URLs</label>
+              <textarea id="cfgMempoolWs" rows="2" class="mono" placeholder="wss://rpc1
+wss://rpc2" style="width:100%; resize:vertical;"></textarea>
+              <small>Public WS endpoints for pending tx stream (one per line or comma-separated).</small>
             </div>
             <div class="field">
-              <label for="cfgProbeAmount">Probe amount</label>
-              <input id="cfgProbeAmount" type="number" step="0.1" min="0" />
-              <small>prefilter amount in base token units</small>
+              <label for="cfgMempoolMinUsd">Mempool min value (USD)</label>
+              <input id="cfgMempoolMinUsd" type="number" step="1" min="0" />
+              <small>ignore tiny swaps (stables/WETH heuristic)</small>
             </div>
             <div class="field">
-              <label for="cfgReportCurrency">Reporting currency</label>
-              <select id="cfgReportCurrency">
-                <option value="USDC">USDC</option>
-                <option value="USDT">USDT</option>
-              </select>
-              <small>All stats in the panel will be displayed in this currency (bot scans only cycles that start/end in it).</small>
+              <label for="cfgMempoolBudget">Trigger scan budget (s)</label>
+              <input id="cfgMempoolBudget" type="number" step="0.1" min="0.5" />
+              <small>short pre-block scan per trigger</small>
             </div>
+            <div class="field" style="grid-column: 1 / -1;">
+              <label>Trigger bias (mempool)</label>
+              <div class="toggleRow">
+                <label class="checkRow">
+                  <input id="cfgTriggerPreferCrossDex" type="checkbox" />
+                  <span>Prefer cross-DEX routes (mempool)</span>
+                </label>
+                <label class="checkRow">
+                  <input id="cfgTriggerRequireCrossDex" type="checkbox" />
+                  <span>Require cross-DEX routes (mempool)</span>
+                </label>
+                <span class="warnBadge" id="requireCrossDexWarn">May result in scheduled=0 on public RPC</span>
+                <label class="checkRow">
+                  <input id="cfgTriggerRequire3Hops" type="checkbox" />
+                  <span>Require 3-hop routes for triggers</span>
+                </label>
+              </div>
+              <small>Hard filter keeps only routes using >=2 distinct DEXes.</small>
+            </div>
+          </div>
+
+          <details class="advancedToggle" data-advanced="mempool">
+            <summary>Advanced</summary>
+            <div class="advancedGrid">
+              <div class="field">
+                <label for="cfgMempoolInflight">Mempool max inflight</label>
+                <input id="cfgMempoolInflight" type="number" step="1" min="10" />
+                <small>hash queue size limit</small>
+              </div>
+              <div class="field">
+                <label for="cfgMempoolFetchConc">Mempool fetch concurrency</label>
+                <input id="cfgMempoolFetchConc" type="number" step="1" min="1" />
+                <small>tx fetch parallelism</small>
+              </div>
+              <div class="field">
+                <label for="cfgMempoolDedup">Mempool dedup TTL (s)</label>
+                <input id="cfgMempoolDedup" type="number" step="1" min="30" />
+                <small>avoid duplicate hashes</small>
+              </div>
+            </div>
+          </details>
+        </div>
+      </details>
+
+      <details class="sectionCard" data-section="sim" open>
+        <summary>
+          <div class="sectionTitle">
+            <span>Simulation & Safety</span>
+            <span class="sectionHint">Profit thresholds and guardrails</span>
+          </div>
+          <span class="badge">basic</span>
+        </summary>
+        <div class="sectionBody">
+          <div class="basicGrid">
             <div class="field">
               <label for="cfgMinPct">Min profit % (of input)</label>
               <input id="cfgMinPct" type="number" step="0.01" min="0" />
@@ -822,57 +1109,66 @@
               <input id="cfgGas" type="number" step="1" min="0" placeholder="(no limit)" />
               <small>empty = don't skip blocks</small>
             </div>
+          </div>
+
+          <details class="advancedToggle" data-advanced="sim">
+            <summary>Advanced</summary>
+            <div class="advancedGrid">
+              <div class="field">
+                <label for="cfgSimProfile">Sim profile</label>
+                <select id="cfgSimProfile">
+                  <option value="">default</option>
+                  <option value="debug">debug</option>
+                </select>
+                <small>debug raises stage1 amount and relaxes thresholds</small>
+              </div>
+              <div class="field">
+                <label for="cfgDebugFunnel">Debug funnel</label>
+                <label class="checkRow">
+                  <input id="cfgDebugFunnel" type="checkbox" />
+                  <span>log top candidates to console</span>
+                </label>
+                <small>prints top 5 gross/net per block</small>
+              </div>
+              <div class="field">
+                <label for="cfgGasOff">Gas off (diagnostic)</label>
+                <label class="checkRow">
+                  <input id="cfgGasOff" type="checkbox" />
+                  <span>set gas_cost_in = 0</span>
+                </label>
+                <small>for debugging only</small>
+              </div>
+              <div class="field">
+                <label for="cfgFixedGas">Fixed gas units</label>
+                <input id="cfgFixedGas" type="number" step="1000" min="0" placeholder="0" />
+                <small>override gas units (0 = auto)</small>
+              </div>
+            </div>
+          </details>
+        </div>
+      </details>
+
+      <details class="sectionCard" data-section="rpc" open>
+        <summary>
+          <div class="sectionTitle">
+            <span>RPC & Performance</span>
+            <span class="sectionHint">RPC pool + throughput</span>
+          </div>
+          <span class="badge">basic</span>
+        </summary>
+        <div class="sectionBody">
+          <div class="basicGrid">
+            <div class="field" style="grid-column: 1 / -1;">
+              <label for="cfgRpcUrls">RPC URLs (parallel pool)</label>
+              <textarea id="cfgRpcUrls" rows="3" class="mono" placeholder="https://rpc1
+https://rpc2
+..." style="width:100%; resize:vertical;"></textarea>
+              <small>One per line (or comma-separated). The bot spreads load and retries.</small>
+            </div>
             <div class="field">
               <label for="cfgConc">Concurrency</label>
               <input id="cfgConc" type="number" step="1" min="1" max="200" />
               <small>RPC parallel quotes (25-50 typical)</small>
-            </div>
-            <div class="field">
-              <label for="cfgScanSource">Scan source</label>
-              <select id="cfgScanSource">
-                <option value="block">block scanning</option>
-                <option value="mempool">mempool-triggered</option>
-                <option value="hybrid">hybrid</option>
-              </select>
-              <small>block = current pipeline; mempool = pending tx triggers; hybrid = both</small>
-            </div>
-            <div class="field">
-              <label for="cfgMode">Scan mode</label>
-              <select id="cfgMode">
-                <option value="auto">auto (Stage1 + Stage2 optimize)</option>
-                <option value="fixed">fixed (preset amounts)</option>
-              </select>
-              <small>auto = fast + smart; fixed = brute force</small>
-            </div>
-            <div class="field">
-              <label for="cfgBudget">Block budget (sec)</label>
-              <input id="cfgBudget" type="number" step="0.5" min="1" />
-              <small>hard limit per block (prevents hanging)</small>
-            </div>
-            <div class="field">
-              <label for="cfgAmts">Amounts (comma list)</label>
-              <input id="cfgAmts" type="text" placeholder="1,3,10" />
-              <small>token_in units; increases search coverage</small>
-            </div>
-            <div class="field">
-              <label for="cfgS1Amt">Stage1 amount</label>
-              <input id="cfgS1Amt" type="number" step="0.1" min="0" />
-              <small>cheap filter amount</small>
-            </div>
-            <div class="field">
-              <label for="cfgTopK">Stage2 top-K</label>
-              <input id="cfgTopK" type="number" step="1" min="1" max="500" />
-              <small>how many routes get optimized</small>
-            </div>
-            <div class="field">
-              <label for="cfgRange">Stage2 amount range</label>
-              <input id="cfgRange" type="text" placeholder="0.5..50" />
-              <small>min..max (units of token_in)</small>
-            </div>
-            <div class="field">
-              <label for="cfgEvals">Stage2 max evals</label>
-              <input id="cfgEvals" type="number" step="1" min="2" max="12" />
-              <small>RPC calls per route for optimization</small>
             </div>
             <div class="field">
               <label for="cfgT1">RPC timeout Stage1 (sec)</label>
@@ -884,97 +1180,32 @@
               <input id="cfgT2" type="number" step="0.5" min="1" />
               <small>longer timeout to not miss profit</small>
             </div>
-            <div class="field">
-              <label for="cfgV2Ratio">V2 min reserve ratio</label>
-              <input id="cfgV2Ratio" type="number" step="1" min="0" />
-              <small>reserve_in >= amount_in * ratio</small>
-            </div>
-            <div class="field">
-              <label for="cfgV2Impact">V2 max price impact (bps)</label>
-              <input id="cfgV2Impact" type="number" step="1" min="0" />
-              <small>drop quotes with high impact</small>
-            </div>
-            <div class="field">
-              <label for="cfgSimProfile">Sim profile</label>
-              <select id="cfgSimProfile">
-                <option value="">default</option>
-                <option value="debug">debug</option>
-              </select>
-              <small>debug raises stage1 amount and relaxes thresholds</small>
-            </div>
-            <div class="field">
-              <label for="cfgDebugFunnel">Debug funnel</label>
-              <label class="checkRow">
-                <input id="cfgDebugFunnel" type="checkbox" />
-                <span>log top candidates to console</span>
-              </label>
-              <small>prints top 5 gross/net per block</small>
-            </div>
-            <div class="field">
-              <label for="cfgGasOff">Gas off (diagnostic)</label>
-              <label class="checkRow">
-                <input id="cfgGasOff" type="checkbox" />
-                <span>set gas_cost_in = 0</span>
-              </label>
-              <small>for debugging only</small>
-            </div>
-            <div class="field">
-              <label for="cfgFixedGas">Fixed gas units</label>
-              <input id="cfgFixedGas" type="number" step="1000" min="0" placeholder="0" />
-              <small>override gas units (0 = auto)</small>
-            </div>
-            <div class="field" style="grid-column: 1 / -1; margin-top: 8px;">
-              <label for="cfgMempoolWs">Mempool WS URLs</label>
-              <textarea id="cfgMempoolWs" rows="2" class="mono" placeholder="wss://rpc1\nwss://rpc2" style="width:100%; resize:vertical;"></textarea>
-              <small>Public WS endpoints for pending tx stream (one per line or comma-separated).</small>
-            </div>
-            <div class="field">
-              <label for="cfgMempoolMinUsd">Mempool min value (USD)</label>
-              <input id="cfgMempoolMinUsd" type="number" step="1" min="0" />
-              <small>ignore tiny swaps (stables/WETH heuristic)</small>
-            </div>
-            <div class="field">
-              <label for="cfgMempoolInflight">Mempool max inflight</label>
-              <input id="cfgMempoolInflight" type="number" step="1" min="10" />
-              <small>hash queue size limit</small>
-            </div>
-            <div class="field">
-              <label for="cfgMempoolFetchConc">Mempool fetch concurrency</label>
-              <input id="cfgMempoolFetchConc" type="number" step="1" min="1" />
-              <small>tx fetch parallelism</small>
-            </div>
-            <div class="field">
-              <label for="cfgMempoolDedup">Mempool dedup TTL (s)</label>
-              <input id="cfgMempoolDedup" type="number" step="1" min="30" />
-              <small>avoid duplicate hashes</small>
-            </div>
-            <div class="field">
-              <label for="cfgMempoolBudget">Trigger scan budget (s)</label>
-              <input id="cfgMempoolBudget" type="number" step="0.1" min="0.5" />
-              <small>short pre-block scan per trigger</small>
-            </div>
           </div>
-          <div class="settingsActions">
-            <button id="saveCfgBtn" class="btn">save</button>
-            <button id="applyCfgBtn" class="btn primary">apply & restart</button>
-          </div>
-        </div>
 
-        <div class="buttons">
-          <button id="startBtn" class="btn primary" disabled>start</button>
-          <button id="stopBtn" class="btn danger" disabled>stop</button>
+          <details class="advancedToggle" data-advanced="rpc">
+            <summary>Advanced</summary>
+            <div class="advancedGrid">
+              <div class="field">
+                <label for="cfgV2Ratio">V2 min reserve ratio</label>
+                <input id="cfgV2Ratio" type="number" step="1" min="0" />
+                <small>reserve_in >= amount_in * ratio</small>
+              </div>
+              <div class="field">
+                <label for="cfgV2Impact">V2 max price impact (bps)</label>
+                <input id="cfgV2Impact" type="number" step="1" min="0" />
+                <small>drop quotes with high impact</small>
+              </div>
+            </div>
+          </details>
         </div>
+      </details>
 
-        <div style="padding: 0 16px 16px;">
-          <div class="kv" style="margin-top: -6px;">
-            <span>Текущее состояние программы</span>
-            <b id="stateText" class="mono">stopped</b>
-          </div>
-        </div>
-      </section>
-    </div>
+      <div class="settingsActions">
+        <button id="saveCfgBtn" class="btn">save</button>
+        <button id="applyCfgBtn" class="btn primary">apply & restart</button>
+      </div>
+    </section>
   </div>
-
 <script>
   // -----------------------------
   // State
@@ -985,6 +1216,10 @@
   const connText = document.getElementById('connText');
   const runBadge = document.getElementById('runBadge');
   const stateText = document.getElementById('stateText');
+  const currentPresetBadge = document.getElementById('currentPresetBadge');
+  const currentScanSourceBadge = document.getElementById('currentScanSourceBadge');
+  const rpcStatusBadge = document.getElementById('rpcStatusBadge');
+  const wsStatusBadge = document.getElementById('wsStatusBadge');
 
   // Uptime
   const uptimeText = document.getElementById('uptimeText');
@@ -998,6 +1233,7 @@
 
   const startBtn = document.getElementById('startBtn');
   const stopBtn = document.getElementById('stopBtn');
+  const applyCfgBtnTop = document.getElementById('applyCfgBtnTop');
 
   const statBlocks = document.getElementById('statBlocks');
   const statHits = document.getElementById('statHits');
@@ -1009,6 +1245,8 @@
   const statGas = document.getElementById('statGas');
   const statReady = document.getElementById('statReady');
   const rpcStatsBody = document.getElementById('rpcStatsBody');
+  const lastHitRoute = document.getElementById('lastHitRoute');
+  const lastHitBackend = document.getElementById('lastHitBackend');
 
   const profitRows = document.getElementById('profitRows');
   const canvas = document.getElementById('profitChart');
@@ -1039,12 +1277,15 @@
   const mempoolTriggerScans = [];
   let mempoolStatus = null;
   let selectedTriggerDetail = null;
+  let triggerZeroStreak = 0;
+  let lastRpcStatsAt = 0;
 
   // Settings elements
   const cfgRpcUrls = document.getElementById('cfgRpcUrls');
   const cfgDexes = document.getElementById('cfgDexes');
   const cfgEnableMultidex = document.getElementById('cfgEnableMultidex');
   const cfgTriggerPreferCrossDex = document.getElementById('cfgTriggerPreferCrossDex');
+  const cfgTriggerRequireCrossDex = document.getElementById('cfgTriggerRequireCrossDex');
   const cfgTriggerRequire3Hops = document.getElementById('cfgTriggerRequire3Hops');
   const cfgMaxHops = document.getElementById('cfgMaxHops');
   const cfgBeamK = document.getElementById('cfgBeamK');
@@ -1082,6 +1323,12 @@
   const cfgPreset = document.getElementById('cfgPreset');
   const cfgPresetDesc = document.getElementById('cfgPresetDesc');
   const applyPresetBtn = document.getElementById('applyPresetBtn');
+  const settingsSearch = document.getElementById('settingsSearch');
+  const settingsSearchClear = document.getElementById('settingsSearchClear');
+  const recDebugBtn = document.getElementById('recDebugBtn');
+  const recCrossDexBtn = document.getElementById('recCrossDexBtn');
+  const recStrictBtn = document.getElementById('recStrictBtn');
+  const requireCrossDexWarn = document.getElementById('requireCrossDexWarn');
   const saveCfgBtn = document.getElementById('saveCfgBtn');
   const applyCfgBtn = document.getElementById('applyCfgBtn');
   const dealsTable = document.getElementById('dealsTable');
@@ -1094,9 +1341,14 @@
   const mpLatency = document.getElementById('mpLatency');
   const mpDecoded = document.getElementById('mpDecoded');
   const mpPersist = document.getElementById('mpPersist');
+  const mpLastOutcome = document.getElementById('mpLastOutcome');
   const mpSwaps = document.getElementById('mpSwaps');
   const mpTriggerScans = document.getElementById('mpTriggerScans');
   const mpDetail = document.getElementById('mpDetail');
+  const warnScheduledZero = document.getElementById('warnScheduledZero');
+  const warnWsDown = document.getElementById('warnWsDown');
+  const warnPersistentHit = document.getElementById('warnPersistentHit');
+  const warnRequireCrossDex = document.getElementById('warnRequireCrossDex');
   const copyDebugBtn = document.getElementById('copyDebugBtn');
 
   // -----------------------------
@@ -1155,6 +1407,49 @@
     }
   }
 
+  function setPillVisible(el, show){
+    if (!el) return;
+    if (show) el.classList.add('show');
+    else el.classList.remove('show');
+  }
+
+  function updateHeaderBadges(){
+    if (currentPresetBadge) {
+      const preset = (cfgPreset && cfgPreset.value) ? String(cfgPreset.value) : 'custom';
+      currentPresetBadge.textContent = `preset: ${preset || 'custom'}`;
+    }
+    if (currentScanSourceBadge) {
+      const src = (cfgScanSource && cfgScanSource.value) ? String(cfgScanSource.value) : 'block';
+      currentScanSourceBadge.textContent = `scan: ${src}`;
+    }
+  }
+
+  function updateCrossDexGuard(){
+    if (!cfgTriggerRequireCrossDex || !cfgTriggerPreferCrossDex) return;
+    if (cfgTriggerRequireCrossDex.checked) {
+      cfgTriggerPreferCrossDex.checked = true;
+      if (requireCrossDexWarn) requireCrossDexWarn.classList.add('show');
+    } else {
+      if (requireCrossDexWarn) requireCrossDexWarn.classList.remove('show');
+    }
+    setPillVisible(warnRequireCrossDex, !!cfgTriggerRequireCrossDex.checked);
+  }
+
+  function updateWarnings(){
+    const wsConnected = mempoolStatus ? !!mempoolStatus.ws_connected : false;
+    const persistentWarn = mempoolStatus ? !!mempoolStatus.persistent_hit_warning : false;
+    const requireOn = cfgTriggerRequireCrossDex ? cfgTriggerRequireCrossDex.checked : false;
+    if (warnScheduledZero) {
+      warnScheduledZero.textContent = requireOn
+        ? 'Triggers scheduled=0 streak — consider disabling Require cross-DEX'
+        : 'Triggers scheduled=0 streak';
+    }
+    setPillVisible(warnWsDown, !wsConnected && !!mempoolStatus);
+    setPillVisible(warnPersistentHit, persistentWarn);
+    setPillVisible(warnScheduledZero, triggerZeroStreak >= 3);
+    setPillVisible(warnRequireCrossDex, requireOn);
+  }
+
   function renderMempoolStatus(){
     if (!mpWs || !mpRate || !mpFetch || !mpTriggers) return;
     const st = mempoolStatus || {};
@@ -1162,6 +1457,10 @@
     const wsLabel = connected ? 'connected' : 'offline';
     mpWs.textContent = wsLabel;
     mpWs.style.color = connected ? 'var(--good)' : 'var(--muted)';
+    if (wsStatusBadge) {
+      wsStatusBadge.textContent = connected ? 'ok' : 'offline';
+      wsStatusBadge.style.color = connected ? 'var(--good)' : 'var(--bad)';
+    }
     const rate = Number(st.tx_hash_rate || 0);
     mpRate.textContent = rate.toFixed(2);
     const fetchRate = Number(st.tx_fetch_success_rate || 0) * 100;
@@ -1197,6 +1496,7 @@
     if (lastBlockEl && st.current_block) {
       lastBlockEl.textContent = String(st.current_block);
     }
+    updateWarnings();
   }
 
   function renderMempoolSwaps(){
@@ -1205,7 +1505,7 @@
       mpSwaps.textContent = '—';
       return;
     }
-    const lines = mempoolSwaps.slice(-20).map((s) => {
+    const lines = mempoolSwaps.slice(-10).map((s) => {
       const kind = s.kind || 'swap';
       const tin = s.token_in ? s.token_in.slice(0, 6) + '…' + s.token_in.slice(-4) : '?';
       const tout = s.token_out ? s.token_out.slice(0, 6) + '…' + s.token_out.slice(-4) : '?';
@@ -1222,7 +1522,7 @@
       return;
     }
     mpTriggerScans.textContent = '';
-    mempoolTriggerScans.slice(-20).forEach((t) => {
+    mempoolTriggerScans.slice(-10).forEach((t) => {
       const row = document.createElement('div');
       row.className = 'row';
       const outcome = t.classification || t.outcome || 'no_hit';
@@ -1238,6 +1538,16 @@
       });
       mpTriggerScans.appendChild(row);
     });
+    const latest = mempoolTriggerScans[mempoolTriggerScans.length - 1];
+    if (latest && mpLastOutcome) {
+      mpLastOutcome.textContent = String(latest.classification || latest.outcome || '—');
+    }
+    if (latest && lastHitRoute) {
+      lastHitRoute.textContent = latest.best_route ? String(latest.best_route) : '—';
+    }
+    if (latest && lastHitBackend) {
+      lastHitBackend.textContent = latest.backend ? String(latest.backend) : '—';
+    }
   }
 
   function pushMempoolSwap(entry){
@@ -1249,7 +1559,12 @@
   function pushMempoolTrigger(entry){
     mempoolTriggerScans.push(entry);
     if (mempoolTriggerScans.length > 20) mempoolTriggerScans.shift();
+    if (entry && typeof entry.scheduled === 'number') {
+      if (entry.scheduled === 0) triggerZeroStreak += 1;
+      else triggerZeroStreak = 0;
+    }
     renderMempoolTriggers();
+    updateWarnings();
   }
 
   function renderTriggerDetail(){
@@ -1771,6 +2086,95 @@
     if (statReady) statReady.textContent = fmtOpp(readyOpps);
   }
 
+  function initCollapsibles(){
+    document.querySelectorAll('.sectionCard[data-section]').forEach((el) => {
+      const key = `section:${el.dataset.section}`;
+      const saved = localStorage.getItem(key);
+      if (saved === '1' || saved === '0') el.open = saved === '1';
+      el.addEventListener('toggle', () => {
+        localStorage.setItem(key, el.open ? '1' : '0');
+      });
+    });
+    document.querySelectorAll('.advancedToggle[data-advanced]').forEach((el) => {
+      const key = `advanced:${el.dataset.advanced}`;
+      const saved = localStorage.getItem(key);
+      if (saved === '1' || saved === '0') el.open = saved === '1';
+      el.addEventListener('toggle', () => {
+        localStorage.setItem(key, el.open ? '1' : '0');
+      });
+    });
+  }
+
+  function initSettingsSearch(){
+    if (!settingsSearch) return;
+    const fields = Array.from(document.querySelectorAll('.settingsPanel .field'));
+    fields.forEach((f) => {
+      const label = f.querySelector('label');
+      const hint = f.querySelector('small');
+      const labelText = label ? label.textContent : '';
+      const hintText = hint ? hint.textContent : '';
+      const input = f.querySelector('input, select, textarea');
+      const inputId = input ? input.id : '';
+      f.dataset.searchText = `${labelText} ${hintText} ${inputId}`.toLowerCase();
+    });
+    const apply = () => {
+      const q = String(settingsSearch.value || '').trim().toLowerCase();
+      fields.forEach((f) => {
+        const text = f.dataset.searchText || '';
+        if (!q) {
+          f.classList.remove('hidden');
+          f.classList.remove('match');
+          return;
+        }
+        const match = text.includes(q);
+        f.classList.toggle('hidden', !match);
+        f.classList.toggle('match', match);
+        if (match) {
+          const section = f.closest('.sectionCard');
+          if (section) section.open = true;
+          const adv = f.closest('.advancedToggle');
+          if (adv) adv.open = true;
+        }
+      });
+    };
+    settingsSearch.addEventListener('input', apply);
+    if (settingsSearchClear) {
+      settingsSearchClear.addEventListener('click', () => {
+        settingsSearch.value = '';
+        apply();
+      });
+    }
+  }
+
+  function applyQuickProfile(kind){
+    const base = cfgFromForm();
+    const patch = {};
+    if (kind === 'debug') {
+      patch.gas_off = true;
+      patch.slippage_bps = 0;
+      patch.mev_buffer_bps = 0;
+      patch.mempool_trigger_scan_budget_s = 2.5;
+      patch.trigger_prefer_cross_dex = true;
+      patch.trigger_require_cross_dex = false;
+    } else if (kind === 'cross_dex') {
+      patch.trigger_prefer_cross_dex = true;
+      patch.trigger_require_cross_dex = false;
+      patch.edge_top_m = 3;
+      patch.beam_k = 16;
+      patch.mempool_trigger_scan_budget_s = 3.0;
+    } else if (kind === 'strict') {
+      patch.gas_off = false;
+      patch.slippage_bps = 5;
+      patch.mev_buffer_bps = 10;
+      patch.min_profit_abs = 1;
+      patch.min_profit_pct = 0.02;
+      patch.max_gas_gwei = 50;
+      patch.trigger_require_cross_dex = false;
+    }
+    fillForm({ ...base, ...patch });
+    setNotice('status', `Recommended applied: ${kind.replace('_',' ')}`);
+  }
+
   function parseProfitText(text){
     // fallback parser (older bot versions)
     const mProfit = text.match(/profit\s*=\s*([0-9.+-eE]+)/i);
@@ -1983,6 +2387,14 @@
         selectedTriggerDetail = null;
         if (profitRows) profitRows.textContent = '';
         if (rpcStatsBody) rpcStatsBody.textContent = '—';
+        if (rpcStatusBadge) {
+          rpcStatusBadge.textContent = '—';
+          rpcStatusBadge.style.color = 'var(--muted)';
+        }
+        if (wsStatusBadge) {
+          wsStatusBadge.textContent = '—';
+          wsStatusBadge.style.color = 'var(--muted)';
+        }
         renderMempoolSwaps();
         renderMempoolTriggers();
         if (mpDetail) mpDetail.textContent = 'Select a trigger to view details.';
@@ -2064,6 +2476,11 @@
             return `${host.padEnd(24, ' ')} w=${weight} ${fb} ${cb} ok=${ok} fail=${fail} in=${inflight} lat=${lat}ms`;
           });
           rpcStatsBody.textContent = lines.join('\n') || '—';
+        }
+        lastRpcStatsAt = Date.now();
+        if (rpcStatusBadge) {
+          rpcStatusBadge.textContent = 'ok';
+          rpcStatusBadge.style.color = 'var(--good)';
         }
       }
 
@@ -2241,10 +2658,12 @@
     const id = String(cfgPreset.value || '');
     if (!id) {
       cfgPresetDesc.textContent = 'Select a preset to populate the fields below.';
+      updateHeaderBadges();
       return;
     }
     const p = presetById[id];
     cfgPresetDesc.textContent = (p && p.description) ? String(p.description) : 'Preset loaded.';
+    updateHeaderBadges();
   }
 
   async function applyPresetSelection(){
@@ -2264,6 +2683,7 @@
     const merged = { ...cfgFromForm(), ...normalized };
     fillForm(merged);
     setNotice('status', `Preset applied: ${String(preset.name || id)}`);
+    updateHeaderBadges();
   }
 
   function cfgFromForm(){
@@ -2274,6 +2694,7 @@
       dexes: String(cfgDexes?.value || '').trim(),
       enable_multidex: !!cfgEnableMultidex?.checked,
       trigger_prefer_cross_dex: !!cfgTriggerPreferCrossDex?.checked,
+      trigger_require_cross_dex: !!cfgTriggerRequireCrossDex?.checked,
       trigger_require_three_hops: !!cfgTriggerRequire3Hops?.checked,
       max_hops: parseInt(cfgMaxHops?.value || '3', 10),
       beam_k: parseInt(cfgBeamK?.value || '20', 10),
@@ -2328,6 +2749,7 @@
     }
     if (cfgEnableMultidex) cfgEnableMultidex.checked = !!cfg.enable_multidex;
     if (cfgTriggerPreferCrossDex) cfgTriggerPreferCrossDex.checked = !!cfg.trigger_prefer_cross_dex;
+    if (cfgTriggerRequireCrossDex) cfgTriggerRequireCrossDex.checked = !!cfg.trigger_require_cross_dex;
     if (cfgTriggerRequire3Hops) cfgTriggerRequire3Hops.checked = !!cfg.trigger_require_three_hops;
     if (cfgMaxHops) cfgMaxHops.value = String(cfg.max_hops ?? 3);
     if (cfgBeamK) cfgBeamK.value = String(cfg.beam_k ?? 20);
@@ -2376,6 +2798,8 @@
     if (cfgMempoolFetchConc) cfgMempoolFetchConc.value = String(cfg.mempool_fetch_tx_concurrency ?? 20);
     if (cfgMempoolDedup) cfgMempoolDedup.value = String(cfg.mempool_dedup_ttl_s ?? 120);
     if (cfgMempoolBudget) cfgMempoolBudget.value = String(cfg.mempool_trigger_scan_budget_s ?? 1.5);
+    updateHeaderBadges();
+    updateCrossDexGuard();
     updateStats();
     drawChart();
     rebuildProfitTable();
@@ -2435,6 +2859,11 @@
     if (started.ok) setNotice('status', 'Restarted with new config');
     else setNotice('warn', 'Restart failed: ' + (started.error || 'unknown'));
   });
+  if (applyCfgBtnTop) {
+    applyCfgBtnTop.addEventListener('click', () => {
+      applyCfgBtn.click();
+    });
+  }
 
   startBtn.addEventListener('click', async () => {
     startBtn.disabled = true;
@@ -2458,6 +2887,24 @@
 
   if (cfgPreset) {
     cfgPreset.addEventListener('change', updatePresetDesc);
+  }
+  if (cfgScanSource) {
+    cfgScanSource.addEventListener('change', updateHeaderBadges);
+  }
+  if (cfgTriggerRequireCrossDex) {
+    cfgTriggerRequireCrossDex.addEventListener('change', updateCrossDexGuard);
+  }
+  if (cfgTriggerPreferCrossDex) {
+    cfgTriggerPreferCrossDex.addEventListener('change', updateCrossDexGuard);
+  }
+  if (recDebugBtn) {
+    recDebugBtn.addEventListener('click', () => applyQuickProfile('debug'));
+  }
+  if (recCrossDexBtn) {
+    recCrossDexBtn.addEventListener('click', () => applyQuickProfile('cross_dex'));
+  }
+  if (recStrictBtn) {
+    recStrictBtn.addEventListener('click', () => applyQuickProfile('strict'));
   }
   if (applyPresetBtn) {
     applyPresetBtn.addEventListener('click', applyPresetSelection);
@@ -2489,6 +2936,10 @@
   const restored = restoreState();
   if (!restored) drawChart();
   initColumnResizers();
+  initCollapsibles();
+  initSettingsSearch();
+  updateHeaderBadges();
+  updateCrossDexGuard();
   // Load settings once on page init
   getConfig().then((c)=>{
     if (c && c.ok) fillForm(c.config || {});

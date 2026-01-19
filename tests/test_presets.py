@@ -100,3 +100,17 @@ def test_presets_schema_and_keys() -> None:
 
         unknown_keys = [k for k in settings.keys() if k not in ALLOWED_KEYS]
         assert not unknown_keys, f"{path.name} has unknown keys: {unknown_keys}"
+
+
+def test_cross_dex_defaults_for_presets() -> None:
+    root = Path(__file__).resolve().parents[1]
+    presets_dir = root / "presets"
+    balanced = json.loads((presets_dir / "balanced.json").read_text(encoding="utf-8"))
+    coverage = json.loads((presets_dir / "coverage_heavy.json").read_text(encoding="utf-8"))
+    stress = json.loads((presets_dir / "stress.json").read_text(encoding="utf-8"))
+    assert balanced["settings"].get("trigger_prefer_cross_dex") is True
+    assert balanced["settings"].get("trigger_require_cross_dex") is False
+    assert coverage["settings"].get("trigger_prefer_cross_dex") is True
+    assert coverage["settings"].get("trigger_require_cross_dex") is False
+    assert stress["settings"].get("trigger_prefer_cross_dex") is False
+    assert stress["settings"].get("trigger_require_cross_dex") is False

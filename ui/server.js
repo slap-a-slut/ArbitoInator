@@ -56,7 +56,7 @@ const DEFAULT_CONFIG = {
   beam_k: 20,
   edge_top_m: 2,
   trigger_prefer_cross_dex: true,
-  trigger_require_cross_dex: true,
+  trigger_require_cross_dex: false,
   trigger_require_three_hops: true,
   trigger_cross_dex_bonus_bps: 5,
   trigger_same_dex_penalty_bps: 5,
