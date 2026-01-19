@@ -3,8 +3,9 @@ import os
 from typing import Any, Dict, List, Tuple
 
 from bot import config, scanner, strategies
+from bot.block_context import BlockContext
 from bot.routes import Hop
-from infra.rpc import get_provider, get_rpc_urls
+from infra.rpc import get_rpc_urls
 
 
 def _scale_amount(token_in: str, amount_units: float) -> int:
@@ -37,7 +38,7 @@ async def _beam_route(
     route: Tuple[str, ...],
     *,
     amount_in: int,
-    block: str,
+    block_ctx: BlockContext,
     fee_tiers: List[int],
     beam_k: int,
     edge_top_m: int,
@@ -52,7 +53,7 @@ async def _beam_route(
                 token_in,
                 token_out,
                 int(st["amount"]),
-                block=block,
+                block_ctx=block_ctx,
                 fee_tiers=fee_tiers,
                 timeout_s=4.0,
             )
@@ -73,14 +74,13 @@ async def _beam_route(
 
 async def main() -> None:
     rpc_urls = get_rpc_urls()
-    w3 = get_provider(rpc_urls)
-    block_number = int(os.getenv("BLOCK_NUMBER") or w3.eth.block_number)
-    block_tag = hex(block_number)
 
     dexes = os.getenv("DEXES", "univ3,univ2,sushiswap").split(",")
     dexes = [d.strip().lower() for d in dexes if d.strip()]
     ps = scanner.PriceScanner(rpc_urls=rpc_urls, dexes=dexes)
-    await ps.prepare_block(block_number)
+    block_number = int(os.getenv("BLOCK_NUMBER") or await ps.rpc.get_block_number())
+    block_ctx = BlockContext(block_number=block_number, block_tag=hex(block_number))
+    await ps.prepare_block(block_ctx)
 
     base = config.TOKENS.get("USDC", config.TOKENS["USDC"])
     routes = strategies.Strategy(bases=[base]).get_routes(max_hops=3)
@@ -97,7 +97,7 @@ async def main() -> None:
             ps,
             route,
             amount_in=amount_in,
-            block=block_tag,
+            block_ctx=block_ctx,
             fee_tiers=fee_tiers,
             beam_k=beam_k,
             edge_top_m=edge_top_m,
@@ -107,7 +107,7 @@ async def main() -> None:
 
     payloads: List[Dict[str, Any]] = []
     for c in candidates:
-        p = await ps.price_payload(c, block=block_tag, fee_tiers=fee_tiers, timeout_s=4.0)
+        p = await ps.price_payload(c, block_ctx=block_ctx, fee_tiers=fee_tiers, timeout_s=4.0)
         if p and p.get("profit_raw", -1) != -1:
             payloads.append(p)
 
@@ -123,6 +123,11 @@ async def main() -> None:
     for p in net_sorted[:5]:
         route = _route_str(tuple(p.get("route") or ()), tuple(p.get("dex_path") or ()))
         print(f"  net={p.get('profit_net', p.get('profit', 0)):.6f} gross={p.get('profit_gross', 0):.6f} | {route}")
+
+    try:
+        await ps.rpc.close()
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

@@ -2,15 +2,18 @@
 
 import asyncio
 from bot import config
+from bot.block_context import BlockContext
 from bot.scanner import PriceScanner
 
 async def main():
     scanner = PriceScanner()
+    block_number = await scanner.rpc.get_block_number()
+    block_ctx = BlockContext(block_number=int(block_number), block_tag=hex(int(block_number)))
 
     # Полный цикл USDC -> WETH -> USDC с реальными котировками
     route = (config.TOKENS["USDC"], config.TOKENS["WETH"], config.TOKENS["USDC"])
     amount_in = 1_000_000  # USDC 1.0 (6 decimals)
-    payload = await scanner.price_payload({"route": route, "amount_in": amount_in})
+    payload = await scanner.price_payload({"route": route, "amount_in": amount_in}, block_ctx=block_ctx)
 
     amount_out = int(payload.get("amount_out", 0))
     profit = float(payload.get("profit", 0.0))
@@ -23,6 +26,11 @@ async def main():
         print(f"[PriceTest] DEX path: {' -> '.join(dex_path)}")
     print(f"[PriceTest] Gas cost: {gas_cost/1e6:.6f} USDC")
     print(f"[PriceTest] Profit: {profit:.6f} USDC ({profit_pct:.4f}%)")
+
+    try:
+        await scanner.rpc.close()
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -11,13 +11,12 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from bot import scanner, strategies, executor, config
+from bot.block_context import BlockContext
 from bot.routes import Hop
-from infra.rpc import get_provider
 from ui_notify import ui_push
 
 
-# w3 + scanner are initialized in main() after reading UI config
-w3 = None  # type: ignore[assignment]
+# RPC + scanner are initialized in main() after reading UI config
 PS = None  # type: ignore[assignment]
 
 SIM_FROM_ADDRESS = "0x0000000000000000000000000000000000000000"
@@ -305,14 +304,14 @@ def _route_pretty(
     return " ".join(parts)
 
 
-async def wait_for_new_block(last_block: int) -> int:
+async def wait_for_new_block(last_block: int, *, timeout_s: float = 3.0) -> int:
     while True:
         try:
-            current_block = w3.eth.block_number
+            current_block = await PS.rpc.get_block_number(timeout_s=timeout_s)
         except Exception:
             await asyncio.sleep(0.25)
             continue
-        if current_block > last_block:
+        if int(current_block) > int(last_block):
             return int(current_block)
         await asyncio.sleep(0.25)
 
@@ -326,10 +325,35 @@ async def scan_routes() -> List[Tuple[str, ...]]:
     return strategies.Strategy(bases=[base_addr]).get_routes(max_hops=int(getattr(s, "max_hops", 3)))
 
 
+def _make_block_context(block_number: int) -> BlockContext:
+    return BlockContext(block_number=int(block_number), block_tag=hex(int(block_number)))
+
+
+def _should_fallback_block(stats: Dict[str, int], *, candidates_count: int) -> bool:
+    min_candidates = int(getattr(config, "RPC_OUT_OF_SYNC_MIN_CANDIDATES", 40))
+    if candidates_count < min_candidates:
+        return False
+    scheduled = int(stats.get("scheduled", 0))
+    if scheduled <= 0:
+        return False
+    failures = int(stats.get("invalid", 0)) + int(stats.get("timeouts", 0))
+    ratio = float(failures) / float(max(1, scheduled))
+    threshold = float(getattr(config, "RPC_OUT_OF_SYNC_FAIL_RATIO", 0.6))
+    return ratio >= threshold
+
+
+async def _gas_gwei(timeout_s: float = 2.0) -> Optional[float]:
+    try:
+        gp = await PS.rpc.call("eth_gasPrice", [], timeout_s=timeout_s)
+        return float(int(gp, 16)) / 1e9
+    except Exception:
+        return None
+
+
 async def _route_viable(
     route: Tuple[str, ...],
     *,
-    block: str,
+    block_ctx: BlockContext,
     fee_tiers: Optional[List[int]],
     timeout_s: float,
     probe_units: float,
@@ -340,7 +364,7 @@ async def _route_viable(
             route[i],
             route[i + 1],
             amt,
-            block=block,
+            block_ctx=block_ctx,
             fee_tiers=fee_tiers,
             timeout_s=timeout_s,
         )
@@ -365,7 +389,7 @@ async def _beam_candidates_for_route(
     route: Tuple[str, ...],
     *,
     amount_in: int,
-    block: str,
+    block_ctx: BlockContext,
     fee_tiers: Optional[List[int]],
     timeout_s: float,
     beam_k: int,
@@ -385,7 +409,7 @@ async def _beam_candidates_for_route(
                 token_in,
                 token_out,
                 int(st["amount"]),
-                block=block,
+                block_ctx=block_ctx,
                 fee_tiers=fee_tiers,
                 timeout_s=timeout_s,
             )
@@ -425,7 +449,7 @@ async def _expand_multidex_candidates(
     routes: List[Tuple[str, ...]],
     *,
     amount_in: int,
-    block_number: int,
+    block_ctx: BlockContext,
     fee_tiers: Optional[List[int]],
     timeout_s: float,
     deadline_s: float,
@@ -433,7 +457,6 @@ async def _expand_multidex_candidates(
 ) -> List[Dict[str, Any]]:
     loop = asyncio.get_running_loop()
     sem = asyncio.Semaphore(max(1, int(settings.concurrency)))
-    block_tag = hex(int(block_number))
     results: List[Dict[str, Any]] = []
 
     async def one(route: Tuple[str, ...]) -> List[Dict[str, Any]]:
@@ -443,7 +466,7 @@ async def _expand_multidex_candidates(
             try:
                 ok = await _route_viable(
                     route,
-                    block=block_tag,
+                    block_ctx=block_ctx,
                     fee_tiers=fee_tiers,
                     timeout_s=timeout_s,
                     probe_units=float(settings.probe_amount),
@@ -453,7 +476,7 @@ async def _expand_multidex_candidates(
                 return await _beam_candidates_for_route(
                     route,
                     amount_in=int(amount_in),
-                    block=block_tag,
+                    block_ctx=block_ctx,
                     fee_tiers=fee_tiers,
                     timeout_s=timeout_s,
                     beam_k=int(settings.beam_k),
@@ -489,13 +512,13 @@ async def _expand_multidex_candidates(
 
 async def _scan_candidates(
     candidates: List[Dict[str, Any]],
-    block_number: int,
+    block_ctx: BlockContext,
     *,
     fee_tiers: Optional[List[int]],
     timeout_s: float,
     deadline_s: float,
     keep_all: bool,
-) -> Tuple[List[Dict[str, Any]], int]:
+) -> Tuple[List[Dict[str, Any]], int, Dict[str, int]]:
     """Scan candidates until deadline.
 
     Returns (payloads, finished_count)
@@ -504,22 +527,24 @@ async def _scan_candidates(
     s = _load_settings()
     loop = asyncio.get_running_loop()
     sem = asyncio.Semaphore(max(1, int(s.concurrency)))
-    block_tag = hex(int(block_number))
-
     results: List[Dict[str, Any]] = []
     finished = 0
+    invalid = 0
 
     async def one(c: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         nonlocal finished
+        nonlocal invalid
         async with sem:
             try:
                 # Enforce per-candidate timeout hard
                 payload = await asyncio.wait_for(
-                    PS.price_payload(c, block=block_tag, fee_tiers=fee_tiers, timeout_s=timeout_s),
+                    PS.price_payload(c, block_ctx=block_ctx, fee_tiers=fee_tiers, timeout_s=timeout_s),
                     timeout=timeout_s + 0.5,
                 )
             except Exception:
                 payload = None
+            if not payload or payload.get("profit_raw", -1) == -1:
+                invalid += 1
             finished += 1
             return payload
 
@@ -528,6 +553,8 @@ async def _scan_candidates(
         if loop.time() >= deadline_s:
             break
         tasks.append(asyncio.create_task(one(c)))
+    scheduled = len(tasks)
+    budget_skipped = max(0, len(candidates) - scheduled)
 
     try:
         # Avoid asyncio.as_completed(...)+break warnings ("_wait_for_one was never awaited").
@@ -551,7 +578,15 @@ async def _scan_candidates(
                 t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
-    return results, finished
+    timeouts = max(0, scheduled - finished)
+    stats = {
+        "scheduled": int(scheduled),
+        "finished": int(finished),
+        "timeouts": int(timeouts),
+        "invalid": int(invalid),
+        "budget_skipped": int(budget_skipped),
+    }
+    return results, finished, stats
 
 
 def _apply_safety(p: Dict[str, Any], s: Settings) -> Dict[str, Any]:
@@ -731,6 +766,9 @@ def _top_examples(payloads: List[Dict[str, Any]], *, limit: int = 3) -> Dict[str
         return {
             "route": route_str,
             "dex_path": list(p.get("dex_path") or ()),
+            "profit_gross_raw": int(p.get("profit_gross_raw", p.get("profit_raw_no_gas", 0) or 0)),
+            "profit_net_raw": int(p.get("profit_raw_net", p.get("profit_raw", 0) or 0)),
+            "gas_cost_in": int(p.get("gas_cost", 0) or 0),
             "profit_gross": float(p.get("profit_gross", 0.0)),
             "profit_net": float(p.get("profit_net", p.get("profit", 0.0))),
         }
@@ -772,9 +810,21 @@ def _reject_reason(p: Dict[str, Any], s: Settings) -> str:
     return "ready"
 
 
-def _debug_funnel_log(payloads: List[Dict[str, Any]], s: Settings, block_number: int) -> None:
+def _debug_funnel_log(
+    payloads: List[Dict[str, Any]],
+    s: Settings,
+    block_number: int,
+    stats: Optional[Dict[str, int]] = None,
+) -> None:
     if not _env_flag("DEBUG_FUNNEL"):
         return
+    if stats:
+        print(
+            f"[Funnel] Block {block_number} | "
+            f"scheduled={stats.get('scheduled', 0)} finished={stats.get('finished', 0)} "
+            f"invalid={stats.get('invalid', 0)} timeouts={stats.get('timeouts', 0)} "
+            f"budget_skipped={stats.get('budget_skipped', 0)}"
+        )
     if not payloads:
         print(f"[Funnel] Block {block_number} | no payloads")
         return
@@ -834,7 +884,7 @@ def _debug_funnel_log(payloads: List[Dict[str, Any]], s: Settings, block_number:
 
 async def _optimize_amount_for_route(
     route: Tuple[str, ...],
-    block_number: int,
+    block_ctx: BlockContext,
     seed_payload: Dict[str, Any],
     *,
     deadline_s: float,
@@ -862,7 +912,7 @@ async def _optimize_amount_for_route(
             c["hops"] = seed_payload.get("hops")
         try:
             p = await asyncio.wait_for(
-                PS.price_payload(c, block=hex(int(block_number)), fee_tiers=None, timeout_s=float(s.rpc_timeout_stage2_s)),
+                PS.price_payload(c, block_ctx=block_ctx, fee_tiers=None, timeout_s=float(s.rpc_timeout_stage2_s)),
                 timeout=float(s.rpc_timeout_stage2_s) + 0.5,
             )
             return p
@@ -1083,7 +1133,7 @@ async def main() -> None:
     await ui_push({"type": "status", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": None, "text": "started"})
 
     # Init RPC endpoints (multi-RPC failover supported)
-    global w3, PS
+    global PS
     s0 = _load_settings()
     rpc_urls = list(s0.rpc_urls) if getattr(s0, "rpc_urls", None) else []
     if not rpc_urls:
@@ -1094,7 +1144,6 @@ async def main() -> None:
     if not rpc_urls:
         rpc_urls = [os.getenv("RPC_URL", config.RPC_URL)]
 
-    w3 = get_provider(rpc_urls)
     enable_multidex = bool(getattr(s0, "enable_multidex", False)) or _env_flag("ENABLE_MULTIDEX")
     dexes = list(s0.dexes) if getattr(s0, "dexes", None) else None
     if not enable_multidex:
@@ -1106,9 +1155,9 @@ async def main() -> None:
     blocks_scanned = 0
     profit_hits = 0
 
-    last_block = w3.eth.block_number
-    print(f"[RPC] connected={w3.is_connected()} | block={last_block} | urls={len(rpc_urls)}")
-    await ui_push({"type": "status", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": last_block, "text": f"rpc connected={w3.is_connected()} | urls={len(rpc_urls)}"})
+    last_block = await PS.rpc.get_block_number()
+    print(f"[RPC] connected=True | block={last_block} | urls={len(rpc_urls)}")
+    await ui_push({"type": "status", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": int(last_block), "text": f"rpc connected=True | urls={len(rpc_urls)}"})
 
     try:
         while True:
@@ -1127,36 +1176,22 @@ async def main() -> None:
 
             # Optional gas gate
             if s.max_gas_gwei is not None:
-                try:
-                    gas_gwei = float(w3.eth.gas_price) / 1e9
-                    if gas_gwei > float(s.max_gas_gwei):
-                        await ui_push(
-                            {
-                                "type": "scan",
-                                "time": datetime.utcnow().strftime("%H:%M:%S"),
-                                "block": block_number,
-                                "candidates": 0,
-                                "profitable": 0,
-                                "best_profit": 0.0,
-                                "text": f"Skipped: gas {gas_gwei:.1f} gwei > max {float(s.max_gas_gwei):.1f} gwei",
-                            }
-                        )
-                        continue
-                except Exception:
-                    pass
+                gas_gwei = await _gas_gwei(timeout_s=2.5)
+                if gas_gwei is not None and gas_gwei > float(s.max_gas_gwei):
+                    await ui_push(
+                        {
+                            "type": "scan",
+                            "time": datetime.utcnow().strftime("%H:%M:%S"),
+                            "block": block_number,
+                            "candidates": 0,
+                            "profitable": 0,
+                            "best_profit": 0.0,
+                            "text": f"Skipped: gas {gas_gwei:.1f} gwei > max {float(s.max_gas_gwei):.1f} gwei",
+                        }
+                    )
+                    continue
 
             await ui_push({"type": "scan", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": block_number, "text": "Scanning routes..."})
-
-            loop = asyncio.get_running_loop()
-            start_t = loop.time()
-            deadline = start_t + float(s.block_budget_s)
-            stage1_deadline = start_t + float(s.block_budget_s) * 0.60
-
-            # prepare per-block caches (gas + WETH/USDC warmup)
-            try:
-                await PS.prepare_block(int(block_number))
-            except Exception:
-                pass
 
             routes = await scan_routes()
             if not routes:
@@ -1191,143 +1226,174 @@ async def main() -> None:
                 )
                 continue
 
-            profitable: List[Dict[str, Any]] = []
-            candidates_count = 0
-            finished_count = 0
-            funnel_payloads: List[Dict[str, Any]] = []
-            funnel_counts = {"raw": 0, "gas": 0, "safety": 0, "ready": 0}
-            funnel_stats: Dict[str, Optional[float]] = {}
-            top_examples: Dict[str, List[Dict[str, Any]]] = {}
+            attempt_ctxs = [_make_block_context(block_number)]
+            if int(block_number) > 0:
+                attempt_ctxs.append(_make_block_context(int(block_number) - 1))
 
-            try:
-                if str(s.scan_mode).lower() == "fixed":
-                    candidates: List[Dict[str, Any]] = []
-                    if enable_multidex:
-                        base_token = routes[0][0]
-                        for u in list(s.amount_presets):
-                            amt_in = _scale_amount(base_token, float(u))
-                            more = await _expand_multidex_candidates(
+            scan_done = False
+            block_ctx = attempt_ctxs[0]
+            for attempt_idx, ctx in enumerate(attempt_ctxs):
+                block_ctx = ctx
+                loop = asyncio.get_running_loop()
+                start_t = loop.time()
+                deadline = start_t + float(s.block_budget_s)
+                stage1_deadline = start_t + float(s.block_budget_s) * 0.60
+
+                # prepare per-block caches (gas + WETH/USDC warmup)
+                try:
+                    await PS.prepare_block(block_ctx)
+                except Exception:
+                    pass
+
+                profitable: List[Dict[str, Any]] = []
+                candidates_count = 0
+                finished_count = 0
+                funnel_payloads: List[Dict[str, Any]] = []
+                funnel_counts = {"raw": 0, "gas": 0, "safety": 0, "ready": 0}
+                funnel_stats: Dict[str, Optional[float]] = {}
+                top_examples: Dict[str, List[Dict[str, Any]]] = {}
+                scan_stats: Dict[str, int] = {"scheduled": 0, "finished": 0, "timeouts": 0, "invalid": 0, "budget_skipped": 0}
+
+                try:
+                    if str(s.scan_mode).lower() == "fixed":
+                        candidates = []
+                        if enable_multidex:
+                            base_token = routes[0][0]
+                            for u in list(s.amount_presets):
+                                amt_in = _scale_amount(base_token, float(u))
+                                more = await _expand_multidex_candidates(
+                                    routes,
+                                    amount_in=int(amt_in),
+                                    block_ctx=block_ctx,
+                                    fee_tiers=None,
+                                    timeout_s=float(s.rpc_timeout_stage2_s),
+                                    deadline_s=deadline,
+                                    settings=s,
+                                )
+                                if more:
+                                    candidates.extend(more)
+                        else:
+                            for route in routes:
+                                token_in = route[0]
+                                for u in list(s.amount_presets):
+                                    candidates.append({"route": route, "amount_in": _scale_amount(token_in, float(u))})
+                        candidates_count = len(candidates)
+                        payloads, finished_count, scan_stats = await _scan_candidates(
+                            candidates,
+                            block_ctx,
+                            fee_tiers=None,
+                            timeout_s=float(s.rpc_timeout_stage2_s),
+                            deadline_s=deadline,
+                            keep_all=True,
+                        )
+                        payloads = [p for p in payloads if p and p.get("profit_raw", -1) != -1]
+                        payloads2 = [_apply_safety(p, s) for p in payloads]
+                        funnel_payloads = payloads2
+                        funnel_counts = _funnel_counts(funnel_payloads, s)
+                        funnel_stats = _funnel_stats(funnel_payloads)
+                        top_examples = _top_examples(funnel_payloads)
+                        for p2 in payloads2:
+                            if strategies.risk_check(p2) and _passes_thresholds(p2, s):
+                                profitable.append(p2)
+
+                    else:
+                        # Stage 1
+                        if enable_multidex:
+                            base_token = routes[0][0]
+                            stage1_amount = _scale_amount(base_token, float(s.stage1_amount))
+                            stage1_candidates = await _expand_multidex_candidates(
                                 routes,
-                                amount_in=int(amt_in),
-                                block_number=block_number,
-                                fee_tiers=None,
-                                timeout_s=float(s.rpc_timeout_stage2_s),
-                                deadline_s=deadline,
+                                amount_in=int(stage1_amount),
+                                block_ctx=block_ctx,
+                                fee_tiers=list(s.stage1_fee_tiers) if s.stage1_fee_tiers else None,
+                                timeout_s=float(s.rpc_timeout_stage1_s),
+                                deadline_s=stage1_deadline,
                                 settings=s,
                             )
-                            if more:
-                                candidates.extend(more)
-                    else:
-                        for route in routes:
-                            token_in = route[0]
-                            for u in list(s.amount_presets):
-                                candidates.append({"route": route, "amount_in": _scale_amount(token_in, float(u))})
-                    candidates_count = len(candidates)
-                    payloads, finished_count = await _scan_candidates(
-                        candidates,
-                        block_number,
-                        fee_tiers=None,
-                        timeout_s=float(s.rpc_timeout_stage2_s),
-                        deadline_s=deadline,
-                        keep_all=True,
-                    )
-                    payloads = [p for p in payloads if p and p.get("profit_raw", -1) != -1]
-                    payloads2 = [_apply_safety(p, s) for p in payloads]
-                    funnel_payloads = payloads2
-                    funnel_counts = _funnel_counts(funnel_payloads, s)
-                    funnel_stats = _funnel_stats(funnel_payloads)
-                    top_examples = _top_examples(funnel_payloads)
-                    _debug_funnel_log(funnel_payloads, s, block_number)
-                    for p2 in payloads2:
-                        if strategies.risk_check(p2) and _passes_thresholds(p2, s):
-                            profitable.append(p2)
+                        else:
+                            stage1_candidates = [
+                                {"route": route, "amount_in": _scale_amount(route[0], float(s.stage1_amount))} for route in routes
+                            ]
+                        candidates_count = len(stage1_candidates)
 
-                else:
-                    # Stage 1
-                    if enable_multidex:
-                        base_token = routes[0][0]
-                        stage1_amount = _scale_amount(base_token, float(s.stage1_amount))
-                        stage1_candidates = await _expand_multidex_candidates(
-                            routes,
-                            amount_in=int(stage1_amount),
-                            block_number=block_number,
+                        stage1_payloads, finished_count, scan_stats = await _scan_candidates(
+                            stage1_candidates,
+                            block_ctx,
                             fee_tiers=list(s.stage1_fee_tiers) if s.stage1_fee_tiers else None,
                             timeout_s=float(s.rpc_timeout_stage1_s),
                             deadline_s=stage1_deadline,
-                            settings=s,
+                            keep_all=True,
                         )
-                    else:
-                        stage1_candidates = [
-                            {"route": route, "amount_in": _scale_amount(route[0], float(s.stage1_amount))} for route in routes
-                        ]
-                    candidates_count = len(stage1_candidates)
 
-                    stage1_payloads, finished_count = await _scan_candidates(
-                        stage1_candidates,
-                        block_number,
-                        fee_tiers=list(s.stage1_fee_tiers) if s.stage1_fee_tiers else None,
-                        timeout_s=float(s.rpc_timeout_stage1_s),
-                        deadline_s=stage1_deadline,
-                        keep_all=True,
-                    )
+                        stage1_payloads = [p for p in stage1_payloads if p and p.get("profit_raw", -1) != -1]
+                        stage1_payloads2 = [_apply_safety(p, s) for p in stage1_payloads]
+                        funnel_payloads = stage1_payloads2
+                        funnel_counts = _funnel_counts(funnel_payloads, s)
+                        funnel_stats = _funnel_stats(funnel_payloads)
+                        top_examples = _top_examples(funnel_payloads)
+                        ranked = sorted(stage1_payloads, key=lambda p: int(p.get("profit_raw", -10**30)), reverse=True)
 
-                    stage1_payloads = [p for p in stage1_payloads if p and p.get("profit_raw", -1) != -1]
-                    stage1_payloads2 = [_apply_safety(p, s) for p in stage1_payloads]
-                    funnel_payloads = stage1_payloads2
-                    funnel_counts = _funnel_counts(funnel_payloads, s)
-                    funnel_stats = _funnel_stats(funnel_payloads)
-                    top_examples = _top_examples(funnel_payloads)
-                    _debug_funnel_log(funnel_payloads, s, block_number)
-                    ranked = sorted(stage1_payloads, key=lambda p: int(p.get("profit_raw", -10**30)), reverse=True)
+                        # Soft filter to avoid missing profit: keep positives, or near-threshold
+                        soft: List[Dict[str, Any]] = []
+                        for p in ranked:
+                            if float(p.get("profit", 0.0)) > 0:
+                                soft.append(p)
+                            elif float(p.get("profit_pct", 0.0)) >= max(0.0, float(s.min_profit_pct) * 0.25):
+                                soft.append(p)
+                            elif float(p.get("profit", 0.0)) >= max(0.0, float(s.min_profit_abs) * 0.25):
+                                soft.append(p)
+                        if not soft:
+                            soft = ranked
 
-                    # Soft filter to avoid missing profit: keep positives, or near-threshold
-                    soft: List[Dict[str, Any]] = []
-                    for p in ranked:
-                        if float(p.get("profit", 0.0)) > 0:
-                            soft.append(p)
-                        elif float(p.get("profit_pct", 0.0)) >= max(0.0, float(s.min_profit_pct) * 0.25):
-                            soft.append(p)
-                        elif float(p.get("profit", 0.0)) >= max(0.0, float(s.min_profit_abs) * 0.25):
-                            soft.append(p)
-                    if not soft:
-                        soft = ranked
+                        topk = soft[: int(s.stage2_top_k)]
+                        sem2 = asyncio.Semaphore(max(1, min(int(s.concurrency), 12)))
 
-                    topk = soft[: int(s.stage2_top_k)]
-                    sem2 = asyncio.Semaphore(max(1, min(int(s.concurrency), 12)))
+                        async def opt_one(p: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+                            async with sem2:
+                                return await _optimize_amount_for_route(tuple(p.get("route")), block_ctx, p, deadline_s=deadline)
 
-                    async def opt_one(p: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-                        async with sem2:
-                            return await _optimize_amount_for_route(tuple(p.get("route")), block_number, p, deadline_s=deadline)
+                        opt_tasks = [asyncio.create_task(opt_one(p)) for p in topk]
+                        best_payloads: List[Dict[str, Any]] = []
+                        try:
+                            pending = set(opt_tasks)
+                            while pending and loop.time() < deadline:
+                                timeout = max(0.0, float(deadline) - float(loop.time()))
+                                done, pending = await asyncio.wait(
+                                    pending, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
+                                )
+                                for d in done:
+                                    bp = await d
+                                    if bp:
+                                        best_payloads.append(bp)
+                        finally:
+                            for t in opt_tasks:
+                                if not t.done():
+                                    t.cancel()
+                            await asyncio.gather(*opt_tasks, return_exceptions=True)
 
-                    opt_tasks = [asyncio.create_task(opt_one(p)) for p in topk]
-                    best_payloads: List[Dict[str, Any]] = []
-                    try:
-                        pending = set(opt_tasks)
-                        while pending and loop.time() < deadline:
-                            timeout = max(0.0, float(deadline) - float(loop.time()))
-                            done, pending = await asyncio.wait(
-                                pending, timeout=timeout, return_when=asyncio.FIRST_COMPLETED
-                            )
-                            for d in done:
-                                bp = await d
-                                if bp:
-                                    best_payloads.append(bp)
-                    finally:
-                        for t in opt_tasks:
-                            if not t.done():
-                                t.cancel()
-                        await asyncio.gather(*opt_tasks, return_exceptions=True)
+                        best_payloads = [bp for bp in best_payloads if bp and bp.get("profit_raw", -1) != -1]
+                        best_payloads2 = [_apply_safety(bp, s) for bp in best_payloads]
+                        for bp2 in best_payloads2:
+                            if strategies.risk_check(bp2) and _passes_thresholds(bp2, s):
+                                profitable.append(bp2)
 
-                    best_payloads = [bp for bp in best_payloads if bp and bp.get("profit_raw", -1) != -1]
-                    best_payloads2 = [_apply_safety(bp, s) for bp in best_payloads]
-                    for bp2 in best_payloads2:
-                        if strategies.risk_check(bp2) and _passes_thresholds(bp2, s):
-                            profitable.append(bp2)
+                except Exception as e:
+                    print(f"[WARN] scan failed: {type(e).__name__}: {e}")
+                    await ui_push({"type": "warn", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": int(block_ctx.block_number), "text": f"scan failed: {type(e).__name__}"})
+                    await asyncio.sleep(0.5)
+                    break
 
-            except Exception as e:
-                print(f"[WARN] scan failed: {type(e).__name__}: {e}")
-                await ui_push({"type": "warn", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": block_number, "text": f"scan failed: {type(e).__name__}"})
-                await asyncio.sleep(0.5)
+                if attempt_idx == 0 and _should_fallback_block(scan_stats, candidates_count=candidates_count):
+                    msg = f"RPC not caught up for block {block_ctx.block_number}, retrying {int(block_ctx.block_number) - 1}"
+                    print(f"[WARN] {msg}")
+                    await ui_push({"type": "warn", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": int(block_ctx.block_number), "text": msg})
+                    continue
+
+                _debug_funnel_log(funnel_payloads, s, int(block_ctx.block_number), scan_stats)
+                scan_done = True
+                break
+
+            if not scan_done:
                 continue
 
             if not profitable:
@@ -1335,7 +1401,7 @@ async def main() -> None:
                     {
                         "type": "scan",
                         "time": datetime.utcnow().strftime("%H:%M:%S"),
-                        "block": block_number,
+                        "block": int(block_ctx.block_number),
                         "candidates": int(candidates_count),
                         "profitable": 0,
                         "best_profit": 0.0,
@@ -1357,7 +1423,7 @@ async def main() -> None:
                         await ui_push({
                             "type": "rpc_stats",
                             "time": datetime.utcnow().strftime("%H:%M:%S"),
-                            "block": block_number,
+                            "block": int(block_ctx.block_number),
                             "stats": PS.rpc.stats(),
                         })
                 except Exception:
@@ -1365,10 +1431,14 @@ async def main() -> None:
                 try:
                     BLOCK_LOG.open("a", encoding="utf-8").write(json.dumps({
                         "time": datetime.utcnow().isoformat(),
-                        "block": int(block_number),
+                        "block": int(block_ctx.block_number),
                         "candidates": int(candidates_count),
                         "candidates_total": int(candidates_count),
                         "finished": int(finished_count),
+                        "scan_scheduled": int(scan_stats.get("scheduled", 0)),
+                        "scan_invalid": int(scan_stats.get("invalid", 0)),
+                        "scan_timeouts": int(scan_stats.get("timeouts", 0)),
+                        "scan_budget_skipped": int(scan_stats.get("budget_skipped", 0)),
                         "profitable": 0,
                         "raw_opps": int(funnel_counts["raw"]),
                         "raw_gross_hits": int(funnel_counts["raw"]),
@@ -1419,7 +1489,7 @@ async def main() -> None:
                 {
                     "type": "scan",
                     "time": datetime.utcnow().strftime("%H:%M:%S"),
-                    "block": block_number,
+                    "block": int(block_ctx.block_number),
                     "candidates": int(candidates_count),
                     "profitable": len(profitable),
                     "best_profit": float(best_profit),
@@ -1442,7 +1512,7 @@ async def main() -> None:
                     await ui_push({
                         "type": "rpc_stats",
                         "time": datetime.utcnow().strftime("%H:%M:%S"),
-                        "block": block_number,
+                        "block": int(block_ctx.block_number),
                         "stats": PS.rpc.stats(),
                     })
             except Exception:
@@ -1450,10 +1520,14 @@ async def main() -> None:
             try:
                 BLOCK_LOG.open("a", encoding="utf-8").write(json.dumps({
                     "time": datetime.utcnow().isoformat(),
-                    "block": int(block_number),
+                    "block": int(block_ctx.block_number),
                     "candidates": int(candidates_count),
                     "candidates_total": int(candidates_count),
                     "finished": int(finished_count),
+                    "scan_scheduled": int(scan_stats.get("scheduled", 0)),
+                    "scan_invalid": int(scan_stats.get("invalid", 0)),
+                    "scan_timeouts": int(scan_stats.get("timeouts", 0)),
+                    "scan_budget_skipped": int(scan_stats.get("budget_skipped", 0)),
                     "profitable": int(len(profitable)),
                     "best_profit": float(best_profit),
                     "raw_opps": int(funnel_counts["raw"]),
@@ -1502,8 +1576,8 @@ async def main() -> None:
             )
 
             for payload in profitable:
-                await simulate(payload, block_number)
-            log(iteration, profitable, block_number)
+                await simulate(payload, int(block_ctx.block_number))
+            log(iteration, profitable, int(block_ctx.block_number))
 
     finally:
         _write_session_summary(

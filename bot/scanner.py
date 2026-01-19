@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from bot import config
+from bot.block_context import BlockContext
 from bot.dex.base import QuoteEdge
 from bot.dex.registry import build_adapters
 from bot.routes import Hop
@@ -75,6 +76,14 @@ def _hops_key(hops: Optional[List[Hop]]) -> Tuple[Tuple[str, Any], ...]:
     for h in hops:
         items.append((h.dex_id, h.token_in, h.token_out, _param_key(h.params)))
     return tuple(items)
+
+
+def _require_block_tag(block: Optional[str], block_ctx: Optional[BlockContext]) -> str:
+    if block_ctx is not None:
+        return str(block_ctx.block_tag)
+    if block:
+        return str(block)
+    raise ValueError("block tag is required for scanning (no default 'latest')")
 
 
 def _edge_fee_bps(edge: QuoteEdge) -> int:
@@ -159,9 +168,12 @@ class PriceScanner:
         # cache: (block, route_tuple, amount_in, params_key) -> payload
         self._payload_cache: Dict[Tuple[str, Tuple[str, ...], int, Tuple[Tuple[str, Any], ...]], Dict[str, Any]] = {}
 
-    async def prepare_block(self, block_number: int) -> None:
+    async def prepare_block(self, block: int | BlockContext) -> None:
         """Warm up per-block values (gas + WETH/USDC) and reset caches."""
-        block_tag = hex(int(block_number))
+        if isinstance(block, BlockContext):
+            block_tag = str(block.block_tag)
+        else:
+            block_tag = hex(int(block))
         if self._block_tag == block_tag:
             return
 
@@ -204,16 +216,18 @@ class PriceScanner:
         self,
         amount_usdc: int,
         *,
-        block: str = "latest",
+        block: Optional[str] = None,
+        block_ctx: Optional[BlockContext] = None,
         fee_tiers: Optional[List[int]] = None,
         timeout_s: Optional[float] = None,
     ) -> Tuple[int, int]:
         """Compatibility helper: quote USDC -> WETH for amount_usdc (USDC smallest units)."""
+        block_tag = _require_block_tag(block, block_ctx)
         edge = await self.best_edge(
             config.TOKENS["USDC"],
             config.TOKENS["WETH"],
             int(amount_usdc),
-            block=block,
+            block=block_tag,
             fee_tiers=fee_tiers,
             timeout_s=timeout_s,
         )
@@ -229,18 +243,20 @@ class PriceScanner:
         token_out: str,
         amount_in: int,
         *,
-        block: str,
+        block: Optional[str] = None,
+        block_ctx: Optional[BlockContext] = None,
         params: Optional[Dict[str, Any]] = None,
         timeout_s: Optional[float] = None,
     ) -> Optional[QuoteEdge]:
+        block_tag = _require_block_tag(block, block_ctx)
         token_in = config.token_address(token_in)
         token_out = config.token_address(token_out)
         dex_id = str(dex_id)
         params_key = _param_key(params)
-        edge_key = (block, dex_id, str(token_in).lower(), str(token_out).lower(), params_key)
+        edge_key = (block_tag, dex_id, str(token_in).lower(), str(token_out).lower(), params_key)
         if self._dead_edge.get(edge_key):
             return None
-        key = (block, dex_id, token_in, token_out, int(amount_in), params_key)
+        key = (block_tag, dex_id, token_in, token_out, int(amount_in), params_key)
         if key in self._quote_cache:
             return self._quote_cache[key]
         adapter = self.adapters.get(dex_id)
@@ -251,7 +267,7 @@ class PriceScanner:
                 token_in,
                 token_out,
                 int(amount_in),
-                block=block,
+                block=block_tag,
                 timeout_s=timeout_s,
                 **(params or {}),
             )
@@ -269,15 +285,17 @@ class PriceScanner:
         token_out: str,
         amount_in: int,
         *,
-        block: str,
+        block: Optional[str] = None,
+        block_ctx: Optional[BlockContext] = None,
         params: Optional[Dict[str, Any]] = None,
         timeout_s: Optional[float] = None,
     ) -> List[QuoteEdge]:
+        block_tag = _require_block_tag(block, block_ctx)
         token_in = config.token_address(token_in)
         token_out = config.token_address(token_out)
         dex_id = str(dex_id)
         params_key = _param_key(params)
-        edge_key = (block, dex_id, str(token_in).lower(), str(token_out).lower(), params_key)
+        edge_key = (block_tag, dex_id, str(token_in).lower(), str(token_out).lower(), params_key)
         if self._dead_edge.get(edge_key):
             return []
 
@@ -290,7 +308,7 @@ class PriceScanner:
                 token_in,
                 token_out,
                 int(amount_in),
-                block=block,
+                block=block_tag,
                 timeout_s=timeout_s,
                 **(params or {}),
             )
@@ -305,8 +323,8 @@ class PriceScanner:
             edge_params = {}
             if edge.meta and edge.meta.get("fee_tier") is not None:
                 edge_params["fee_tier"] = int(edge.meta.get("fee_tier"))
-            edge_key2 = (block, dex_id, token_in, token_out, _param_key(edge_params))
-            key2 = (block, dex_id, token_in, token_out, int(amount_in), _param_key(edge_params))
+            edge_key2 = (block_tag, dex_id, token_in, token_out, _param_key(edge_params))
+            key2 = (block_tag, dex_id, token_in, token_out, int(amount_in), _param_key(edge_params))
             if key2 not in self._quote_cache:
                 self._quote_cache[key2] = edge
             if edge.amount_out <= 0:
@@ -320,11 +338,13 @@ class PriceScanner:
         token_out: str,
         amount_in: int,
         *,
-        block: str,
+        block: Optional[str] = None,
+        block_ctx: Optional[BlockContext] = None,
         fee_tiers: Optional[List[int]] = None,
         timeout_s: Optional[float] = None,
         dexes: Optional[List[str]] = None,
     ) -> Optional[QuoteEdge]:
+        block_tag = _require_block_tag(block, block_ctx)
         params: Dict[str, Any] = {}
         if fee_tiers:
             params["fee_tiers"] = list(fee_tiers)
@@ -337,7 +357,7 @@ class PriceScanner:
                     token_in,
                     token_out,
                     int(amount_in),
-                    block=block,
+                    block=block_tag,
                     params=params,
                     timeout_s=timeout_s,
                 )
@@ -359,11 +379,13 @@ class PriceScanner:
         token_out: str,
         amount_in: int,
         *,
-        block: str,
+        block: Optional[str] = None,
+        block_ctx: Optional[BlockContext] = None,
         fee_tiers: Optional[List[int]] = None,
         timeout_s: Optional[float] = None,
         dexes: Optional[List[str]] = None,
     ) -> List[QuoteEdge]:
+        block_tag = _require_block_tag(block, block_ctx)
         params: Dict[str, Any] = {}
         if fee_tiers:
             params["fee_tiers"] = list(fee_tiers)
@@ -376,7 +398,7 @@ class PriceScanner:
                     token_in,
                     token_out,
                     int(amount_in),
-                    block=block,
+                    block=block_tag,
                     params=params,
                     timeout_s=timeout_s,
                 )
@@ -392,8 +414,17 @@ class PriceScanner:
                         edges.append(e)
         return edges
 
-    async def estimate_gas_cost_token(self, gas_units: int, token_out: str, *, block: str, timeout_s: float = 7.0) -> int:
+    async def estimate_gas_cost_token(
+        self,
+        gas_units: int,
+        token_out: str,
+        *,
+        block: Optional[str] = None,
+        block_ctx: Optional[BlockContext] = None,
+        timeout_s: float = 7.0,
+    ) -> int:
         """Return gas cost in `token_out` smallest units."""
+        block_tag = _require_block_tag(block, block_ctx)
         token_out = config.token_address(token_out)
         if self._gas_price_wei is None:
             try:
@@ -413,7 +444,7 @@ class PriceScanner:
                         config.TOKENS["WETH"],
                         config.TOKENS["USDC"],
                         10**18,
-                        block=block,
+                        block=block_tag,
                         timeout_s=timeout_s,
                     )
                     usdc_per_weth = int(edge.amount_out) if edge else None
@@ -428,7 +459,7 @@ class PriceScanner:
         # Otherwise: quote 1 WETH -> token_out and scale.
         try:
             edge = await self.best_edge(
-                config.TOKENS["WETH"], token_out, 10**18, block=block, timeout_s=timeout_s
+                config.TOKENS["WETH"], token_out, 10**18, block=block_tag, timeout_s=timeout_s
             )
             if not edge or edge.amount_out == 0:
                 return 0
@@ -441,7 +472,8 @@ class PriceScanner:
         self,
         candidate: Dict[str, Any],
         *,
-        block: str = "latest",
+        block: Optional[str] = None,
+        block_ctx: Optional[BlockContext] = None,
         fee_tiers: Optional[List[int]] = None,
         timeout_s: Optional[float] = None,
     ) -> Dict[str, Any]:
@@ -452,6 +484,7 @@ class PriceScanner:
           profit: float in token_in units
         """
 
+        block_tag = _require_block_tag(block, block_ctx)
         amount_in = int(candidate["amount_in"])
         hops = _normalize_hops(candidate.get("hops"))
         tiers = tuple(int(x) for x in (fee_tiers if fee_tiers else config.FEE_TIERS))
@@ -477,7 +510,7 @@ class PriceScanner:
             route = tuple(config.token_address(t) for t in candidate["route"])
             params_key = _param_key({"fee_tiers": tiers})
 
-        cache_key = (block, route, amount_in, params_key)
+        cache_key = (block_tag, route, amount_in, params_key)
         if cache_key in self._payload_cache:
             return self._payload_cache[cache_key]
 
@@ -502,7 +535,7 @@ class PriceScanner:
                     hop.token_in,
                     hop.token_out,
                     amt,
-                    block=block,
+                    block=block_tag,
                     params=dict(hop.params or {}),
                     timeout_s=timeout_s,
                 )
@@ -511,7 +544,7 @@ class PriceScanner:
                     route[i],
                     route[i + 1],
                     amt,
-                    block=block,
+                    block=block_tag,
                     fee_tiers=list(tiers),
                     timeout_s=timeout_s,
                 )
@@ -551,7 +584,7 @@ class PriceScanner:
         if gas_off:
             gas_cost_in = 0
         else:
-            gas_cost_in = await self.estimate_gas_cost_token(gas_units, route[0], block=block)
+            gas_cost_in = await self.estimate_gas_cost_token(gas_units, route[0], block=block_tag)
 
         profit_gross_raw = int(amt) - int(amount_in)
         profit_net_raw = int(profit_gross_raw) - int(gas_cost_in)

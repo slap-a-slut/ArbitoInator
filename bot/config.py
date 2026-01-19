@@ -31,6 +31,11 @@ RPC_DEFAULT_TIMEOUT_S = 3.0
 RPC_CB_THRESHOLD = 5
 RPC_CB_COOLDOWN_S = 30.0
 
+# If a block returns too many failed/invalid quotes, treat it as out-of-sync
+# and retry N-1 (prevents mixing blocks across RPCs).
+RPC_OUT_OF_SYNC_FAIL_RATIO = 0.6
+RPC_OUT_OF_SYNC_MIN_CANDIDATES = 40
+
 # V2-style pool filters
 V2_MIN_RESERVE_RATIO = 20.0  # reserve_in must be >= amount_in * ratio
 V2_MAX_PRICE_IMPACT_BPS = 300  # 3.00%

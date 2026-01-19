@@ -1,24 +1,15 @@
 {
   "rpc_urls": [
-    "https://go.getblock.us/726d918bdb9340e5a590eebe39f7beda",
     "https://ethereum-rpc.publicnode.com",
     "https://go.getblock.us",
     "https://eth.merkle.io",
-    "https://rpc.flashbots.net",
-    "https://cloudflare-eth.com",
-    "https://rpc.ankr.com/eth",
-    "https://eth.llamarpc.com"
+    "https://rpc.flashbots.net"
   ],
   "dexes": [
     "univ3",
     "univ2",
     "sushiswap"
   ],
-  "enable_multidex": false,
-  "max_hops": 3,
-  "beam_k": 20,
-  "edge_top_m": 2,
-  "probe_amount": 1,
   "min_profit_pct": 0,
   "min_profit_abs": 0,
   "slippage_bps": 0,
@@ -26,6 +17,11 @@
   "max_gas_gwei": null,
   "concurrency": 32,
   "block_budget_s": 30,
+  "enable_multidex": false,
+  "max_hops": 3,
+  "beam_k": 20,
+  "edge_top_m": 2,
+  "probe_amount": 1,
   "scan_mode": "auto",
   "amount_presets": [
     10,
@@ -47,9 +43,9 @@
   "rpc_timeout_stage2_s": 6,
   "v2_min_reserve_ratio": 0,
   "v2_max_price_impact_bps": 0,
-  "sim_profile": "debug",
+  "sim_profile": "",
   "debug_funnel": false,
-  "gas_off": false,
+  "gas_off": true,
   "fixed_gas_units": 0,
   "report_currency": "USDC",
   "verbose": false
