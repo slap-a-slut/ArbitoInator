@@ -510,6 +510,8 @@
       box-shadow: 0 0 0 2px rgba(10,132,255,0.15);
     }
     .field small{ color: rgba(255,255,255,0.55); font-size: 11px; }
+    .checkRow{ display:flex; align-items:center; gap:8px; }
+    .checkRow input{ accent-color: var(--accent); }
     .settingsActions{ display:flex; gap: 10px; margin-top: 12px; }
 
     @media (max-width: 980px){
@@ -667,6 +669,34 @@
               <small>Comma list. Order matters only for display; best quote is chosen per hop.</small>
             </div>
             <div class="field">
+              <label for="cfgEnableMultidex">Multi-DEX routing</label>
+              <label class="checkRow">
+                <input id="cfgEnableMultidex" type="checkbox" />
+                <span>enable multi-DEX + beam search</span>
+              </label>
+              <small>off = UniV3-only (legacy)</small>
+            </div>
+            <div class="field">
+              <label for="cfgMaxHops">Max hops</label>
+              <input id="cfgMaxHops" type="number" step="1" min="2" max="4" />
+              <small>2–4; higher = more cycles</small>
+            </div>
+            <div class="field">
+              <label for="cfgBeamK">Beam K</label>
+              <input id="cfgBeamK" type="number" step="1" min="1" max="50" />
+              <small>max combined paths per route</small>
+            </div>
+            <div class="field">
+              <label for="cfgEdgeTopM">Edge top-M</label>
+              <input id="cfgEdgeTopM" type="number" step="1" min="1" max="5" />
+              <small>top quotes per hop per DEX</small>
+            </div>
+            <div class="field">
+              <label for="cfgProbeAmount">Probe amount</label>
+              <input id="cfgProbeAmount" type="number" step="0.1" min="0" />
+              <small>prefilter amount in base token units</small>
+            </div>
+            <div class="field">
               <label for="cfgReportCurrency">Reporting currency</label>
               <select id="cfgReportCurrency">
                 <option value="USDC">USDC</option>
@@ -762,6 +792,35 @@
               <input id="cfgV2Impact" type="number" step="1" min="0" />
               <small>drop quotes with high impact</small>
             </div>
+            <div class="field">
+              <label for="cfgSimProfile">Sim profile</label>
+              <select id="cfgSimProfile">
+                <option value="">default</option>
+                <option value="debug">debug</option>
+              </select>
+              <small>debug raises stage1 amount and relaxes thresholds</small>
+            </div>
+            <div class="field">
+              <label for="cfgDebugFunnel">Debug funnel</label>
+              <label class="checkRow">
+                <input id="cfgDebugFunnel" type="checkbox" />
+                <span>log top candidates to console</span>
+              </label>
+              <small>prints top 5 gross/net per block</small>
+            </div>
+            <div class="field">
+              <label for="cfgGasOff">Gas off (diagnostic)</label>
+              <label class="checkRow">
+                <input id="cfgGasOff" type="checkbox" />
+                <span>set gas_cost_in = 0</span>
+              </label>
+              <small>for debugging only</small>
+            </div>
+            <div class="field">
+              <label for="cfgFixedGas">Fixed gas units</label>
+              <input id="cfgFixedGas" type="number" step="1000" min="0" placeholder="0" />
+              <small>override gas units (0 = auto)</small>
+            </div>
           </div>
           <div class="settingsActions">
             <button id="saveCfgBtn" class="btn">save</button>
@@ -846,6 +905,11 @@
   // Settings elements
   const cfgRpcUrls = document.getElementById('cfgRpcUrls');
   const cfgDexes = document.getElementById('cfgDexes');
+  const cfgEnableMultidex = document.getElementById('cfgEnableMultidex');
+  const cfgMaxHops = document.getElementById('cfgMaxHops');
+  const cfgBeamK = document.getElementById('cfgBeamK');
+  const cfgEdgeTopM = document.getElementById('cfgEdgeTopM');
+  const cfgProbeAmount = document.getElementById('cfgProbeAmount');
   const cfgReportCurrency = document.getElementById('cfgReportCurrency');
   const cfgMinPct = document.getElementById('cfgMinPct');
   const cfgMinAbs = document.getElementById('cfgMinAbs');
@@ -864,6 +928,10 @@
   const cfgT2 = document.getElementById('cfgT2');
   const cfgV2Ratio = document.getElementById('cfgV2Ratio');
   const cfgV2Impact = document.getElementById('cfgV2Impact');
+  const cfgSimProfile = document.getElementById('cfgSimProfile');
+  const cfgDebugFunnel = document.getElementById('cfgDebugFunnel');
+  const cfgGasOff = document.getElementById('cfgGasOff');
+  const cfgFixedGas = document.getElementById('cfgFixedGas');
   const saveCfgBtn = document.getElementById('saveCfgBtn');
   const applyCfgBtn = document.getElementById('applyCfgBtn');
   const dealsTable = document.getElementById('dealsTable');
@@ -1707,6 +1775,11 @@
     return {
       rpc_urls: String(cfgRpcUrls?.value || '').trim(),
       dexes: String(cfgDexes?.value || '').trim(),
+      enable_multidex: !!cfgEnableMultidex?.checked,
+      max_hops: parseInt(cfgMaxHops?.value || '3', 10),
+      beam_k: parseInt(cfgBeamK?.value || '20', 10),
+      edge_top_m: parseInt(cfgEdgeTopM?.value || '2', 10),
+      probe_amount: Number(cfgProbeAmount?.value || 1),
       report_currency: String(cfgReportCurrency?.value || 'USDC').trim().toUpperCase(),
       min_profit_pct: Number(cfgMinPct.value || 0),
       min_profit_abs: Number(cfgMinAbs.value || 0),
@@ -1729,6 +1802,10 @@
       rpc_timeout_stage2_s: Number(cfgT2.value || 4),
       v2_min_reserve_ratio: Number(cfgV2Ratio.value || 0),
       v2_max_price_impact_bps: Number(cfgV2Impact.value || 0),
+      sim_profile: String(cfgSimProfile?.value || '').trim(),
+      debug_funnel: !!cfgDebugFunnel?.checked,
+      gas_off: !!cfgGasOff?.checked,
+      fixed_gas_units: Number(cfgFixedGas?.value || 0),
     };
   }
 
@@ -1741,6 +1818,11 @@
       const dx = cfg.dexes;
       cfgDexes.value = Array.isArray(dx) ? dx.join(',') : String(dx || '');
     }
+    if (cfgEnableMultidex) cfgEnableMultidex.checked = !!cfg.enable_multidex;
+    if (cfgMaxHops) cfgMaxHops.value = String(cfg.max_hops ?? 3);
+    if (cfgBeamK) cfgBeamK.value = String(cfg.beam_k ?? 20);
+    if (cfgEdgeTopM) cfgEdgeTopM.value = String(cfg.edge_top_m ?? 2);
+    if (cfgProbeAmount) cfgProbeAmount.value = String(cfg.probe_amount ?? 1);
     if (cfgReportCurrency) {
       const rc = String(cfg.report_currency || 'USDC').trim().toUpperCase();
       cfgReportCurrency.value = (rc === 'USDT') ? 'USDT' : 'USDC';
@@ -1767,6 +1849,10 @@
     cfgT2.value = String(cfg.rpc_timeout_stage2_s ?? 4);
     cfgV2Ratio.value = String(cfg.v2_min_reserve_ratio ?? 20);
     cfgV2Impact.value = String(cfg.v2_max_price_impact_bps ?? 300);
+    if (cfgSimProfile) cfgSimProfile.value = String(cfg.sim_profile || '');
+    if (cfgDebugFunnel) cfgDebugFunnel.checked = !!cfg.debug_funnel;
+    if (cfgGasOff) cfgGasOff.checked = !!cfg.gas_off;
+    if (cfgFixedGas) cfgFixedGas.value = String(cfg.fixed_gas_units ?? 0);
     updateStats();
     drawChart();
     rebuildProfitTable();

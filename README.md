@@ -7,8 +7,8 @@
 ## ⚡ Что умеет
 
 - Берёт **реальные котировки с ETH mainnet (Uniswap V3 + V2-like DEXes)**  
-- Сканирует N-hop маршруты (2-3 hop) с расчётом профита и газа  
-- Выбирает лучший DEX на каждом хопе и сохраняет путь (route_dex/fee)  
+- Сканирует N-hop маршруты (2-4 hop) с расчётом профита и газа  
+- Multi-DEX engine (опционально): на каждом hop выбирает DEX и строит dex_path  
 - Использует пул RPC + кэши на блок, чтобы не зависать  
 - Пушит события в UI по WebSocket и пишет JSONL логи  
 - Имеет игрушечные модули MEV/slippage/reorg/mempool/bundler (эвристики)  
@@ -29,10 +29,14 @@ ArbitoInator/
     mempool.py      # pending tx генератор (toy)
     bundler.py      # bundle simulator (toy)
     dex/            # UniV3 + UniV2-like adapters
+    routes.py       # модели маршрутов (Hop)
+    dex/base.py     # интерфейс DEX адаптеров
+    dex/registry.py # реестр адаптеров
     risk/           # MEV/slippage/reorg (toy)
     config.py       # токены + RPC defaults
     utils.py        # вспомогалки
   sim/              # тесты/демо
+    multidex_smoke.py # Multi-DEX smoke test
   infra/
     rpc.py          # async RPC client + pool + web3 helper
   deploy/           # build/deploy скрипты
@@ -97,7 +101,12 @@ UI заметки:
 
 - `bot_config.json`  
   - RPC_URLS / rpc_urls → список RPC для failover  
+  - enable_multidex → включить Multi-DEX + beam search  
   - dexes → какие DEX адаптеры использовать (univ3, univ2, sushiswap)  
+  - max_hops → максимальная длина цикла (2..4)  
+  - beam_k → сколько лучших комбинаций DEX держать  
+  - edge_top_m → сколько лучших quotes брать на hop  
+  - probe_amount → объём для prefilter  
   - thresholds, лимиты по газу, режимы scan_mode, etc.  
   - report_currency → базовая валюта в UI (USDC/USDT)  
   - mev_buffer_bps → дополнительная подушка к профиту (bps)  
@@ -117,10 +126,10 @@ UI заметки:
 
 Сейчас подключены:
 - `univ3` (Uniswap V3 QuoterV2 + fallback)
-- `univ2` (Uniswap V2 пары)
-- `sushiswap` (SushiSwap пары)
+- `univ2` (Uniswap V2 Router)
+- `sushiswap` (SushiSwap Router)
 
-Лучший DEX выбирается на каждом хопе. Путь сохраняется в payload и виден в UI.
+Multi-DEX mode строит dex_path (в т.ч. fee tier) и показывает его в UI/логах.
 
 ## MEV и фильтры качества
 
@@ -135,6 +144,29 @@ UI заметки:
 - `logs/hits.jsonl` — профитные события
 
 Папка `logs/` игнорируется git.
+
+---
+
+## 🧪 Debug funnel (диагностика профита)
+
+Полезные команды для быстрой диагностики:
+
+```bash
+DEBUG_FUNNEL=1 SIM_PROFILE=debug python3 -u fork_test.py
+DEBUG_FUNNEL=1 SIM_PROFILE=debug FIXED_GAS_UNITS=180000 python3 -u fork_test.py
+DEBUG_FUNNEL=1 SIM_PROFILE=debug GAS_OFF=1 python3 -u fork_test.py
+```
+
+`SIM_PROFILE=debug` поднимает stage1_amount и ослабляет пороги, чтобы быстрее увидеть raw/net возможности.
+`FIXED_GAS_UNITS` и `GAS_OFF=1` — только для отладки (не для реального профита).
+
+Multi-DEX:
+
+```bash
+ENABLE_MULTIDEX=1 python3 -u fork_test.py
+ENABLE_MULTIDEX=1 GAS_OFF=1 python3 -u fork_test.py
+python3 -u sim/multidex_smoke.py
+```
 
 ---
 

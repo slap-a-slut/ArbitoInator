@@ -23,7 +23,7 @@ const DEFAULT_CONFIG = {
     'https://eth.merkle.io',
     'https://rpc.flashbots.net',
   ],
-  dexes: ['univ3', 'univ2', 'sushiswap'],
+  dexes: ['univ3'],
 
   // thresholds
   min_profit_pct: 0.05,
@@ -35,6 +35,13 @@ const DEFAULT_CONFIG = {
   // performance
   concurrency: 12,
   block_budget_s: 10,
+
+  // multidex / routing
+  enable_multidex: false,
+  max_hops: 3,
+  beam_k: 20,
+  edge_top_m: 2,
+  probe_amount: 1,
 
   // modes
   scan_mode: 'auto', // auto|fixed
@@ -57,6 +64,12 @@ const DEFAULT_CONFIG = {
   // V2 filters
   v2_min_reserve_ratio: 20,
   v2_max_price_impact_bps: 300,
+
+  // Debug funnel / simulation controls
+  sim_profile: '',
+  debug_funnel: false,
+  gas_off: false,
+  fixed_gas_units: 0,
 
   // UI reporting/base currency. We force scanning cycles that start/end in this token
   // so the web panel never mixes numbers with a different symbol.
@@ -118,6 +131,55 @@ function writeConfig(cfg) {
     safe.report_currency = (rc === 'USDT') ? 'USDT' : 'USDC';
   } else {
     safe.report_currency = 'USDC';
+  }
+
+  // Normalize debug flags + profile
+  const normBool = (v) => {
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'number') return v !== 0;
+    if (typeof v === 'string') {
+      return ['1', 'true', 'yes', 'on'].includes(v.trim().toLowerCase());
+    }
+    return false;
+  };
+  safe.debug_funnel = normBool(safe.debug_funnel);
+  safe.gas_off = normBool(safe.gas_off);
+  safe.enable_multidex = normBool(safe.enable_multidex);
+
+  if (typeof safe.sim_profile === 'string') {
+    const sp = safe.sim_profile.trim().toLowerCase();
+    safe.sim_profile = (sp === 'debug') ? 'debug' : '';
+  } else {
+    safe.sim_profile = '';
+  }
+
+  try {
+    const fg = Number(safe.fixed_gas_units || 0);
+    safe.fixed_gas_units = (Number.isFinite(fg) && fg > 0) ? Math.round(fg) : 0;
+  } catch {
+    safe.fixed_gas_units = 0;
+  }
+
+  try {
+    safe.max_hops = Math.max(2, Math.min(4, parseInt(safe.max_hops || 3, 10)));
+  } catch {
+    safe.max_hops = 3;
+  }
+  try {
+    safe.beam_k = Math.max(1, Math.min(50, parseInt(safe.beam_k || 20, 10)));
+  } catch {
+    safe.beam_k = 20;
+  }
+  try {
+    safe.edge_top_m = Math.max(1, Math.min(5, parseInt(safe.edge_top_m || 2, 10)));
+  } catch {
+    safe.edge_top_m = 2;
+  }
+  try {
+    const probe = Number(safe.probe_amount || 1);
+    safe.probe_amount = (Number.isFinite(probe) && probe > 0) ? probe : 1;
+  } catch {
+    safe.probe_amount = 1;
   }
 
   fs.writeFileSync(configPath, JSON.stringify(safe, null, 2));
@@ -208,6 +270,11 @@ function startBot() {
       // Multi-RPC failover list for Python
       RPC_URLS: Array.isArray(cfg.rpc_urls) ? cfg.rpc_urls.join(',') : String(cfg.rpc_urls || ''),
       REPORT_CURRENCY: String(cfg.report_currency || 'USDC'),
+      DEBUG_FUNNEL: cfg.debug_funnel ? '1' : '0',
+      SIM_PROFILE: String(cfg.sim_profile || ''),
+      GAS_OFF: cfg.gas_off ? '1' : '0',
+      FIXED_GAS_UNITS: (cfg.fixed_gas_units && Number(cfg.fixed_gas_units) > 0) ? String(cfg.fixed_gas_units) : '',
+      ENABLE_MULTIDEX: cfg.enable_multidex ? '1' : '0',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

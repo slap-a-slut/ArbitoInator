@@ -86,6 +86,9 @@ TOKEN_DECIMALS = {
 STRATEGY_BASES = ["USDC", "USDT", "DAI"]
 STRATEGY_UNIVERSE = ["WETH", "WBTC", "LINK", "UNI", "AAVE", "LDO", "MKR", "COMP", "SUSHI", "CRV", "SNX", "BAL", "MATIC"]
 STRATEGY_HUBS = ["WETH", "USDC", "USDT", "DAI"]
+STRATEGY_MAX_HOPS = 3
+STRATEGY_MAX_MIDS = 8
+BEAM_MAX_DRAWDOWN = 0.35
 
 # Fast reverse lookup (address -> symbol). Lower-case for stable comparisons.
 TOKEN_BY_ADDR = {str(addr).lower(): sym for sym, addr in TOKENS.items()}
@@ -152,12 +155,20 @@ UNISWAP_V3_QUOTER_V2 = "0x61fFE014bA17989E743c5F6cB21bF9697530B21e"
 FEE_TIERS = [100, 500, 3000, 10000]  # 0.01%, 0.05%, 0.3%, 1%
 
 # Supported DEX adapters (names used in UI/config).
-DEXES = ["univ3", "univ2", "sushiswap"]
+DEXES = ["univ3"]
 
 # Uniswap V2-style factories (mainnet).
 UNISWAP_V2_FACTORY = "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f"
 SUSHISWAP_FACTORY = "0xC0AEe478e3658e2610c5F7A4A2E1777Ce9e4f2Ac"
 
+# Uniswap V2-style routers (mainnet).
+UNISWAP_V2_ROUTER = "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
+SUSHISWAP_ROUTER = "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F"
+
 # Uniswap V2-style fees in bps (0.30% == 30 bps).
 UNISWAP_V2_FEE_BPS = 30
 SUSHISWAP_FEE_BPS = 30
+
+# Fallback gas estimates for quoting when DEX doesn't provide gas.
+V3_GAS_ESTIMATE = 110_000
+V2_GAS_ESTIMATE = 90_000

@@ -4,12 +4,14 @@ import asyncio
 import json
 import os
 import math
+import statistics
 from pathlib import Path
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from bot import scanner, strategies, executor, config
+from bot.routes import Hop
 from infra.rpc import get_provider
 from ui_notify import ui_push
 
@@ -39,10 +41,76 @@ def _clamp_sane(x: float, *, abs_max: float) -> float:
     return float(x)
 
 
+def _env_flag(name: str) -> bool:
+    return str(os.getenv(name, "")).strip().lower() in ("1", "true", "yes", "on")
+
+
 LOG_DIR = Path("logs")
 LOG_DIR.mkdir(exist_ok=True)
 BLOCK_LOG = LOG_DIR / "blocks.jsonl"
 HIT_LOG = LOG_DIR / "hits.jsonl"
+SESSION_LOG = LOG_DIR / "last_session.md"
+
+
+def _fmt_duration(seconds: float) -> str:
+    total = int(max(0, seconds))
+    hh = total // 3600
+    mm = (total % 3600) // 60
+    ss = total % 60
+    return f"{hh:02d}:{mm:02d}:{ss:02d}"
+
+
+def _write_session_summary(
+    *,
+    started_at: datetime,
+    updated_at: datetime,
+    duration_s: float,
+    rpc_urls: List[str],
+    dexes: List[str],
+    blocks_scanned: int,
+    profit_hits: int,
+    settings: "Settings",
+    env_flags: Dict[str, str],
+) -> None:
+    try:
+        lines: List[str] = []
+        lines.append("# Last Session Summary")
+        lines.append("")
+        lines.append(f"- Started (UTC): {started_at.isoformat(timespec='seconds')}")
+        lines.append(f"- Updated (UTC): {updated_at.isoformat(timespec='seconds')}")
+        lines.append(f"- Duration: {_fmt_duration(duration_s)}")
+        lines.append(f"- RPC endpoints: {len(rpc_urls)}")
+        lines.append(f"- DEX adapters: {len(dexes)}")
+        lines.append(f"- Blocks scanned: {blocks_scanned}")
+        lines.append(f"- Profit hits: {profit_hits}")
+        lines.append("")
+        lines.append("## RPC URLs")
+        if rpc_urls:
+            for url in rpc_urls:
+                lines.append(f"- {url}")
+        else:
+            lines.append("- (none)")
+        lines.append("")
+        lines.append("## DEX adapters")
+        if dexes:
+            for d in dexes:
+                lines.append(f"- {d}")
+        else:
+            lines.append("- (none)")
+        lines.append("")
+        lines.append("## Runtime flags")
+        for k, v in env_flags.items():
+            lines.append(f"- {k}: {v}")
+        lines.append("")
+        lines.append("## Settings")
+        lines.append("```yaml")
+        cfg = dict(settings.__dict__)
+        for k in sorted(cfg.keys()):
+            lines.append(f"{k}: {cfg[k]}")
+        lines.append("```")
+        SESSION_LOG.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except Exception:
+        pass
 
 
 @dataclass
@@ -50,6 +118,11 @@ class Settings:
     # RPC (list for failover)
     rpc_urls: Tuple[str, ...] = ()
     dexes: Tuple[str, ...] = ()
+    enable_multidex: bool = False
+    max_hops: int = 3
+    beam_k: int = 20
+    edge_top_m: int = 2
+    probe_amount: float = 1.0
 
     # Mode
     scan_mode: str = "auto"  # auto|fixed
@@ -133,6 +206,31 @@ def _load_settings() -> Settings:
     except Exception:
         pass
 
+    try:
+        emd = raw.get("enable_multidex", s.enable_multidex)
+        if isinstance(emd, str):
+            s.enable_multidex = emd.strip().lower() in ("1", "true", "yes", "on")
+        else:
+            s.enable_multidex = bool(emd)
+    except Exception:
+        s.enable_multidex = False
+    try:
+        s.max_hops = int(raw.get("max_hops", s.max_hops))
+    except Exception:
+        pass
+    try:
+        s.beam_k = int(raw.get("beam_k", s.beam_k))
+    except Exception:
+        pass
+    try:
+        s.edge_top_m = int(raw.get("edge_top_m", s.edge_top_m))
+    except Exception:
+        pass
+    try:
+        s.probe_amount = float(raw.get("probe_amount", s.probe_amount))
+    except Exception:
+        pass
+
     # normalize report currency
     try:
         rc = raw.get("report_currency", s.report_currency)
@@ -155,6 +253,16 @@ def _load_settings() -> Settings:
         s.v2_max_price_impact_bps = float(raw.get("v2_max_price_impact_bps", s.v2_max_price_impact_bps))
     except Exception:
         pass
+
+    # Optional debug profile for "see some profits" diagnostics.
+    profile = str(os.getenv("SIM_PROFILE", "")).strip().lower()
+    if profile == "debug":
+        rc = str(getattr(s, "report_currency", "USDC") or "USDC").upper()
+        if rc in ("USDC", "USDT", "DAI"):
+            s.stage1_amount = 2000.0
+        s.min_profit_abs = 2.0
+        s.min_profit_pct = 0.01  # 0.01%
+        s.slippage_bps = 5.0
     return s
 
 
@@ -171,16 +279,25 @@ def _route_pretty(
     route: Tuple[str, ...],
     route_dex: Optional[Tuple[str, ...]] = None,
     route_fee_bps: Optional[Tuple[int, ...]] = None,
+    route_fee_tier: Optional[Tuple[int, ...]] = None,
+    dex_path: Optional[Tuple[str, ...]] = None,
 ) -> str:
     parts: List[str] = []
     for i, addr in enumerate(route):
         parts.append(config.token_symbol(addr))
-        if route_dex and i < len(route_dex):
+        if dex_path and i < len(dex_path):
+            parts.append(f"-[{dex_path[i]}]->")
+        elif route_dex and i < len(route_dex):
             dex = str(route_dex[i])
             fee_bps = None
+            fee_tier = None
             if route_fee_bps and i < len(route_fee_bps):
                 fee_bps = route_fee_bps[i]
-            if fee_bps is not None:
+            if route_fee_tier and i < len(route_fee_tier):
+                fee_tier = route_fee_tier[i]
+            if fee_tier:
+                parts.append(f"-[{dex}:{int(fee_tier)}]->")
+            elif fee_bps is not None:
                 fee_pct = float(fee_bps) / 100.0
                 parts.append(f"-[{dex} {fee_pct:.2f}%]->")
             else:
@@ -206,7 +323,168 @@ async def scan_routes() -> List[Tuple[str, ...]]:
     # Ensure we always scan cycles that start/end in the reporting currency,
     # so profit/spent symbols in the UI cannot drift.
     base_addr = config.TOKENS.get(rc, config.TOKENS["USDC"])
-    return strategies.Strategy(bases=[base_addr]).get_routes()
+    return strategies.Strategy(bases=[base_addr]).get_routes(max_hops=int(getattr(s, "max_hops", 3)))
+
+
+async def _route_viable(
+    route: Tuple[str, ...],
+    *,
+    block: str,
+    fee_tiers: Optional[List[int]],
+    timeout_s: float,
+    probe_units: float,
+) -> bool:
+    amt = _scale_amount(route[0], float(probe_units))
+    for i in range(len(route) - 1):
+        edge = await PS.best_edge(
+            route[i],
+            route[i + 1],
+            amt,
+            block=block,
+            fee_tiers=fee_tiers,
+            timeout_s=timeout_s,
+        )
+        if not edge or int(edge.amount_out) <= 0:
+            return False
+        amt = int(edge.amount_out)
+    return True
+
+
+def _edge_to_hop(edge: Any, token_in: str, token_out: str) -> Hop:
+    params: Dict[str, Any] = {}
+    try:
+        tier = edge.meta.get("fee_tier") if getattr(edge, "meta", None) else None
+        if tier is not None:
+            params["fee_tier"] = int(tier)
+    except Exception:
+        pass
+    return Hop(token_in=token_in, token_out=token_out, dex_id=str(edge.dex_id), params=params)
+
+
+async def _beam_candidates_for_route(
+    route: Tuple[str, ...],
+    *,
+    amount_in: int,
+    block: str,
+    fee_tiers: Optional[List[int]],
+    timeout_s: float,
+    beam_k: int,
+    edge_top_m: int,
+    eval_budget: int,
+) -> List[Dict[str, Any]]:
+    states: List[Dict[str, Any]] = [{"amount": int(amount_in), "hops": []}]
+    max_drawdown = float(getattr(config, "BEAM_MAX_DRAWDOWN", 0.35))
+    max_drawdown = min(0.9, max(0.0, max_drawdown))
+
+    for i in range(len(route) - 1):
+        token_in = route[i]
+        token_out = route[i + 1]
+        new_states: List[Dict[str, Any]] = []
+        for st in states:
+            edges = await PS.quote_edges(
+                token_in,
+                token_out,
+                int(st["amount"]),
+                block=block,
+                fee_tiers=fee_tiers,
+                timeout_s=timeout_s,
+            )
+            if not edges:
+                continue
+            edges = sorted(edges, key=lambda e: int(e.amount_out), reverse=True)
+            edges = edges[: max(1, int(edge_top_m))]
+            for edge in edges:
+                if len(new_states) >= int(eval_budget):
+                    break
+                if int(edge.amount_out) <= 0:
+                    continue
+                next_hops = list(st["hops"]) + [_edge_to_hop(edge, token_in, token_out)]
+                new_states.append({"amount": int(edge.amount_out), "hops": next_hops})
+            if len(new_states) >= int(eval_budget):
+                break
+
+        if not new_states:
+            return []
+
+        new_states = sorted(new_states, key=lambda st: int(st["amount"]), reverse=True)
+        if max_drawdown > 0:
+            floor_amt = int(float(amount_in) * (1.0 - max_drawdown))
+            new_states = [st for st in new_states if int(st["amount"]) >= floor_amt]
+        states = new_states[: max(1, int(beam_k))]
+
+        if not states:
+            return []
+
+    out: List[Dict[str, Any]] = []
+    for st in states:
+        out.append({"route": route, "hops": list(st["hops"]), "amount_in": int(amount_in)})
+    return out
+
+
+async def _expand_multidex_candidates(
+    routes: List[Tuple[str, ...]],
+    *,
+    amount_in: int,
+    block_number: int,
+    fee_tiers: Optional[List[int]],
+    timeout_s: float,
+    deadline_s: float,
+    settings: Settings,
+) -> List[Dict[str, Any]]:
+    loop = asyncio.get_running_loop()
+    sem = asyncio.Semaphore(max(1, int(settings.concurrency)))
+    block_tag = hex(int(block_number))
+    results: List[Dict[str, Any]] = []
+
+    async def one(route: Tuple[str, ...]) -> List[Dict[str, Any]]:
+        async with sem:
+            if loop.time() >= deadline_s:
+                return []
+            try:
+                ok = await _route_viable(
+                    route,
+                    block=block_tag,
+                    fee_tiers=fee_tiers,
+                    timeout_s=timeout_s,
+                    probe_units=float(settings.probe_amount),
+                )
+                if not ok:
+                    return []
+                return await _beam_candidates_for_route(
+                    route,
+                    amount_in=int(amount_in),
+                    block=block_tag,
+                    fee_tiers=fee_tiers,
+                    timeout_s=timeout_s,
+                    beam_k=int(settings.beam_k),
+                    edge_top_m=int(settings.edge_top_m),
+                    eval_budget=int(settings.stage2_max_evals),
+                )
+            except Exception:
+                return []
+
+    tasks: List[asyncio.Task] = []
+    for route in routes:
+        if loop.time() >= deadline_s:
+            break
+        tasks.append(asyncio.create_task(one(route)))
+
+    try:
+        pending = set(tasks)
+        while pending and loop.time() < deadline_s:
+            timeout = max(0.0, float(deadline_s) - float(loop.time()))
+            done, pending = await asyncio.wait(pending, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+            for d in done:
+                res = await d
+                if res:
+                    results.extend(res)
+    finally:
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    return results
 
 
 async def _scan_candidates(
@@ -290,31 +568,43 @@ def _apply_safety(p: Dict[str, Any], s: Settings) -> Dict[str, Any]:
         safety_raw = int(slip_raw + mev_raw)
         gas_cost = int(p.get("gas_cost", 0) or 0)
 
-        profit_raw_no_gas = p.get("profit_raw_no_gas", None)
-        if profit_raw_no_gas is None:
+        profit_gross_raw = p.get("profit_gross_raw", p.get("profit_raw_no_gas", None))
+        if profit_gross_raw is None:
             try:
-                profit_raw_no_gas = int(p.get("amount_out", 0)) - int(amt_in)
+                profit_gross_raw = int(p.get("amount_out", 0)) - int(amt_in)
             except Exception:
-                profit_raw_no_gas = int(p.get("profit_raw", 0) or 0) + int(gas_cost)
+                profit_gross_raw = int(p.get("profit_raw", 0) or 0) + int(gas_cost)
 
-        profit_raw_safety = int(profit_raw_no_gas) - int(safety_raw)
-        profit_raw_adj = int(profit_raw_safety) - int(gas_cost)
+        profit_net_raw = int(profit_gross_raw) - int(gas_cost)
+        profit_safety_raw = int(profit_net_raw) - int(safety_raw)
 
         amt_in_f = float(amt_in) / float(10 ** dec) if dec > 0 else 0.0
-        profit_safety = float(profit_raw_safety) / float(10 ** dec)
-        profit_adj = float(profit_raw_adj) / float(10 ** dec)
+        profit_gross = float(profit_gross_raw) / float(10 ** dec)
+        profit_net = float(profit_net_raw) / float(10 ** dec)
+        profit_safety = float(profit_safety_raw) / float(10 ** dec)
+        profit_pct_gross = (profit_gross / amt_in_f * 100.0) if amt_in_f > 0 else 0.0
+        profit_pct_net = (profit_net / amt_in_f * 100.0) if amt_in_f > 0 else 0.0
         profit_pct_safety = (profit_safety / amt_in_f * 100.0) if amt_in_f > 0 else 0.0
-        profit_pct_adj = (profit_adj / amt_in_f * 100.0) if amt_in_f > 0 else 0.0
 
         p2 = dict(p)
         p2["slippage_raw"] = int(slip_raw)
         p2["mev_buffer_raw"] = int(mev_raw)
-        p2["profit_raw_safety"] = int(profit_raw_safety)
+        p2["profit_gross_raw"] = int(profit_gross_raw)
+        p2["profit_gross"] = float(profit_gross)
+        p2["profit_pct_gross"] = float(profit_pct_gross)
+        p2["profit_raw_net"] = int(profit_net_raw)
+        p2["profit_net"] = float(profit_net)
+        p2["profit_pct_net"] = float(profit_pct_net)
+        p2["profit_raw_safety"] = int(profit_safety_raw)
         p2["profit_safety"] = float(profit_safety)
         p2["profit_pct_safety"] = float(profit_pct_safety)
-        p2["profit_raw_adj"] = int(profit_raw_adj)
-        p2["profit_adj"] = float(profit_adj)
-        p2["profit_pct_adj"] = float(profit_pct_adj)
+        # Backwards-compatible fields used by existing thresholds/UI
+        p2["profit_raw_no_gas"] = int(profit_gross_raw)
+        p2["profit_no_gas"] = float(profit_gross)
+        p2["profit_pct_no_gas"] = float(profit_pct_gross)
+        p2["profit_raw_adj"] = int(profit_safety_raw)
+        p2["profit_adj"] = float(profit_safety)
+        p2["profit_pct_adj"] = float(profit_pct_safety)
         return p2
     except Exception:
         return p
@@ -342,33 +632,204 @@ def _passes_thresholds(p: Dict[str, Any], s: Settings) -> bool:
 
 
 def _funnel_counts(payloads: List[Dict[str, Any]], s: Settings) -> Dict[str, int]:
-    counts = {"raw": 0, "safety": 0, "gas": 0, "ready": 0}
+    counts = {"raw": 0, "gas": 0, "safety": 0, "ready": 0}
     for p in payloads:
         try:
-            pr_raw = p.get("profit_raw_no_gas", None)
-            if pr_raw is None:
-                pr_raw = int(p.get("amount_out", 0)) - int(p.get("amount_in", 0))
-            pr_raw = int(pr_raw)
+            pr_gross = p.get("profit_gross_raw", p.get("profit_raw_no_gas", None))
+            if pr_gross is None:
+                pr_gross = int(p.get("amount_out", 0)) - int(p.get("amount_in", 0))
+            pr_gross = int(pr_gross)
         except Exception:
-            pr_raw = -1
+            pr_gross = -1
         try:
-            pr_safety = int(p.get("profit_raw_safety", pr_raw))
+            pr_net = int(p.get("profit_raw_net", p.get("profit_raw", -1)))
+        except Exception:
+            pr_net = -1
+        try:
+            pr_safety = int(p.get("profit_raw_safety", pr_net))
         except Exception:
             pr_safety = -1
-        try:
-            pr_adj = int(p.get("profit_raw_adj", p.get("profit_raw", -1)))
-        except Exception:
-            pr_adj = -1
 
-        if pr_raw > 0:
+        if pr_gross > 0:
             counts["raw"] += 1
+        if pr_net > 0:
+            counts["gas"] += 1
         if pr_safety > 0:
             counts["safety"] += 1
-        if pr_adj > 0:
-            counts["gas"] += 1
         if strategies.risk_check(p) and _passes_thresholds(p, s):
             counts["ready"] += 1
     return counts
+
+
+def _funnel_stats(payloads: List[Dict[str, Any]]) -> Dict[str, Optional[float]]:
+    gross_vals: List[int] = []
+    net_vals: List[int] = []
+    gas_units_vals: List[int] = []
+    gas_cost_vals: List[int] = []
+    for p in payloads:
+        try:
+            gross_vals.append(int(p.get("profit_gross_raw", p.get("profit_raw_no_gas", 0) or 0)))
+        except Exception:
+            pass
+        try:
+            net_vals.append(int(p.get("profit_raw_net", p.get("profit_raw", 0) or 0)))
+        except Exception:
+            pass
+        try:
+            gas_units_vals.append(int(p.get("gas_units", 0) or 0))
+        except Exception:
+            pass
+        try:
+            gas_cost_vals.append(int(p.get("gas_cost", 0) or 0))
+        except Exception:
+            pass
+
+    def _avg(vals: List[int]) -> Optional[float]:
+        if not vals:
+            return None
+        return float(sum(vals) / max(1, len(vals)))
+
+    def _median(vals: List[int]) -> Optional[float]:
+        if not vals:
+            return None
+        try:
+            return float(statistics.median(vals))
+        except Exception:
+            return None
+
+    def _min(vals: List[int]) -> Optional[int]:
+        return min(vals) if vals else None
+
+    def _max(vals: List[int]) -> Optional[int]:
+        return max(vals) if vals else None
+
+    return {
+        "gross_min": _min(gross_vals),
+        "gross_max": _max(gross_vals),
+        "net_min": _min(net_vals),
+        "net_max": _max(net_vals),
+        "gas_units_avg": _avg(gas_units_vals),
+        "gas_units_median": _median(gas_units_vals),
+        "gas_cost_avg": _avg(gas_cost_vals),
+        "gas_cost_median": _median(gas_cost_vals),
+        "gas_units_min": _min(gas_units_vals),
+        "gas_units_max": _max(gas_units_vals),
+        "gas_cost_min": _min(gas_cost_vals),
+        "gas_cost_max": _max(gas_cost_vals),
+    }
+
+
+def _top_examples(payloads: List[Dict[str, Any]], *, limit: int = 3) -> Dict[str, List[Dict[str, Any]]]:
+    def _entry(p: Dict[str, Any]) -> Dict[str, Any]:
+        route_str = _route_pretty(
+            tuple(p.get("route") or ()),
+            p.get("route_dex"),
+            p.get("route_fee_bps"),
+            p.get("route_fee_tier"),
+            p.get("dex_path"),
+        )
+        return {
+            "route": route_str,
+            "dex_path": list(p.get("dex_path") or ()),
+            "profit_gross": float(p.get("profit_gross", 0.0)),
+            "profit_net": float(p.get("profit_net", p.get("profit", 0.0))),
+        }
+
+    gross_sorted = sorted(
+        payloads,
+        key=lambda p: int(p.get("profit_gross_raw", p.get("profit_raw_no_gas", 0) or 0)),
+        reverse=True,
+    )
+    net_sorted = sorted(
+        payloads,
+        key=lambda p: int(p.get("profit_raw_net", p.get("profit_raw", 0) or 0)),
+        reverse=True,
+    )
+    return {
+        "top_gross": [_entry(p) for p in gross_sorted[:limit]],
+        "top_net": [_entry(p) for p in net_sorted[:limit]],
+    }
+
+
+def _reject_reason(p: Dict[str, Any], s: Settings) -> str:
+    try:
+        gross = int(p.get("profit_gross_raw", p.get("profit_raw_no_gas", 0) or 0))
+        net = int(p.get("profit_raw_net", p.get("profit_raw", 0) or 0))
+        safety = int(p.get("profit_raw_safety", net))
+    except Exception:
+        return "bad_payload"
+
+    if gross <= 0:
+        return "gross<=0"
+    if net <= 0:
+        return "net<=0"
+    if safety <= 0:
+        return "slippage+mev"
+    if not strategies.risk_check(p):
+        return "risk"
+    if not _passes_thresholds(p, s):
+        return "thresholds"
+    return "ready"
+
+
+def _debug_funnel_log(payloads: List[Dict[str, Any]], s: Settings, block_number: int) -> None:
+    if not _env_flag("DEBUG_FUNNEL"):
+        return
+    if not payloads:
+        print(f"[Funnel] Block {block_number} | no payloads")
+        return
+
+    def _dec_for_payload(p: Dict[str, Any]) -> int:
+        try:
+            route_t = tuple(p.get("route") or ())
+            token_in = route_t[0] if route_t else p.get("token_in")
+            return _decimals_by_token(str(token_in))
+        except Exception:
+            return 18
+
+    def _fmt_units(raw: int, dec: int) -> str:
+        try:
+            return f"{float(raw) / float(10 ** dec):.6f}"
+        except Exception:
+            return str(raw)
+
+    gross_sorted = sorted(payloads, key=lambda p: int(p.get("profit_gross_raw", p.get("profit_raw_no_gas", 0) or 0)), reverse=True)
+    net_sorted = sorted(payloads, key=lambda p: int(p.get("profit_raw_net", p.get("profit_raw", 0) or 0)), reverse=True)
+
+    stats = _funnel_stats(payloads)
+    print(
+        f"[Funnel] Block {block_number} | "
+        f"gross_min={stats.get('gross_min')} gross_max={stats.get('gross_max')} "
+        f"net_min={stats.get('net_min')} net_max={stats.get('net_max')} "
+        f"gas_units_avg={stats.get('gas_units_avg')} gas_units_median={stats.get('gas_units_median')} "
+        f"gas_cost_avg={stats.get('gas_cost_avg')} gas_cost_median={stats.get('gas_cost_median')}"
+    )
+    print(f"[Funnel] Block {block_number} | top gross/net candidates:")
+    for label, items in (("gross", gross_sorted[:5]), ("net", net_sorted[:5])):
+        for idx, p in enumerate(items, start=1):
+            dec = _dec_for_payload(p)
+            amt_in = int(p.get("amount_in", 0) or 0)
+            amt_out = int(p.get("amount_out", 0) or 0)
+            gross_raw = int(p.get("profit_gross_raw", p.get("profit_raw_no_gas", 0) or 0))
+            net_raw = int(p.get("profit_raw_net", p.get("profit_raw", 0) or 0))
+            gas_units = int(p.get("gas_units", 0) or 0)
+            gas_cost = int(p.get("gas_cost", 0) or 0)
+            route = _route_pretty(
+                tuple(p.get("route") or ()),
+                p.get("route_dex"),
+                p.get("route_fee_bps"),
+                p.get("route_fee_tier"),
+                p.get("dex_path"),
+            )
+            fee_tiers = p.get("route_fee_tier")
+            reason = _reject_reason(p, s)
+            print(
+                f"  [{label}#{idx}] route={route} fee_tier={fee_tiers} "
+                f"amt_in={_fmt_units(amt_in, dec)} amt_out={_fmt_units(amt_out, dec)} "
+                f"gross={_fmt_units(gross_raw, dec)} gas_units={gas_units} "
+                f"gas_cost={_fmt_units(gas_cost, dec)} net={_fmt_units(net_raw, dec)} "
+                f"reason={reason}"
+            )
 
 
 async def _optimize_amount_for_route(
@@ -397,6 +858,8 @@ async def _optimize_amount_for_route(
         if loop.time() >= deadline_s:
             return None
         c = {"route": route, "amount_in": int(amt_in)}
+        if seed_payload.get("hops"):
+            c["hops"] = seed_payload.get("hops")
         try:
             p = await asyncio.wait_for(
                 PS.price_payload(c, block=hex(int(block_number)), fee_tiers=None, timeout_s=float(s.rpc_timeout_stage2_s)),
@@ -508,6 +971,8 @@ async def simulate(payload: Dict[str, Any], block_number: int) -> None:
         tuple(payload.get("route") or ()),
         payload.get("route_dex"),
         payload.get("route_fee_bps"),
+        payload.get("route_fee_tier"),
+        payload.get("dex_path"),
     )
 
     roi_pct = None
@@ -598,10 +1063,17 @@ def log(iteration: int, payloads: List[Dict[str, Any]], block_number: int) -> No
     now = datetime.utcnow().strftime("%H:%M:%S")
     print(f"[{now}] Block {block_number} | Iteration {iteration} | Profitable payloads: {len(payloads)}")
     for p in payloads:
-        prof = float(p.get("profit_adj", p.get("profit", 0)))
+        route_t = tuple(p.get("route") or ())
+        dec = _decimals_by_token(route_t[0]) if route_t else 18
+        gross_raw = int(p.get("profit_gross_raw", p.get("profit_raw_no_gas", 0) or 0))
+        net_raw = int(p.get("profit_raw_net", p.get("profit_raw", 0) or 0))
+        gas_raw = int(p.get("gas_cost", 0) or 0)
+        gross = float(gross_raw) / float(10 ** dec)
+        net = float(net_raw) / float(10 ** dec)
+        gas = float(gas_raw) / float(10 ** dec)
         print(
-            f"  Route: {_route_pretty(tuple(p.get('route')), p.get('route_dex'), p.get('route_fee_bps'))} "
-            f"| Profit: {prof:.6f}"
+            f"  Route: {_route_pretty(tuple(p.get('route')), p.get('route_dex'), p.get('route_fee_bps'), p.get('route_fee_tier'), p.get('dex_path'))} "
+            f"| Gross: {gross:.6f} | Net: {net:.6f} | Gas: {gas:.6f}"
         )
 
 
@@ -623,8 +1095,16 @@ async def main() -> None:
         rpc_urls = [os.getenv("RPC_URL", config.RPC_URL)]
 
     w3 = get_provider(rpc_urls)
+    enable_multidex = bool(getattr(s0, "enable_multidex", False)) or _env_flag("ENABLE_MULTIDEX")
     dexes = list(s0.dexes) if getattr(s0, "dexes", None) else None
+    if not enable_multidex:
+        dexes = ["univ3"]
     PS = scanner.PriceScanner(rpc_urls=rpc_urls, dexes=dexes)
+    dexes_used = list(getattr(PS, "dexes", []) or (dexes or []))
+
+    session_started_at = datetime.utcnow()
+    blocks_scanned = 0
+    profit_hits = 0
 
     last_block = w3.eth.block_number
     print(f"[RPC] connected={w3.is_connected()} | block={last_block} | urls={len(rpc_urls)}")
@@ -691,20 +1171,57 @@ async def main() -> None:
                         "text": "No routes generated",
                     }
                 )
+                blocks_scanned += 1
+                _write_session_summary(
+                    started_at=session_started_at,
+                    updated_at=datetime.utcnow(),
+                    duration_s=(datetime.utcnow() - session_started_at).total_seconds(),
+                    rpc_urls=rpc_urls,
+                    dexes=dexes_used,
+                    blocks_scanned=blocks_scanned,
+                    profit_hits=profit_hits,
+                    settings=s,
+                    env_flags={
+                        "SIM_PROFILE": str(os.getenv("SIM_PROFILE", "")),
+                        "DEBUG_FUNNEL": "1" if _env_flag("DEBUG_FUNNEL") else "0",
+                        "GAS_OFF": "1" if _env_flag("GAS_OFF") else "0",
+                        "FIXED_GAS_UNITS": str(os.getenv("FIXED_GAS_UNITS", "")),
+                        "ENABLE_MULTIDEX": "1" if enable_multidex else "0",
+                    },
+                )
                 continue
 
             profitable: List[Dict[str, Any]] = []
             candidates_count = 0
             finished_count = 0
-            funnel_counts = {"raw": 0, "safety": 0, "gas": 0, "ready": 0}
+            funnel_payloads: List[Dict[str, Any]] = []
+            funnel_counts = {"raw": 0, "gas": 0, "safety": 0, "ready": 0}
+            funnel_stats: Dict[str, Optional[float]] = {}
+            top_examples: Dict[str, List[Dict[str, Any]]] = {}
 
             try:
                 if str(s.scan_mode).lower() == "fixed":
                     candidates: List[Dict[str, Any]] = []
-                    for route in routes:
-                        token_in = route[0]
+                    if enable_multidex:
+                        base_token = routes[0][0]
                         for u in list(s.amount_presets):
-                            candidates.append({"route": route, "amount_in": _scale_amount(token_in, float(u))})
+                            amt_in = _scale_amount(base_token, float(u))
+                            more = await _expand_multidex_candidates(
+                                routes,
+                                amount_in=int(amt_in),
+                                block_number=block_number,
+                                fee_tiers=None,
+                                timeout_s=float(s.rpc_timeout_stage2_s),
+                                deadline_s=deadline,
+                                settings=s,
+                            )
+                            if more:
+                                candidates.extend(more)
+                    else:
+                        for route in routes:
+                            token_in = route[0]
+                            for u in list(s.amount_presets):
+                                candidates.append({"route": route, "amount_in": _scale_amount(token_in, float(u))})
                     candidates_count = len(candidates)
                     payloads, finished_count = await _scan_candidates(
                         candidates,
@@ -716,16 +1233,33 @@ async def main() -> None:
                     )
                     payloads = [p for p in payloads if p and p.get("profit_raw", -1) != -1]
                     payloads2 = [_apply_safety(p, s) for p in payloads]
-                    funnel_counts = _funnel_counts(payloads2, s)
+                    funnel_payloads = payloads2
+                    funnel_counts = _funnel_counts(funnel_payloads, s)
+                    funnel_stats = _funnel_stats(funnel_payloads)
+                    top_examples = _top_examples(funnel_payloads)
+                    _debug_funnel_log(funnel_payloads, s, block_number)
                     for p2 in payloads2:
                         if strategies.risk_check(p2) and _passes_thresholds(p2, s):
                             profitable.append(p2)
 
                 else:
                     # Stage 1
-                    stage1_candidates = [
-                        {"route": route, "amount_in": _scale_amount(route[0], float(s.stage1_amount))} for route in routes
-                    ]
+                    if enable_multidex:
+                        base_token = routes[0][0]
+                        stage1_amount = _scale_amount(base_token, float(s.stage1_amount))
+                        stage1_candidates = await _expand_multidex_candidates(
+                            routes,
+                            amount_in=int(stage1_amount),
+                            block_number=block_number,
+                            fee_tiers=list(s.stage1_fee_tiers) if s.stage1_fee_tiers else None,
+                            timeout_s=float(s.rpc_timeout_stage1_s),
+                            deadline_s=stage1_deadline,
+                            settings=s,
+                        )
+                    else:
+                        stage1_candidates = [
+                            {"route": route, "amount_in": _scale_amount(route[0], float(s.stage1_amount))} for route in routes
+                        ]
                     candidates_count = len(stage1_candidates)
 
                     stage1_payloads, finished_count = await _scan_candidates(
@@ -738,6 +1272,12 @@ async def main() -> None:
                     )
 
                     stage1_payloads = [p for p in stage1_payloads if p and p.get("profit_raw", -1) != -1]
+                    stage1_payloads2 = [_apply_safety(p, s) for p in stage1_payloads]
+                    funnel_payloads = stage1_payloads2
+                    funnel_counts = _funnel_counts(funnel_payloads, s)
+                    funnel_stats = _funnel_stats(funnel_payloads)
+                    top_examples = _top_examples(funnel_payloads)
+                    _debug_funnel_log(funnel_payloads, s, block_number)
                     ranked = sorted(stage1_payloads, key=lambda p: int(p.get("profit_raw", -10**30)), reverse=True)
 
                     # Soft filter to avoid missing profit: keep positives, or near-threshold
@@ -780,7 +1320,6 @@ async def main() -> None:
 
                     best_payloads = [bp for bp in best_payloads if bp and bp.get("profit_raw", -1) != -1]
                     best_payloads2 = [_apply_safety(bp, s) for bp in best_payloads]
-                    funnel_counts = _funnel_counts(best_payloads2, s)
                     for bp2 in best_payloads2:
                         if strategies.risk_check(bp2) and _passes_thresholds(bp2, s):
                             profitable.append(bp2)
@@ -806,11 +1345,12 @@ async def main() -> None:
                         "final_opps": int(funnel_counts["ready"]),
                         "text": (
                             f"Scanned {int(finished_count)}/{int(candidates_count)} routes | "
-                            f"raw={int(funnel_counts['raw'])} safety={int(funnel_counts['safety'])} "
-                            f"gas={int(funnel_counts['gas'])} ready={int(funnel_counts['ready'])} | mode={s.scan_mode}"
+                            f"raw={int(funnel_counts['raw'])} gas={int(funnel_counts['gas'])} "
+                            f"safety={int(funnel_counts['safety'])} ready={int(funnel_counts['ready'])} | mode={s.scan_mode}"
                         ),
                     }
                 )
+                blocks_scanned += 1
                 # Emit RPC pool stats + block summary for debugging
                 try:
                     if hasattr(PS.rpc, "stats"):
@@ -827,16 +1367,51 @@ async def main() -> None:
                         "time": datetime.utcnow().isoformat(),
                         "block": int(block_number),
                         "candidates": int(candidates_count),
+                        "candidates_total": int(candidates_count),
                         "finished": int(finished_count),
                         "profitable": 0,
                         "raw_opps": int(funnel_counts["raw"]),
+                        "raw_gross_hits": int(funnel_counts["raw"]),
                         "safety_opps": int(funnel_counts["safety"]),
+                        "safety_hits": int(funnel_counts["safety"]),
                         "gas_opps": int(funnel_counts["gas"]),
+                        "net_hits": int(funnel_counts["gas"]),
                         "final_opps": int(funnel_counts["ready"]),
+                        "ready_hits": int(funnel_counts["ready"]),
+                        "top_examples": top_examples,
+                        "profit_gross_min": funnel_stats.get("gross_min"),
+                        "profit_gross_max": funnel_stats.get("gross_max"),
+                        "profit_net_min": funnel_stats.get("net_min"),
+                        "profit_net_max": funnel_stats.get("net_max"),
+                        "gas_units_min": funnel_stats.get("gas_units_min"),
+                        "gas_units_max": funnel_stats.get("gas_units_max"),
+                        "gas_units_avg": funnel_stats.get("gas_units_avg"),
+                        "gas_units_median": funnel_stats.get("gas_units_median"),
+                        "gas_cost_min": funnel_stats.get("gas_cost_min"),
+                        "gas_cost_max": funnel_stats.get("gas_cost_max"),
+                        "gas_cost_avg": funnel_stats.get("gas_cost_avg"),
+                        "gas_cost_median": funnel_stats.get("gas_cost_median"),
                         "mode": str(s.scan_mode),
                     }, ensure_ascii=False) + "\n")
                 except Exception:
                     pass
+                _write_session_summary(
+                    started_at=session_started_at,
+                    updated_at=datetime.utcnow(),
+                    duration_s=(datetime.utcnow() - session_started_at).total_seconds(),
+                    rpc_urls=rpc_urls,
+                    dexes=dexes_used,
+                    blocks_scanned=blocks_scanned,
+                    profit_hits=profit_hits,
+                    settings=s,
+                    env_flags={
+                        "SIM_PROFILE": str(os.getenv("SIM_PROFILE", "")),
+                        "DEBUG_FUNNEL": "1" if _env_flag("DEBUG_FUNNEL") else "0",
+                        "GAS_OFF": "1" if _env_flag("GAS_OFF") else "0",
+                        "FIXED_GAS_UNITS": str(os.getenv("FIXED_GAS_UNITS", "")),
+                        "ENABLE_MULTIDEX": "1" if enable_multidex else "0",
+                    },
+                )
                 continue
 
             best_profit = max((float(p.get("profit_adj", p.get("profit", 0))) for p in profitable), default=0.0)
@@ -854,8 +1429,8 @@ async def main() -> None:
                     "final_opps": int(funnel_counts["ready"]),
                     "text": (
                         f"Scanned {int(finished_count)}/{int(candidates_count)} routes | "
-                        f"raw={int(funnel_counts['raw'])} safety={int(funnel_counts['safety'])} "
-                        f"gas={int(funnel_counts['gas'])} ready={int(funnel_counts['ready'])} | "
+                        f"raw={int(funnel_counts['raw'])} gas={int(funnel_counts['gas'])} "
+                        f"safety={int(funnel_counts['safety'])} ready={int(funnel_counts['ready'])} | "
                         f"best={best_profit:.6f} | mode={s.scan_mode}"
                     ),
                 }
@@ -877,23 +1452,77 @@ async def main() -> None:
                     "time": datetime.utcnow().isoformat(),
                     "block": int(block_number),
                     "candidates": int(candidates_count),
+                    "candidates_total": int(candidates_count),
                     "finished": int(finished_count),
                     "profitable": int(len(profitable)),
                     "best_profit": float(best_profit),
                     "raw_opps": int(funnel_counts["raw"]),
+                    "raw_gross_hits": int(funnel_counts["raw"]),
                     "safety_opps": int(funnel_counts["safety"]),
+                    "safety_hits": int(funnel_counts["safety"]),
                     "gas_opps": int(funnel_counts["gas"]),
+                    "net_hits": int(funnel_counts["gas"]),
                     "final_opps": int(funnel_counts["ready"]),
+                    "ready_hits": int(funnel_counts["ready"]),
+                    "top_examples": top_examples,
+                    "profit_gross_min": funnel_stats.get("gross_min"),
+                    "profit_gross_max": funnel_stats.get("gross_max"),
+                    "profit_net_min": funnel_stats.get("net_min"),
+                    "profit_net_max": funnel_stats.get("net_max"),
+                    "gas_units_min": funnel_stats.get("gas_units_min"),
+                    "gas_units_max": funnel_stats.get("gas_units_max"),
+                    "gas_units_avg": funnel_stats.get("gas_units_avg"),
+                    "gas_units_median": funnel_stats.get("gas_units_median"),
+                    "gas_cost_min": funnel_stats.get("gas_cost_min"),
+                    "gas_cost_max": funnel_stats.get("gas_cost_max"),
+                    "gas_cost_avg": funnel_stats.get("gas_cost_avg"),
+                    "gas_cost_median": funnel_stats.get("gas_cost_median"),
                     "mode": str(s.scan_mode),
                 }, ensure_ascii=False) + "\n")
             except Exception:
                 pass
+            blocks_scanned += 1
+            profit_hits += int(len(profitable))
+            _write_session_summary(
+                started_at=session_started_at,
+                updated_at=datetime.utcnow(),
+                duration_s=(datetime.utcnow() - session_started_at).total_seconds(),
+                rpc_urls=rpc_urls,
+                dexes=dexes_used,
+                blocks_scanned=blocks_scanned,
+                profit_hits=profit_hits,
+                settings=s,
+                env_flags={
+                    "SIM_PROFILE": str(os.getenv("SIM_PROFILE", "")),
+                    "DEBUG_FUNNEL": "1" if _env_flag("DEBUG_FUNNEL") else "0",
+                    "GAS_OFF": "1" if _env_flag("GAS_OFF") else "0",
+                    "FIXED_GAS_UNITS": str(os.getenv("FIXED_GAS_UNITS", "")),
+                    "ENABLE_MULTIDEX": "1" if enable_multidex else "0",
+                },
+            )
 
             for payload in profitable:
                 await simulate(payload, block_number)
             log(iteration, profitable, block_number)
 
     finally:
+        _write_session_summary(
+            started_at=session_started_at,
+            updated_at=datetime.utcnow(),
+            duration_s=(datetime.utcnow() - session_started_at).total_seconds(),
+            rpc_urls=rpc_urls,
+            dexes=dexes_used,
+            blocks_scanned=blocks_scanned,
+            profit_hits=profit_hits,
+            settings=s0,
+            env_flags={
+                "SIM_PROFILE": str(os.getenv("SIM_PROFILE", "")),
+                "DEBUG_FUNNEL": "1" if _env_flag("DEBUG_FUNNEL") else "0",
+                "GAS_OFF": "1" if _env_flag("GAS_OFF") else "0",
+                "FIXED_GAS_UNITS": str(os.getenv("FIXED_GAS_UNITS", "")),
+                "ENABLE_MULTIDEX": "1" if enable_multidex else "0",
+            },
+        )
         try:
             await PS.rpc.close()
         except Exception:

@@ -10,13 +10,15 @@ This version is designed specifically to:
 
 from __future__ import annotations
 
+import os
+import asyncio
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any, Dict, List, Optional, Tuple
 
 from bot import config
-from bot.dex.types import DexQuote
-from bot.dex.uniswap_v2 import UniV2Like
-from bot.dex.uniswap_v3 import UniV3
+from bot.dex.base import QuoteEdge
+from bot.dex.registry import build_adapters
+from bot.routes import Hop
 from infra.rpc import AsyncRPC, RPCPool, get_rpc_urls
 
 
@@ -29,10 +31,84 @@ def _decimals(token: str) -> int:
     return int(config.token_decimals(token))
 
 
+def _param_key(params: Optional[Dict[str, Any]]) -> Tuple[Tuple[str, Any], ...]:
+    if not params:
+        return ()
+    items: List[Tuple[str, Any]] = []
+    for k in sorted(params.keys()):
+        v = params[k]
+        if isinstance(v, list):
+            v = tuple(v)
+        elif isinstance(v, dict):
+            v = tuple(sorted((str(kk), vv) for kk, vv in v.items()))
+        items.append((str(k), v))
+    return tuple(items)
+
+
+def _normalize_hops(hops: Optional[List[Any]]) -> Optional[List[Hop]]:
+    if not hops:
+        return None
+    out: List[Hop] = []
+    for h in hops:
+        if isinstance(h, Hop):
+            out.append(h)
+            continue
+        if isinstance(h, dict):
+            try:
+                out.append(
+                    Hop(
+                        token_in=config.token_address(str(h.get("token_in"))),
+                        token_out=config.token_address(str(h.get("token_out"))),
+                        dex_id=str(h.get("dex_id")),
+                        params=dict(h.get("params") or {}),
+                    )
+                )
+            except Exception:
+                continue
+    return out
+
+
+def _hops_key(hops: Optional[List[Hop]]) -> Tuple[Tuple[str, Any], ...]:
+    if not hops:
+        return ()
+    items: List[Tuple[str, Any]] = []
+    for h in hops:
+        items.append((h.dex_id, h.token_in, h.token_out, _param_key(h.params)))
+    return tuple(items)
+
+
+def _edge_fee_bps(edge: QuoteEdge) -> int:
+    try:
+        if edge.meta and edge.meta.get("fee_bps") is not None:
+            return int(edge.meta.get("fee_bps"))
+        if edge.meta and edge.meta.get("fee_tier") is not None:
+            return int(edge.meta.get("fee_tier")) // 100
+    except Exception:
+        pass
+    return 0
+
+
+def _edge_fee_tier(edge: QuoteEdge) -> int:
+    try:
+        if edge.meta and edge.meta.get("fee_tier") is not None:
+            return int(edge.meta.get("fee_tier"))
+    except Exception:
+        pass
+    return 0
+
+
+def _edge_label(edge: QuoteEdge) -> str:
+    tier = _edge_fee_tier(edge)
+    if tier > 0:
+        return f"{edge.dex_id}:{tier}"
+    return str(edge.dex_id)
+
+
 @dataclass(frozen=True)
 class Candidate:
     route: Tuple[str, ...]
     amount_in: int
+    hops: Optional[Tuple[Hop, ...]] = None
 
 
 class PriceScanner:
@@ -58,34 +134,30 @@ class PriceScanner:
             urls = [rpc_url]
 
         self.rpc = RPCPool(urls) if len(urls) > 1 else AsyncRPC(urls[0])
-        raw_dexes = [str(d).strip().lower() for d in (dexes or getattr(config, "DEXES", ["univ3"])) if str(d).strip()]
-        allowed = {"univ3", "univ2", "sushiswap"}
+        raw_dexes = [
+            str(d).strip().lower()
+            for d in (dexes or getattr(config, "DEXES", ["univ3"]))
+            if str(d).strip()
+        ]
+        allowed = {"univ3", "univ2", "sushiswap", "sushiv2"}
         self.dexes = [d for d in raw_dexes if d in allowed]
         if not self.dexes:
             self.dexes = ["univ3"]
-        self.univ3 = UniV3(self.rpc) if "univ3" in self.dexes else None
-        self.v2_adapters: List[UniV2Like] = []
-        if "univ2" in self.dexes:
-            self.v2_adapters.append(
-                UniV2Like(self.rpc, "univ2", config.UNISWAP_V2_FACTORY, config.UNISWAP_V2_FEE_BPS)
-            )
-        if "sushiswap" in self.dexes:
-            self.v2_adapters.append(
-                UniV2Like(self.rpc, "sushiswap", config.SUSHISWAP_FACTORY, config.SUSHISWAP_FEE_BPS)
-            )
+
+        self.adapters = build_adapters(self.rpc, self.dexes)
+        self.dexes = list(self.adapters.keys())
 
         # Per-block caches
         self._block_tag: Optional[str] = None
         self._gas_price_wei: Optional[int] = None
         self._weth_to_usdc_6: Optional[int] = None
 
-        # cache: (block, token_in, token_out, amount_in, dexes_key, fee_tiers_key) -> DexQuote
-        self._quote_cache: Dict[Tuple[str, str, str, int, Tuple[str, ...], Tuple[int, ...]], Optional[DexQuote]] = {}
-        # cache: (block, token_in, token_out, dexes_key, fee_tiers_key) -> True (edge is non-quotable / no pool)
-        # This prevents re-trying the same dead edge for different amounts within a block.
-        self._dead_edge: Dict[Tuple[str, str, str, Tuple[str, ...], Tuple[int, ...]], bool] = {}
-        # cache: (block, route_tuple, amount_in, fee_tiers_key) -> payload
-        self._payload_cache: Dict[Tuple[str, Tuple[str, ...], int, Tuple[int, ...]], Dict[str, Any]] = {}
+        # cache: (block, dex_id, token_in, token_out, amount_in, params_key) -> QuoteEdge
+        self._quote_cache: Dict[Tuple[str, str, str, str, int, Tuple[Tuple[str, Any], ...]], Optional[QuoteEdge]] = {}
+        # cache: (block, dex_id, token_in, token_out, params_key) -> True (edge is non-quotable / no pool)
+        self._dead_edge: Dict[Tuple[str, str, str, str, Tuple[Tuple[str, Any], ...]], bool] = {}
+        # cache: (block, route_tuple, amount_in, params_key) -> payload
+        self._payload_cache: Dict[Tuple[str, Tuple[str, ...], int, Tuple[Tuple[str, Any], ...]], Dict[str, Any]] = {}
 
     async def prepare_block(self, block_number: int) -> None:
         """Warm up per-block values (gas + WETH/USDC) and reset caches."""
@@ -108,22 +180,23 @@ class PriceScanner:
             pass
 
         try:
-            if self.univ3:
-                # USDC per 1 WETH (1e18)
-                q = await self.univ3.best_quote(
-                    config.TOKENS["WETH"],
-                    config.TOKENS["USDC"],
-                    10**18,
-                    block=block_tag,
-                    timeout_s=7.0,
-                )
-                self._weth_to_usdc_6 = int(q.amount_out) if q else None
+            # USDC per 1 WETH (1e18)
+            edge = await self.best_edge(
+                config.TOKENS["WETH"],
+                config.TOKENS["USDC"],
+                10**18,
+                block=block_tag,
+                timeout_s=7.0,
+            )
+            self._weth_to_usdc_6 = int(edge.amount_out) if edge else None
         except Exception:
             pass
 
-        for adapter in self.v2_adapters:
+        for adapter in self.adapters.values():
             try:
-                adapter.prepare_block(block_tag)
+                prep = getattr(adapter, "prepare_block", None)
+                if callable(prep):
+                    prep(block_tag)
             except Exception:
                 pass
 
@@ -136,7 +209,7 @@ class PriceScanner:
         timeout_s: Optional[float] = None,
     ) -> Tuple[int, int]:
         """Compatibility helper: quote USDC -> WETH for amount_usdc (USDC smallest units)."""
-        q = await self._best_quote_cached(
+        edge = await self.best_edge(
             config.TOKENS["USDC"],
             config.TOKENS["WETH"],
             int(amount_usdc),
@@ -144,46 +217,104 @@ class PriceScanner:
             fee_tiers=fee_tiers,
             timeout_s=timeout_s,
         )
-        if not q:
+        if not edge:
             return 0, 0
-        fee_hint = int(q.fee_tier) if q.fee_tier is not None else int(q.fee_bps)
-        return fee_hint, int(q.amount_out)
+        fee_hint = _edge_fee_tier(edge) or _edge_fee_bps(edge)
+        return int(fee_hint), int(edge.amount_out)
 
-    async def _best_quote_cached(
+    async def _quote_best_cached(
         self,
+        dex_id: str,
         token_in: str,
         token_out: str,
         amount_in: int,
         *,
         block: str,
-        fee_tiers: Optional[List[int]] = None,
+        params: Optional[Dict[str, Any]] = None,
         timeout_s: Optional[float] = None,
-    ) -> Optional[DexQuote]:
+    ) -> Optional[QuoteEdge]:
         token_in = config.token_address(token_in)
         token_out = config.token_address(token_out)
-        tiers = tuple(int(x) for x in (fee_tiers if fee_tiers else config.FEE_TIERS))
-        dex_key = tuple(self.dexes)
-        edge_key = (block, str(token_in).lower(), str(token_out).lower(), dex_key, tiers)
+        dex_id = str(dex_id)
+        params_key = _param_key(params)
+        edge_key = (block, dex_id, str(token_in).lower(), str(token_out).lower(), params_key)
         if self._dead_edge.get(edge_key):
             return None
-        key = (block, token_in, token_out, int(amount_in), dex_key, tiers)
+        key = (block, dex_id, token_in, token_out, int(amount_in), params_key)
         if key in self._quote_cache:
             return self._quote_cache[key]
-        q = await self._best_quote_any_dex(
-            token_in,
-            token_out,
-            int(amount_in),
-            block=block,
-            fee_tiers=list(tiers),
-            timeout_s=timeout_s,
-        )
+        adapter = self.adapters.get(dex_id)
+        if not adapter:
+            return None
+        try:
+            q = await adapter.quote_best(
+                token_in,
+                token_out,
+                int(amount_in),
+                block=block,
+                timeout_s=timeout_s,
+                **(params or {}),
+            )
+        except Exception:
+            q = None
         self._quote_cache[key] = q
         if not q or int(q.amount_out) == 0:
-            # Mark edge dead for this block+tiers to avoid retrying on other amounts.
             self._dead_edge[edge_key] = True
         return q
 
-    async def _best_quote_any_dex(
+    async def _quote_many_cached(
+        self,
+        dex_id: str,
+        token_in: str,
+        token_out: str,
+        amount_in: int,
+        *,
+        block: str,
+        params: Optional[Dict[str, Any]] = None,
+        timeout_s: Optional[float] = None,
+    ) -> List[QuoteEdge]:
+        token_in = config.token_address(token_in)
+        token_out = config.token_address(token_out)
+        dex_id = str(dex_id)
+        params_key = _param_key(params)
+        edge_key = (block, dex_id, str(token_in).lower(), str(token_out).lower(), params_key)
+        if self._dead_edge.get(edge_key):
+            return []
+
+        adapter = self.adapters.get(dex_id)
+        if not adapter:
+            return []
+
+        try:
+            edges = await adapter.quote_many(
+                token_in,
+                token_out,
+                int(amount_in),
+                block=block,
+                timeout_s=timeout_s,
+                **(params or {}),
+            )
+        except Exception:
+            edges = []
+
+        if not edges:
+            self._dead_edge[edge_key] = True
+            return []
+
+        for edge in edges:
+            edge_params = {}
+            if edge.meta and edge.meta.get("fee_tier") is not None:
+                edge_params["fee_tier"] = int(edge.meta.get("fee_tier"))
+            edge_key2 = (block, dex_id, token_in, token_out, _param_key(edge_params))
+            key2 = (block, dex_id, token_in, token_out, int(amount_in), _param_key(edge_params))
+            if key2 not in self._quote_cache:
+                self._quote_cache[key2] = edge
+            if edge.amount_out <= 0:
+                self._dead_edge[edge_key2] = True
+
+        return edges
+
+    async def best_edge(
         self,
         token_in: str,
         token_out: str,
@@ -192,45 +323,74 @@ class PriceScanner:
         block: str,
         fee_tiers: Optional[List[int]] = None,
         timeout_s: Optional[float] = None,
-    ) -> Optional[DexQuote]:
-        results: List[DexQuote] = []
-
-        if self.univ3:
-            try:
-                q = await self.univ3.best_quote(
+        dexes: Optional[List[str]] = None,
+    ) -> Optional[QuoteEdge]:
+        params: Dict[str, Any] = {}
+        if fee_tiers:
+            params["fee_tiers"] = list(fee_tiers)
+        dex_list = list(dexes) if dexes else list(self.adapters.keys())
+        tasks: List[Any] = []
+        for dex_id in dex_list:
+            tasks.append(
+                self._quote_best_cached(
+                    dex_id,
                     token_in,
                     token_out,
                     int(amount_in),
                     block=block,
-                    fee_tiers=fee_tiers,
+                    params=params,
                     timeout_s=timeout_s,
                 )
-                if q:
-                    fee_bps = int(q.fee) // 100
-                    results.append(
-                        DexQuote(
-                            dex="univ3",
-                            amount_out=int(q.amount_out),
-                            fee_bps=fee_bps,
-                            gas_estimate=q.gas_estimate,
-                            fee_tier=int(q.fee),
-                        )
-                    )
-            except Exception:
-                pass
-
-        for adapter in self.v2_adapters:
-            try:
-                q2 = await adapter.quote(token_in, token_out, int(amount_in), block=block, timeout_s=timeout_s)
-                if q2:
-                    results.append(q2)
-            except Exception:
-                pass
-
-        if not results:
+            )
+        if not tasks:
             return None
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        edges: List[QuoteEdge] = []
+        for r in results:
+            if isinstance(r, QuoteEdge):
+                edges.append(r)
+        if not edges:
+            return None
+        return max(edges, key=lambda x: int(x.amount_out))
 
-        return max(results, key=lambda x: int(x.amount_out))
+    async def quote_edges(
+        self,
+        token_in: str,
+        token_out: str,
+        amount_in: int,
+        *,
+        block: str,
+        fee_tiers: Optional[List[int]] = None,
+        timeout_s: Optional[float] = None,
+        dexes: Optional[List[str]] = None,
+    ) -> List[QuoteEdge]:
+        params: Dict[str, Any] = {}
+        if fee_tiers:
+            params["fee_tiers"] = list(fee_tiers)
+        dex_list = list(dexes) if dexes else list(self.adapters.keys())
+        tasks: List[Any] = []
+        for dex_id in dex_list:
+            tasks.append(
+                self._quote_many_cached(
+                    dex_id,
+                    token_in,
+                    token_out,
+                    int(amount_in),
+                    block=block,
+                    params=params,
+                    timeout_s=timeout_s,
+                )
+            )
+        if not tasks:
+            return []
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        edges: List[QuoteEdge] = []
+        for r in results:
+            if isinstance(r, list):
+                for e in r:
+                    if isinstance(e, QuoteEdge):
+                        edges.append(e)
+        return edges
 
     async def estimate_gas_cost_token(self, gas_units: int, token_out: str, *, block: str, timeout_s: float = 7.0) -> int:
         """Return gas cost in `token_out` smallest units."""
@@ -249,14 +409,14 @@ class PriceScanner:
             usdc_per_weth = self._weth_to_usdc_6
             if usdc_per_weth is None:
                 try:
-                    q = await self._best_quote_cached(
+                    edge = await self.best_edge(
                         config.TOKENS["WETH"],
                         config.TOKENS["USDC"],
                         10**18,
                         block=block,
                         timeout_s=timeout_s,
                     )
-                    usdc_per_weth = int(q.amount_out) if q else None
+                    usdc_per_weth = int(edge.amount_out) if edge else None
                     self._weth_to_usdc_6 = usdc_per_weth
                 except Exception:
                     usdc_per_weth = None
@@ -267,12 +427,12 @@ class PriceScanner:
 
         # Otherwise: quote 1 WETH -> token_out and scale.
         try:
-            q = await self._best_quote_cached(
+            edge = await self.best_edge(
                 config.TOKENS["WETH"], token_out, 10**18, block=block, timeout_s=timeout_s
             )
-            if not q or q.amount_out == 0:
+            if not edge or edge.amount_out == 0:
                 return 0
-            token_per_weth = int(q.amount_out)
+            token_per_weth = int(edge.amount_out)
             return int(gas_cost_wei * token_per_weth / 10**18)
         except Exception:
             return 0
@@ -292,10 +452,32 @@ class PriceScanner:
           profit: float in token_in units
         """
 
-        route = tuple(config.token_address(t) for t in candidate["route"])
         amount_in = int(candidate["amount_in"])
+        hops = _normalize_hops(candidate.get("hops"))
         tiers = tuple(int(x) for x in (fee_tiers if fee_tiers else config.FEE_TIERS))
-        cache_key = (block, route, amount_in, tiers)
+
+        if hops:
+            tokens: List[str] = []
+            ok_chain = True
+            for idx, hop in enumerate(hops):
+                t_in = config.token_address(hop.token_in)
+                t_out = config.token_address(hop.token_out)
+                if idx == 0:
+                    tokens.append(t_in)
+                if tokens and str(tokens[-1]).lower() != str(t_in).lower():
+                    ok_chain = False
+                    break
+                tokens.append(t_out)
+            route = tuple(tokens)
+            if not ok_chain:
+                out = {"route": route, "amount_in": amount_in, "profit": -1, "profit_raw": -1}
+                return out
+            params_key = _hops_key(hops)
+        else:
+            route = tuple(config.token_address(t) for t in candidate["route"])
+            params_key = _param_key({"fee_tiers": tiers})
+
+        cache_key = (block, route, amount_in, params_key)
         if cache_key in self._payload_cache:
             return self._payload_cache[cache_key]
 
@@ -311,21 +493,45 @@ class PriceScanner:
         route_dex: List[str] = []
         route_fee_bps: List[int] = []
         route_fee_tier: List[int] = []
+        dex_path: List[str] = []
         for i in range(len(route) - 1):
-            q = await self._best_quote_cached(
-                route[i], route[i + 1], amt, block=block, fee_tiers=list(tiers), timeout_s=timeout_s
-            )
+            if hops:
+                hop = hops[i]
+                q = await self._quote_best_cached(
+                    hop.dex_id,
+                    hop.token_in,
+                    hop.token_out,
+                    amt,
+                    block=block,
+                    params=dict(hop.params or {}),
+                    timeout_s=timeout_s,
+                )
+            else:
+                q = await self.best_edge(
+                    route[i],
+                    route[i + 1],
+                    amt,
+                    block=block,
+                    fee_tiers=list(tiers),
+                    timeout_s=timeout_s,
+                )
+
             if not q or int(q.amount_out) == 0:
                 ok = False
                 break
-            route_dex.append(str(q.dex))
-            route_fee_bps.append(int(q.fee_bps))
-            route_fee_tier.append(int(q.fee_tier) if q.fee_tier is not None else 0)
+
+            route_dex.append(str(q.dex_id))
+            route_fee_bps.append(int(_edge_fee_bps(q)))
+            route_fee_tier.append(int(_edge_fee_tier(q)))
+            dex_path.append(_edge_label(q))
             amt = int(q.amount_out)
             if q.gas_estimate is not None:
                 gas_units += int(q.gas_estimate)
             else:
-                gas_units += 90_000
+                if str(q.dex_id) == "univ3":
+                    gas_units += int(getattr(config, "V3_GAS_ESTIMATE", 110_000))
+                else:
+                    gas_units += int(getattr(config, "V2_GAS_ESTIMATE", 90_000))
 
         if not ok:
             out = {"route": route, "amount_in": amount_in, "profit": -1, "profit_raw": -1}
@@ -333,23 +539,42 @@ class PriceScanner:
             return out
 
         gas_units += 25_000  # cushion
-        gas_cost_in = await self.estimate_gas_cost_token(gas_units, route[0], block=block)
+        fixed_gas_units = 0
+        try:
+            fixed_gas_units = int(os.getenv("FIXED_GAS_UNITS", "0") or 0)
+        except Exception:
+            fixed_gas_units = 0
+        if fixed_gas_units and fixed_gas_units > 0:
+            gas_units = int(fixed_gas_units)
 
-        profit_raw_no_gas = int(amt) - int(amount_in)
-        profit_raw = int(profit_raw_no_gas) - int(gas_cost_in)
+        gas_off = str(os.getenv("GAS_OFF", "")).strip().lower() in ("1", "true", "yes")
+        if gas_off:
+            gas_cost_in = 0
+        else:
+            gas_cost_in = await self.estimate_gas_cost_token(gas_units, route[0], block=block)
+
+        profit_gross_raw = int(amt) - int(amount_in)
+        profit_net_raw = int(profit_gross_raw) - int(gas_cost_in)
         dec = _decimals(route[0])
-        profit_no_gas = float(profit_raw_no_gas) / float(10**dec)
-        profit = float(profit_raw) / float(10**dec)
+        profit_gross = float(profit_gross_raw) / float(10**dec)
+        profit = float(profit_net_raw) / float(10**dec)
         amt_in_f = float(amount_in) / float(10**dec)
-        profit_pct_no_gas = (profit_no_gas / amt_in_f * 100.0) if amt_in_f > 0 else 0.0
+        profit_pct_gross = (profit_gross / amt_in_f * 100.0) if amt_in_f > 0 else 0.0
         profit_pct = (profit / amt_in_f * 100.0) if amt_in_f > 0 else 0.0
 
         # Sanity guard: if something upstream returned garbage (e.g., revert-bytes decoded as values),
         # profit can become astronomically large. Drop such payloads early so UI doesn't show nonsense.
-        if abs(profit_raw) > 10**30 or abs(profit_pct) > 1e9:
+        if abs(profit_net_raw) > 10**30 or abs(profit_pct) > 1e9:
             out = {"route": route, "amount_in": amount_in, "profit": -1, "profit_raw": -1}
             self._payload_cache[cache_key] = out
             return out
+
+        hop_payload = None
+        if hops:
+            hop_payload = [
+                {"token_in": h.token_in, "token_out": h.token_out, "dex_id": h.dex_id, "params": dict(h.params or {})}
+                for h in hops
+            ]
 
         payload = {
             "route": route,
@@ -357,17 +582,24 @@ class PriceScanner:
             "amount_out": int(amt),
             "gas_cost": int(gas_cost_in),
             "gas_units": int(gas_units),
-            "profit_raw_no_gas": int(profit_raw_no_gas),
-            "profit_no_gas": float(profit_no_gas),
-            "profit_pct_no_gas": float(profit_pct_no_gas),
-            "profit_raw": int(profit_raw),
+            "profit_raw_no_gas": int(profit_gross_raw),
+            "profit_no_gas": float(profit_gross),
+            "profit_pct_no_gas": float(profit_pct_gross),
+            "profit_gross_raw": int(profit_gross_raw),
+            "profit_gross": float(profit_gross),
+            "profit_pct_gross": float(profit_pct_gross),
+            "profit_raw": int(profit_net_raw),
             "profit": float(profit),
+            "profit_raw_net": int(profit_net_raw),
+            "profit_net": float(profit),
             "profit_pct": float(profit_pct),
             "token_in": route[0],
             "token_in_symbol": _sym_by_addr(route[0]),
             "route_dex": tuple(route_dex),
             "route_fee_bps": tuple(route_fee_bps),
             "route_fee_tier": tuple(route_fee_tier),
+            "dex_path": tuple(dex_path),
+            "hops": hop_payload,
             "to": "0x0000000000000000000000000000000000000000",
         }
         self._payload_cache[cache_key] = payload
