@@ -359,6 +359,7 @@ class RPCPool:
         # Simple stats (useful for debugging)
         self._ok: List[int] = [0 for _ in self._clients]
         self._fail: List[int] = [0 for _ in self._clients]
+        self._timeouts: List[int] = [0 for _ in self._clients]
 
     async def close(self) -> None:
         for c in self._clients:
@@ -428,6 +429,7 @@ class RPCPool:
                 "inflight": self._inflight[i],
                 "ok": self._ok[i],
                 "fail": self._fail[i],
+                "timeout": self._timeouts[i],
                 "lat_ms": round(float(self._lat_ewma_ms[i]), 1),
                 "weight": float(self._priority_weights[i]),
                 "fallback_only": bool(i in self._fallback_only),
@@ -471,6 +473,12 @@ class RPCPool:
             except Exception as e:
                 last_err = e
                 banned.add(idx)
+                try:
+                    msg = str(e).lower()
+                    if "timeout" in msg:
+                        self._timeouts[idx] += 1
+                except Exception:
+                    pass
                 await self._done_idx(idx, ok=False)
                 attempts += 1
                 try:

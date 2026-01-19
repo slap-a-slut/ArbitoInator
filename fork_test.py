@@ -5,6 +5,8 @@ import json
 import os
 import math
 import statistics
+import sys
+import time
 from pathlib import Path
 from dataclasses import dataclass
 from datetime import datetime
@@ -16,6 +18,7 @@ from bot.simulator import simulate_candidate_async
 from bot.arb_builder import build_execute_call_from_payload
 from bot.block_context import BlockContext
 from bot.routes import Hop
+from bot.diagnostic import DiagnosticSnapshotter, build_diagnostic_snapshot
 from ui_notify import ui_push
 from mempool.engine import MempoolEngine
 from mempool.types import Trigger
@@ -1860,8 +1863,10 @@ async def main() -> None:
     mempool_engine: Optional[MempoolEngine] = None
 
     session_started_at = datetime.utcnow()
+    session_started_at_s = time.time()
     blocks_scanned = 0
     profit_hits = 0
+    snapshotter: Optional[DiagnosticSnapshotter] = None
 
     last_block = await PS.rpc.get_block_number()
     print(f"[RPC] connected=True | block={last_block} | urls={len(rpc_urls)}")
@@ -1900,6 +1905,26 @@ async def main() -> None:
             await asyncio.wait_for(PS.prepare_block(MEMPOOL_BLOCK_CTX), timeout=float(_prepare_budget_s(s0)))
         except Exception:
             pass
+
+    try:
+        interval_s = float(os.getenv("DIAGNOSTIC_SNAPSHOT_INTERVAL_S", "") or 45.0)
+    except Exception:
+        interval_s = 45.0
+    try:
+        window_s = int(float(os.getenv("DIAGNOSTIC_SNAPSHOT_WINDOW_S", "") or 900))
+    except Exception:
+        window_s = 900
+    snapshotter = DiagnosticSnapshotter(
+        log_dir=LOG_DIR,
+        get_settings=_load_settings,
+        get_current_block=lambda: int(MEMPOOL_BLOCK_CTX.block_number) if MEMPOOL_BLOCK_CTX else None,
+        session_started_at_s=session_started_at_s,
+        rpc_provider=PS.rpc if PS else None,
+        interval_s=interval_s,
+        window_s=window_s,
+    )
+    snapshotter.write_snapshot(reason="startup")
+    await snapshotter.start()
 
     try:
         while True:
@@ -2563,6 +2588,9 @@ async def main() -> None:
     finally:
         if mempool_engine:
             await mempool_engine.stop()
+        if snapshotter:
+            snapshotter.write_snapshot(reason="shutdown")
+            await snapshotter.stop()
         _write_session_summary(
             started_at=session_started_at,
             updated_at=datetime.utcnow(),
@@ -2590,6 +2618,23 @@ async def main() -> None:
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        if "--dump-diagnostic" in sys.argv:
+            s0 = _load_settings()
+            try:
+                window_s = int(float(os.getenv("DIAGNOSTIC_SNAPSHOT_WINDOW_S", "") or 900))
+            except Exception:
+                window_s = 900
+            snap = build_diagnostic_snapshot(
+                log_dir=LOG_DIR,
+                settings=s0,
+                session_started_at_s=None,
+                current_block=None,
+                rpc_stats=None,
+                window_s=window_s,
+                update_reason="manual",
+            )
+            print(json.dumps(snap))
+        else:
+            asyncio.run(main())
     except KeyboardInterrupt:
         print("🛑 Fork simulation stopped by user")

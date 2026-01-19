@@ -109,6 +109,10 @@ class MempoolEngine:
         self._post_validations_total = 0
         self._persistent_hits = 0
         self._valid_hits = 0
+        self._trigger_scans_scheduled = 0
+        self._trigger_scans_finished = 0
+        self._trigger_scans_timeouts = 0
+        self._trigger_scans_zero_candidates = 0
 
     async def start(self, scan_fn: ScanFn) -> None:
         if self._running:
@@ -168,6 +172,10 @@ class MempoolEngine:
         payload["post_validations_total"] = int(self._post_validations_total)
         payload["persistent_hits_total"] = int(self._persistent_hits)
         payload["valid_hits_total"] = int(self._valid_hits)
+        payload["trigger_scans_scheduled"] = int(self._trigger_scans_scheduled)
+        payload["trigger_scans_finished"] = int(self._trigger_scans_finished)
+        payload["trigger_scans_timeouts"] = int(self._trigger_scans_timeouts)
+        payload["trigger_scans_zero_candidates"] = int(self._trigger_scans_zero_candidates)
         if self._post_validations_total > 0:
             ratio = float(self._persistent_hits) / float(self._post_validations_total)
         else:
@@ -282,6 +290,15 @@ class MempoolEngine:
 
     def _append_trigger_result(self, record: TriggerRecord, post_result: Optional[Dict[str, Any]]) -> None:
         pre = record.pre_result or {}
+        scheduled = int(pre.get("scheduled", 0) or 0)
+        finished = int(pre.get("finished", 0) or 0)
+        timeouts = int(pre.get("timeouts", 0) or 0)
+        if post_result is None:
+            self._trigger_scans_scheduled += scheduled
+            self._trigger_scans_finished += finished
+            self._trigger_scans_timeouts += timeouts
+            if scheduled == 0 and finished == 0:
+                self._trigger_scans_zero_candidates += 1
         trigger_amount_in = None
         if record.trigger.amount_in is not None:
             try:
@@ -314,9 +331,9 @@ class MempoolEngine:
         entry = {
             "trigger_id": record.trigger.trigger_id,
             "tx_hash": record.trigger.tx_hash,
-            "scheduled": int(pre.get("scheduled", 0)),
-            "finished": int(pre.get("finished", 0)),
-            "timeouts": int(pre.get("timeouts", 0)),
+            "scheduled": scheduled,
+            "finished": finished,
+            "timeouts": timeouts,
             "best_gross": float(pre.get("best_gross", 0.0)),
             "best_net": float(pre.get("best_net", 0.0)),
             "best_route": pre.get("best_route_summary"),
