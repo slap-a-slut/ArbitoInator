@@ -14,12 +14,15 @@ from bot import scanner, strategies, executor, config
 from bot.block_context import BlockContext
 from bot.routes import Hop
 from ui_notify import ui_push
+from mempool.engine import MempoolEngine
+from mempool.types import Trigger
 
 
 # RPC + scanner are initialized in main() after reading UI config
 PS = None  # type: ignore[assignment]
 
 SIM_FROM_ADDRESS = "0x0000000000000000000000000000000000000000"
+MEMPOOL_BLOCK_CTX: Optional[BlockContext] = None
 
 
 def _is_finite_number(x: Any) -> bool:
@@ -125,6 +128,7 @@ class Settings:
 
     # Mode
     scan_mode: str = "auto"  # auto|fixed
+    scan_source: str = "block"  # block|mempool|hybrid
 
     # Thresholds
     min_profit_pct: float = 0.05  # percent of input (e.g. 0.05 == 0.05%)
@@ -139,6 +143,10 @@ class Settings:
     prepare_budget_ratio: float = 0.20
     prepare_budget_min_s: float = 2.0
     prepare_budget_max_s: float = 6.0
+    expand_ratio_cap: float = 0.60
+    expand_budget_max_s: float = 2.0
+    min_scan_reserve_s: float = 0.6
+    min_first_task_s: float = 0.08
     max_candidates_stage1: int = 200
     max_total_expanded: int = 400
     max_expanded_per_candidate: int = 6
@@ -167,6 +175,22 @@ class Settings:
     # Reporting / base currency (UI should stay consistent)
     # Profits, spent, ROI are computed and displayed in this token.
     report_currency: str = "USDC"  # USDC|USDT
+
+    # Mempool settings
+    mempool_enabled: bool = False
+    mempool_ws_urls: Tuple[str, ...] = ()
+    mempool_max_inflight_tx: int = 200
+    mempool_fetch_tx_concurrency: int = 20
+    mempool_filter_to: Tuple[str, ...] = ()
+    mempool_min_value_usd: float = 25.0
+    mempool_usd_per_eth: float = 2000.0
+    mempool_dedup_ttl_s: int = 120
+    mempool_trigger_scan_budget_s: float = 1.5
+    mempool_trigger_max_queue: int = 50
+    mempool_trigger_max_concurrent: int = 1
+    mempool_trigger_ttl_s: int = 60
+    mempool_confirm_timeout_s: float = 2.0
+    mempool_post_scan_budget_s: float = 1.0
 
 
 def _load_settings() -> Settings:
@@ -222,6 +246,12 @@ def _load_settings() -> Settings:
     except Exception:
         s.enable_multidex = False
     try:
+        src = str(raw.get("scan_source", s.scan_source)).strip().lower()
+        if src in ("block", "mempool", "hybrid"):
+            s.scan_source = src
+    except Exception:
+        s.scan_source = "block"
+    try:
         s.max_hops = int(raw.get("max_hops", s.max_hops))
     except Exception:
         pass
@@ -273,6 +303,22 @@ def _load_settings() -> Settings:
     except Exception:
         pass
     try:
+        s.expand_ratio_cap = float(raw.get("expand_ratio_cap", s.expand_ratio_cap))
+    except Exception:
+        pass
+    try:
+        s.expand_budget_max_s = float(raw.get("expand_budget_max_s", s.expand_budget_max_s))
+    except Exception:
+        pass
+    try:
+        s.min_scan_reserve_s = float(raw.get("min_scan_reserve_s", s.min_scan_reserve_s))
+    except Exception:
+        pass
+    try:
+        s.min_first_task_s = float(raw.get("min_first_task_s", s.min_first_task_s))
+    except Exception:
+        pass
+    try:
         s.max_candidates_stage1 = int(raw.get("max_candidates_stage1", s.max_candidates_stage1))
     except Exception:
         pass
@@ -290,6 +336,74 @@ def _load_settings() -> Settings:
         pass
     try:
         s.rpc_retry_count = int(raw.get("rpc_retry_count", s.rpc_retry_count))
+    except Exception:
+        pass
+    try:
+        me = raw.get("mempool_enabled", s.mempool_enabled)
+        if isinstance(me, str):
+            s.mempool_enabled = me.strip().lower() in ("1", "true", "yes", "on")
+        else:
+            s.mempool_enabled = bool(me)
+    except Exception:
+        s.mempool_enabled = False
+    try:
+        ws_urls = raw.get("mempool_ws_urls")
+        if isinstance(ws_urls, (list, tuple)):
+            s.mempool_ws_urls = tuple(str(x).strip() for x in ws_urls if str(x).strip())
+        elif isinstance(ws_urls, str):
+            s.mempool_ws_urls = tuple(x.strip() for x in ws_urls.replace("\\n", ",").split(",") if x.strip())
+    except Exception:
+        pass
+    try:
+        flt = raw.get("mempool_filter_to")
+        if isinstance(flt, (list, tuple)):
+            s.mempool_filter_to = tuple(str(x).strip().lower() for x in flt if str(x).strip())
+        elif isinstance(flt, str):
+            s.mempool_filter_to = tuple(x.strip().lower() for x in flt.replace("\\n", ",").split(",") if x.strip())
+    except Exception:
+        pass
+    try:
+        s.mempool_max_inflight_tx = int(raw.get("mempool_max_inflight_tx", s.mempool_max_inflight_tx))
+    except Exception:
+        pass
+    try:
+        s.mempool_fetch_tx_concurrency = int(raw.get("mempool_fetch_tx_concurrency", s.mempool_fetch_tx_concurrency))
+    except Exception:
+        pass
+    try:
+        s.mempool_min_value_usd = float(raw.get("mempool_min_value_usd", s.mempool_min_value_usd))
+    except Exception:
+        pass
+    try:
+        s.mempool_usd_per_eth = float(raw.get("mempool_usd_per_eth", s.mempool_usd_per_eth))
+    except Exception:
+        pass
+    try:
+        s.mempool_dedup_ttl_s = int(raw.get("mempool_dedup_ttl_s", s.mempool_dedup_ttl_s))
+    except Exception:
+        pass
+    try:
+        s.mempool_trigger_scan_budget_s = float(raw.get("mempool_trigger_scan_budget_s", s.mempool_trigger_scan_budget_s))
+    except Exception:
+        pass
+    try:
+        s.mempool_trigger_max_queue = int(raw.get("mempool_trigger_max_queue", s.mempool_trigger_max_queue))
+    except Exception:
+        pass
+    try:
+        s.mempool_trigger_max_concurrent = int(raw.get("mempool_trigger_max_concurrent", s.mempool_trigger_max_concurrent))
+    except Exception:
+        pass
+    try:
+        s.mempool_trigger_ttl_s = int(raw.get("mempool_trigger_ttl_s", s.mempool_trigger_ttl_s))
+    except Exception:
+        pass
+    try:
+        s.mempool_confirm_timeout_s = float(raw.get("mempool_confirm_timeout_s", s.mempool_confirm_timeout_s))
+    except Exception:
+        pass
+    try:
+        s.mempool_post_scan_budget_s = float(raw.get("mempool_post_scan_budget_s", s.mempool_post_scan_budget_s))
     except Exception:
         pass
     try:
@@ -352,6 +466,11 @@ def _route_pretty(
     return " ".join(parts)
 
 
+async def _confirm_mempool(mempool_engine: Optional[MempoolEngine], block_number: int) -> None:
+    if mempool_engine:
+        await mempool_engine.confirm_block(int(block_number))
+
+
 async def wait_for_new_block(last_block: int, *, timeout_s: float = 3.0) -> int:
     while True:
         try:
@@ -371,6 +490,138 @@ async def scan_routes() -> List[Tuple[str, ...]]:
     # so profit/spent symbols in the UI cannot drift.
     base_addr = config.TOKENS.get(rc, config.TOKENS["USDC"])
     return strategies.Strategy(bases=[base_addr]).get_routes(max_hops=int(getattr(s, "max_hops", 3)))
+
+
+def _build_trigger_routes(tokens_involved: List[str], *, max_hops: int) -> List[Tuple[str, ...]]:
+    s = _load_settings()
+    rc = str(getattr(s, "report_currency", "USDC") or "USDC").upper()
+    base_addr = config.TOKENS.get(rc, config.TOKENS["USDC"])
+    connectors = [
+        config.TOKENS.get("WETH"),
+        config.TOKENS.get("USDC"),
+        config.TOKENS.get("USDT"),
+        config.TOKENS.get("DAI"),
+    ]
+    tokens: List[str] = []
+    for t in tokens_involved + connectors:
+        if not t:
+            continue
+        t_norm = str(t)
+        if t_norm not in tokens and t_norm != base_addr:
+            tokens.append(t_norm)
+    if not tokens:
+        return []
+    if max_hops < 2:
+        max_hops = 2
+    if max_hops > 4:
+        max_hops = 4
+    # Limit tokens to keep trigger scan fast.
+    tokens = tokens[:8]
+
+    routes: List[Tuple[str, ...]] = []
+    if max_hops >= 2:
+        for x in tokens:
+            if x != base_addr:
+                routes.append((base_addr, x, base_addr))
+    if max_hops >= 3:
+        for a in tokens:
+            for b in tokens:
+                if a == b:
+                    continue
+                routes.append((base_addr, a, b, base_addr))
+    if max_hops >= 4:
+        mids = tokens[:6]
+        for a in mids:
+            for b in mids:
+                if a == b:
+                    continue
+                for c in mids:
+                    if c == a or c == b:
+                        continue
+                    routes.append((base_addr, a, b, c, base_addr))
+
+    uniq: List[Tuple[str, ...]] = []
+    seen = set()
+    for r in routes:
+        if r in seen:
+            continue
+        seen.add(r)
+        uniq.append(r)
+    return uniq
+
+
+async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
+    s = _load_settings()
+    if not PS or MEMPOOL_BLOCK_CTX is None:
+        return {
+            "scheduled": 0,
+            "finished": 0,
+            "timeouts": 0,
+            "best_gross": 0.0,
+            "best_net": 0.0,
+            "best_route_summary": None,
+            "outcome": "no_context",
+        }
+    block_ctx = MEMPOOL_BLOCK_CTX
+    routes = _build_trigger_routes(trigger.tokens_involved, max_hops=int(getattr(s, "max_hops", 3)))
+    if not routes:
+        return {
+            "scheduled": 0,
+            "finished": 0,
+            "timeouts": 0,
+            "best_gross": 0.0,
+            "best_net": 0.0,
+            "best_route_summary": None,
+            "outcome": "no_routes",
+        }
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + float(budget_s)
+    timeout_s = max(0.2, min(float(s.rpc_timeout_stage1_s), float(budget_s)))
+
+    rc = str(getattr(s, "report_currency", "USDC") or "USDC").upper()
+    base_addr = config.TOKENS.get(rc, config.TOKENS["USDC"])
+    amount_in = _scale_amount(base_addr, float(s.stage1_amount))
+    candidates = [{"route": route, "amount_in": int(amount_in)} for route in routes]
+
+    payloads, _, scan_stats = await _scan_candidates(
+        candidates,
+        block_ctx,
+        fee_tiers=list(s.stage1_fee_tiers) if s.stage1_fee_tiers else None,
+        timeout_s=timeout_s,
+        deadline_s=deadline,
+        keep_all=True,
+    )
+    payloads = [p for p in payloads if p and p.get("profit_raw", -1) != -1]
+    payloads = [_apply_safety(p, s) for p in payloads]
+
+    best_gross = 0.0
+    best_net = 0.0
+    best_route = None
+    if payloads:
+        dec = _decimals_by_token(base_addr)
+        ranked = sorted(payloads, key=lambda p: int(p.get("profit_gross_raw", 0)), reverse=True)
+        best = ranked[0]
+        best_route = _route_pretty(tuple(best.get("route")), best.get("route_dex"), best.get("route_fee_bps"), best.get("route_fee_tier"), best.get("dex_path"))
+        gross_raw = int(best.get("profit_gross_raw", 0) or 0)
+        net_raw = int(best.get("profit_raw_net", best.get("profit_raw", 0)) or 0)
+        best_gross = float(gross_raw) / float(10 ** dec)
+        best_net = float(net_raw) / float(10 ** dec)
+
+    outcome = "no_hit"
+    if best_net > 0:
+        outcome = "net_hit"
+    elif best_gross > 0:
+        outcome = "gross_hit"
+
+    return {
+        "scheduled": int(scan_stats.get("scheduled", 0)),
+        "finished": int(scan_stats.get("finished", 0)),
+        "timeouts": int(scan_stats.get("timeouts", 0)),
+        "best_gross": float(best_gross),
+        "best_net": float(best_net),
+        "best_route_summary": best_route,
+        "outcome": outcome,
+    }
 
 
 def _make_block_context(block_number: int) -> BlockContext:
@@ -430,6 +681,14 @@ def _adaptive_stage1_ratio(candidate_estimate: int, rpc_latency_ms: Optional[flo
         if rpc_latency_ms > 1300:
             ratio += 0.05
     return float(max(0.45, min(0.75, ratio)))
+
+
+def _expand_budget_s(stage1_window_s: float, s: Settings) -> float:
+    cap = float(getattr(s, "expand_ratio_cap", 0.60))
+    max_s = float(getattr(s, "expand_budget_max_s", 2.0))
+    if max_s <= 0:
+        max_s = 0.5
+    return float(min(stage1_window_s * cap, max_s))
 
 
 def _cap_int(value: int, *, min_value: int = 1) -> int:
@@ -526,16 +785,24 @@ async def _beam_candidates_for_route(
     beam_k: int,
     edge_top_m: int,
     eval_budget: int,
+    deadline_s: Optional[float] = None,
+    stats: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
+    loop = asyncio.get_running_loop()
+    t0 = loop.time()
     states: List[Dict[str, Any]] = [{"amount": int(amount_in), "hops": []}]
     max_drawdown = float(getattr(config, "BEAM_MAX_DRAWDOWN", 0.35))
     max_drawdown = min(0.9, max(0.0, max_drawdown))
 
     for i in range(len(route) - 1):
+        if deadline_s is not None and loop.time() >= deadline_s:
+            return []
         token_in = route[i]
         token_out = route[i + 1]
         new_states: List[Dict[str, Any]] = []
         for st in states:
+            if deadline_s is not None and loop.time() >= deadline_s:
+                break
             edges = await PS.quote_edges(
                 token_in,
                 token_out,
@@ -573,6 +840,9 @@ async def _beam_candidates_for_route(
     out: List[Dict[str, Any]] = []
     for st in states:
         out.append({"route": route, "hops": list(st["hops"]), "amount_in": int(amount_in)})
+    if stats is not None:
+        stats["beam_ms"] = float(stats.get("beam_ms", 0.0)) + (loop.time() - t0) * 1000.0
+        stats["beam_candidates_total"] = int(stats.get("beam_candidates_total", 0)) + len(out)
     return out
 
 
@@ -588,10 +858,17 @@ async def _expand_multidex_candidates(
     max_total: Optional[int] = None,
     max_per_route: Optional[int] = None,
     viability_cache: Optional[Dict[Tuple[str, str, str, int], Optional[int]]] = None,
+    stats: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     loop = asyncio.get_running_loop()
+    expand_t0 = loop.time()
     sem = asyncio.Semaphore(max(1, int(settings.concurrency)))
     results: List[Dict[str, Any]] = []
+    if stats is not None:
+        stats.setdefault("beam_ms", 0.0)
+        stats.setdefault("beam_candidates_total", 0)
+        stats.setdefault("capped_by_max_total_expanded", False)
+        stats.setdefault("capped_by_max_expanded_per_candidate", False)
 
     async def one(route: Tuple[str, ...]) -> List[Dict[str, Any]]:
         async with sem:
@@ -617,7 +894,12 @@ async def _expand_multidex_candidates(
                     beam_k=int(settings.beam_k),
                     edge_top_m=int(settings.edge_top_m),
                     eval_budget=int(settings.stage2_max_evals),
+                    deadline_s=deadline_s,
+                    stats=stats,
                 )
+                if max_per_route is not None and max_per_route > 0 and len(out) > int(max_per_route):
+                    if stats is not None:
+                        stats["capped_by_max_expanded_per_candidate"] = True
                 if max_per_route is not None and max_per_route > 0:
                     out = out[: int(max_per_route)]
                 return out
@@ -629,6 +911,8 @@ async def _expand_multidex_candidates(
         if loop.time() >= deadline_s:
             break
         if max_total is not None and max_total > 0 and len(results) >= int(max_total):
+            if stats is not None:
+                stats["capped_by_max_total_expanded"] = True
             break
         tasks.append(asyncio.create_task(one(route)))
 
@@ -642,6 +926,8 @@ async def _expand_multidex_candidates(
                 if res:
                     results.extend(res)
                 if max_total is not None and max_total > 0 and len(results) >= int(max_total):
+                    if stats is not None:
+                        stats["capped_by_max_total_expanded"] = True
                     pending = set()
                     break
     finally:
@@ -651,7 +937,12 @@ async def _expand_multidex_candidates(
         await asyncio.gather(*tasks, return_exceptions=True)
 
     if max_total is not None and max_total > 0:
-        return results[: int(max_total)]
+        results = results[: int(max_total)]
+    if stats is not None:
+        stats["expand_ms"] = float(stats.get("expand_ms", 0.0)) + (loop.time() - expand_t0) * 1000.0
+        stats["candidates_after_multidex"] = int(len(results))
+        stats["candidates_after_beam"] = int(stats.get("beam_candidates_total", len(results)))
+    return results
     return results
 
 
@@ -679,7 +970,11 @@ async def _scan_candidates(
     sanity_rejects_total = 0
     rejects_by_reason: Dict[str, int] = {}
     reason_if_zero_scheduled: Optional[str] = None
-    schedule_guard_s = min(0.25, max(0.05, float(timeout_s) * 0.20))
+    schedule_guard_s = min(0.10, max(0.02, float(timeout_s) * 0.10))
+    min_first_task_s = float(getattr(s, "min_first_task_s", 0.08))
+    schedule_at_least_one = False
+    schedule_start_t = loop.time()
+    remaining_before_scheduling_ms = int(max(0.0, (deadline_s - schedule_start_t) * 1000.0))
 
     async def one(c: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         nonlocal finished
@@ -710,21 +1005,46 @@ async def _scan_candidates(
     tasks: List[asyncio.Task] = []
     if not candidates:
         reason_if_zero_scheduled = "no_candidates"
+    def _candidate_score(c: Dict[str, Any]) -> int:
+        try:
+            return int(c.get("amount_in", 0))
+        except Exception:
+            return 0
+
+    best_candidate = None
+    if candidates:
+        try:
+            best_candidate = max(candidates, key=_candidate_score)
+        except Exception:
+            best_candidate = candidates[0]
+
     for c in candidates:
-        if loop.time() + schedule_guard_s >= deadline_s:
+        now = loop.time()
+        remaining = deadline_s - now
+        if remaining <= 0:
             if not tasks:
-                reason_if_zero_scheduled = "deadline_guard"
+                reason_if_zero_scheduled = "stage1_deadline_exhausted_pre_scan"
+            break
+        if remaining < schedule_guard_s:
+            if not tasks and remaining >= min_first_task_s and best_candidate is not None:
+                tasks.append(asyncio.create_task(one(best_candidate)))
+                schedule_at_least_one = True
+            if not tasks and not reason_if_zero_scheduled:
+                reason_if_zero_scheduled = "schedule_guard_triggered"
             break
         tasks.append(asyncio.create_task(one(c)))
     scheduled = len(tasks)
     budget_skipped = max(0, len(candidates) - scheduled)
     if scheduled == 0 and not reason_if_zero_scheduled:
         if loop.time() >= deadline_s:
-            reason_if_zero_scheduled = "deadline_exceeded"
+            reason_if_zero_scheduled = "stage1_deadline_exhausted_pre_scan"
+
+    schedule_ms = (loop.time() - schedule_start_t) * 1000.0
 
     try:
         # Avoid asyncio.as_completed(...)+break warnings ("_wait_for_one was never awaited").
         pending = set(tasks)
+        await_start_t = loop.time()
         while pending and loop.time() < deadline_s:
             timeout = max(0.0, float(deadline_s) - float(loop.time()))
             done, pending = await asyncio.wait(pending, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
@@ -738,6 +1058,7 @@ async def _scan_candidates(
                     # strict profitable only (actual thresholds applied later)
                     if p.get("profit_raw", -1) > 0:
                         results.append(p)
+        await_ms = (loop.time() - await_start_t) * 1000.0
     finally:
         for t in tasks:
             if not t.done():
@@ -753,6 +1074,10 @@ async def _scan_candidates(
         "budget_skipped": int(budget_skipped),
         "sanity_rejects_total": int(sanity_rejects_total),
         "rejects_by_reason": dict(rejects_by_reason),
+        "scan_schedule_ms": float(max(0.0, schedule_ms)),
+        "scan_await_ms": float(max(0.0, await_ms if "await_ms" in locals() else 0.0)),
+        "stage1_remaining_ms_before_scheduling": int(remaining_before_scheduling_ms),
+        "schedule_at_least_one": bool(schedule_at_least_one),
     }
     if reason_if_zero_scheduled:
         stats["reason_if_zero_scheduled"] = str(reason_if_zero_scheduled)
@@ -1326,6 +1651,14 @@ async def main() -> None:
     )
     dexes_used = list(getattr(PS, "dexes", []) or (dexes or []))
 
+    scan_source = str(getattr(s0, "scan_source", "block") or "block").strip().lower()
+    if scan_source not in ("block", "mempool", "hybrid"):
+        scan_source = "block"
+    mempool_on = bool(getattr(s0, "mempool_enabled", False)) or scan_source in ("mempool", "hybrid")
+    block_on = scan_source in ("block", "hybrid")
+
+    mempool_engine: Optional[MempoolEngine] = None
+
     session_started_at = datetime.utcnow()
     blocks_scanned = 0
     profit_hits = 0
@@ -1333,6 +1666,40 @@ async def main() -> None:
     last_block = await PS.rpc.get_block_number()
     print(f"[RPC] connected=True | block={last_block} | urls={len(rpc_urls)}")
     await ui_push({"type": "status", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": int(last_block), "text": f"rpc connected=True | urls={len(rpc_urls)}"})
+    global MEMPOOL_BLOCK_CTX
+    MEMPOOL_BLOCK_CTX = _make_block_context(int(last_block))
+
+    if mempool_on:
+        ws_urls = list(getattr(s0, "mempool_ws_urls", ())) or list(getattr(config, "MEMPOOL_WS_URLS", []))
+        filter_to = list(getattr(s0, "mempool_filter_to", ())) or list(getattr(config, "MEMPOOL_FILTER_TO", []))
+        mempool_engine = MempoolEngine(
+            rpc=PS.rpc,
+            ws_urls=ws_urls,
+            filter_to=filter_to,
+            univ2_routers=[config.UNISWAP_V2_ROUTER, config.SUSHISWAP_ROUTER],
+            univ3_routers=[config.UNISWAP_V3_SWAP_ROUTER, config.UNISWAP_V3_SWAP_ROUTER02],
+            universal_routers=[config.UNISWAP_UNIVERSAL_ROUTER],
+            min_value_usd=float(getattr(s0, "mempool_min_value_usd", config.MEMPOOL_MIN_VALUE_USD)),
+            usd_per_eth=float(getattr(s0, "mempool_usd_per_eth", config.MEMPOOL_USD_PER_ETH)),
+            max_inflight=int(getattr(s0, "mempool_max_inflight_tx", config.MEMPOOL_MAX_INFLIGHT_TX)),
+            fetch_concurrency=int(getattr(s0, "mempool_fetch_tx_concurrency", config.MEMPOOL_FETCH_TX_CONCURRENCY)),
+            dedup_ttl_s=int(getattr(s0, "mempool_dedup_ttl_s", config.MEMPOOL_DEDUP_TTL_S)),
+            trigger_budget_s=float(getattr(s0, "mempool_trigger_scan_budget_s", config.MEMPOOL_TRIGGER_SCAN_BUDGET_S)),
+            trigger_queue_max=int(getattr(s0, "mempool_trigger_max_queue", config.MEMPOOL_TRIGGER_MAX_QUEUE)),
+            trigger_concurrency=int(getattr(s0, "mempool_trigger_max_concurrent", config.MEMPOOL_TRIGGER_MAX_CONCURRENT)),
+            trigger_ttl_s=int(getattr(s0, "mempool_trigger_ttl_s", config.MEMPOOL_TRIGGER_TTL_S)),
+            confirm_timeout_s=float(getattr(s0, "mempool_confirm_timeout_s", config.MEMPOOL_CONFIRM_TIMEOUT_S)),
+            post_scan_budget_s=float(getattr(s0, "mempool_post_scan_budget_s", config.MEMPOOL_POST_SCAN_BUDGET_S)),
+            log_dir=LOG_DIR,
+            ui_push=ui_push,
+        )
+        await mempool_engine.start(_scan_trigger)
+        await ui_push({"type": "status", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": int(last_block), "text": f"mempool enabled ({scan_source})"})
+        mempool_engine.set_block_number(int(last_block))
+        try:
+            await asyncio.wait_for(PS.prepare_block(MEMPOOL_BLOCK_CTX), timeout=float(_prepare_budget_s(s0)))
+        except Exception:
+            pass
 
     try:
         while True:
@@ -1348,6 +1715,10 @@ async def main() -> None:
             block_number = await wait_for_new_block(last_block, timeout_s=float(s.rpc_timeout_s))
             last_block = block_number
             print(f"Block {block_number}")
+            block_ctx = _make_block_context(int(block_number))
+            MEMPOOL_BLOCK_CTX = block_ctx
+            if mempool_engine:
+                mempool_engine.set_block_number(int(block_number))
 
             # Optional gas gate
             if s.max_gas_gwei is not None:
@@ -1364,7 +1735,19 @@ async def main() -> None:
                             "text": f"Skipped: gas {gas_gwei:.1f} gwei > max {float(s.max_gas_gwei):.1f} gwei",
                         }
                     )
+                    await _confirm_mempool(mempool_engine, int(block_number))
                     continue
+
+            if not block_on:
+                # In mempool-only mode we still refresh caches + confirm triggers.
+                try:
+                    await asyncio.wait_for(PS.prepare_block(block_ctx), timeout=float(_prepare_budget_s(s)))
+                except Exception:
+                    pass
+                if mempool_engine:
+                    await mempool_engine.confirm_block(int(block_number))
+                await ui_push({"type": "status", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": block_number, "text": f"mempool mode block {block_number}"})
+                continue
 
             await ui_push({"type": "scan", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": block_number, "text": "Scanning routes..."})
 
@@ -1397,8 +1780,11 @@ async def main() -> None:
                         "GAS_OFF": "1" if _env_flag("GAS_OFF") else "0",
                         "FIXED_GAS_UNITS": str(os.getenv("FIXED_GAS_UNITS", "")),
                         "ENABLE_MULTIDEX": "1" if enable_multidex else "0",
+                        "SCAN_SOURCE": str(scan_source),
+                        "MEMPOOL_ENABLED": "1" if mempool_on else "0",
                     },
                 )
+                await _confirm_mempool(mempool_engine, int(block_number))
                 continue
 
             attempt_ctxs = [_make_block_context(block_number)]
@@ -1430,6 +1816,8 @@ async def main() -> None:
                 scan_start_t = loop.time()
                 scan_start_delay_ms = int(max(0.0, (scan_start_t - block_start_t) * 1000.0))
                 scan_budget_s = _compute_scan_budget_s(float(s.block_budget_s), scan_start_t - block_start_t, min_scan_s=1.0)
+                global_deadline = scan_start_t + float(scan_budget_s)
+                min_scan_reserve_s = float(getattr(s, "min_scan_reserve_s", 0.6))
 
                 cap_ratio = 0.5 if prepare_over_budget else 1.0
                 max_candidates_stage1 = _cap_int(int(getattr(s, "max_candidates_stage1", 200)))
@@ -1445,9 +1833,20 @@ async def main() -> None:
                     cand_estimate = min(int(len(routes) * max_per_candidate), int(max_total_expanded))
                 cand_estimate = min(int(cand_estimate), int(max_candidates_stage1))
                 stage1_ratio = _adaptive_stage1_ratio(int(cand_estimate), _rpc_latency_ms())
-                deadline = scan_start_t + float(scan_budget_s)
-                stage1_deadline = scan_start_t + float(scan_budget_s) * float(stage1_ratio)
+                stage1_window_s = float(scan_budget_s) * float(stage1_ratio)
+                if stage1_window_s < min_scan_reserve_s:
+                    stage1_window_s = float(min_scan_reserve_s)
+                stage1_deadline = min(global_deadline, scan_start_t + stage1_window_s)
+                expand_window_s = _expand_budget_s(stage1_window_s, s)
+                expand_deadline = scan_start_t + expand_window_s
+                hard_scan_deadline = max(scan_start_t, stage1_deadline - float(min_scan_reserve_s))
+                if expand_deadline > hard_scan_deadline:
+                    expand_deadline = hard_scan_deadline
+                if expand_deadline < scan_start_t:
+                    expand_deadline = scan_start_t
+                deadline = global_deadline
                 stage1_deadline_remaining_ms_at_scan_start = int(max(0.0, (stage1_deadline - scan_start_t) * 1000.0))
+                stage1_remaining_ms_at_scan_start = int(max(0.0, (stage1_deadline - scan_start_t) * 1000.0))
 
                 profitable: List[Dict[str, Any]] = []
                 candidates_count = 0
@@ -1464,6 +1863,18 @@ async def main() -> None:
                     "budget_skipped": 0,
                     "sanity_rejects_total": 0,
                     "rejects_by_reason": {},
+                    "expand_ms": 0,
+                    "beam_ms": 0,
+                    "scan_schedule_ms": 0,
+                    "scan_await_ms": 0,
+                    "stage1_remaining_ms_at_scan_start": int(stage1_remaining_ms_at_scan_start),
+                    "stage1_remaining_ms_before_scheduling": 0,
+                    "candidates_initial": int(len(routes)),
+                    "candidates_after_beam": 0,
+                    "candidates_after_multidex": 0,
+                    "capped_by_max_candidates_stage1": False,
+                    "capped_by_max_total_expanded": False,
+                    "capped_by_max_expanded_per_candidate": False,
                 }
                 scan_stats["prepare_ms"] = int(max(0.0, prepare_ms))
                 scan_stats["scan_start_delay_ms"] = int(max(0, scan_start_delay_ms))
@@ -1479,6 +1890,7 @@ async def main() -> None:
                         if enable_multidex:
                             base_token = routes[0][0]
                             remaining_total = int(max_total_expanded)
+                            expand_stats: Dict[str, Any] = {}
                             for u in list(s.amount_presets):
                                 if remaining_total <= 0:
                                     break
@@ -1489,15 +1901,23 @@ async def main() -> None:
                                     block_ctx=block_ctx,
                                     fee_tiers=None,
                                     timeout_s=float(s.rpc_timeout_stage2_s),
-                                    deadline_s=deadline,
+                                    deadline_s=expand_deadline,
                                     settings=s,
                                     max_total=int(remaining_total),
                                     max_per_route=int(max_per_candidate),
                                     viability_cache=viability_cache,
+                                    stats=expand_stats,
                                 )
                                 if more:
                                     candidates.extend(more)
                                     remaining_total = int(max_total_expanded) - len(candidates)
+                            if expand_stats:
+                                scan_stats["expand_ms"] = float(expand_stats.get("expand_ms", 0.0))
+                                scan_stats["beam_ms"] = float(expand_stats.get("beam_ms", 0.0))
+                                scan_stats["candidates_after_beam"] = int(expand_stats.get("candidates_after_beam", 0))
+                                scan_stats["candidates_after_multidex"] = int(expand_stats.get("candidates_after_multidex", 0))
+                                scan_stats["capped_by_max_total_expanded"] = bool(expand_stats.get("capped_by_max_total_expanded", False))
+                                scan_stats["capped_by_max_expanded_per_candidate"] = bool(expand_stats.get("capped_by_max_expanded_per_candidate", False))
                         else:
                             for route in routes:
                                 token_in = route[0]
@@ -1507,14 +1927,18 @@ async def main() -> None:
                                         break
                                 if len(candidates) >= int(max_candidates_stage1):
                                     break
+                            scan_stats["candidates_after_beam"] = int(len(candidates))
+                            scan_stats["candidates_after_multidex"] = int(len(candidates))
                         if len(candidates) > int(max_candidates_stage1):
                             candidates = candidates[: int(max_candidates_stage1)]
+                            scan_stats["capped_by_max_candidates_stage1"] = True
+                        scan_stats["candidates_after_multidex"] = int(len(candidates))
                         candidates_count = len(candidates)
                         scan_start_delay_ms = int(max(0.0, (loop.time() - block_start_t) * 1000.0))
                         stage1_deadline_remaining_ms_at_scan_start = int(
                             max(0.0, (stage1_deadline - loop.time()) * 1000.0)
                         )
-                        payloads, finished_count, scan_stats = await _scan_candidates(
+                        payloads, finished_count, scan_stats_run = await _scan_candidates(
                             candidates,
                             block_ctx,
                             fee_tiers=None,
@@ -1522,11 +1946,13 @@ async def main() -> None:
                             deadline_s=deadline,
                             keep_all=True,
                         )
+                        scan_stats.update(scan_stats_run)
                         scan_stats["prepare_ms"] = int(max(0.0, prepare_ms))
                         scan_stats["scan_start_delay_ms"] = int(max(0, scan_start_delay_ms))
                         scan_stats["stage1_deadline_remaining_ms_at_scan_start"] = int(
                             max(0, stage1_deadline_remaining_ms_at_scan_start)
                         )
+                        scan_stats["stage1_remaining_ms_at_scan_start"] = int(max(0, stage1_remaining_ms_at_scan_start))
                         scan_stats["prepare_over_budget"] = bool(prepare_over_budget)
                         payloads = [p for p in payloads if p and p.get("profit_raw", -1) != -1]
                         payloads2 = [_apply_safety(p, s) for p in payloads]
@@ -1544,31 +1970,44 @@ async def main() -> None:
                         if enable_multidex:
                             base_token = routes[0][0]
                             stage1_amount = _scale_amount(base_token, float(s.stage1_amount))
+                            expand_stats: Dict[str, Any] = {}
                             stage1_candidates = await _expand_multidex_candidates(
                                 routes,
                                 amount_in=int(stage1_amount),
                                 block_ctx=block_ctx,
                                 fee_tiers=list(s.stage1_fee_tiers) if s.stage1_fee_tiers else None,
                                 timeout_s=float(s.rpc_timeout_stage1_s),
-                                deadline_s=stage1_deadline,
+                                deadline_s=expand_deadline,
                                 settings=s,
                                 max_total=int(max_total_expanded),
                                 max_per_route=int(max_per_candidate),
                                 viability_cache=viability_cache,
+                                stats=expand_stats,
                             )
+                            if expand_stats:
+                                scan_stats["expand_ms"] = float(expand_stats.get("expand_ms", 0.0))
+                                scan_stats["beam_ms"] = float(expand_stats.get("beam_ms", 0.0))
+                                scan_stats["candidates_after_beam"] = int(expand_stats.get("candidates_after_beam", 0))
+                                scan_stats["candidates_after_multidex"] = int(expand_stats.get("candidates_after_multidex", 0))
+                                scan_stats["capped_by_max_total_expanded"] = bool(expand_stats.get("capped_by_max_total_expanded", False))
+                                scan_stats["capped_by_max_expanded_per_candidate"] = bool(expand_stats.get("capped_by_max_expanded_per_candidate", False))
                         else:
                             stage1_candidates = [
                                 {"route": route, "amount_in": _scale_amount(route[0], float(s.stage1_amount))} for route in routes
                             ]
+                            scan_stats["candidates_after_beam"] = int(len(stage1_candidates))
+                            scan_stats["candidates_after_multidex"] = int(len(stage1_candidates))
                         if len(stage1_candidates) > int(max_candidates_stage1):
                             stage1_candidates = stage1_candidates[: int(max_candidates_stage1)]
+                            scan_stats["capped_by_max_candidates_stage1"] = True
+                        scan_stats["candidates_after_multidex"] = int(len(stage1_candidates))
                         candidates_count = len(stage1_candidates)
 
                         scan_start_delay_ms = int(max(0.0, (loop.time() - block_start_t) * 1000.0))
                         stage1_deadline_remaining_ms_at_scan_start = int(
                             max(0.0, (stage1_deadline - loop.time()) * 1000.0)
                         )
-                        stage1_payloads, finished_count, scan_stats = await _scan_candidates(
+                        stage1_payloads, finished_count, scan_stats_run = await _scan_candidates(
                             stage1_candidates,
                             block_ctx,
                             fee_tiers=list(s.stage1_fee_tiers) if s.stage1_fee_tiers else None,
@@ -1576,11 +2015,13 @@ async def main() -> None:
                             deadline_s=stage1_deadline,
                             keep_all=True,
                         )
+                        scan_stats.update(scan_stats_run)
                         scan_stats["prepare_ms"] = int(max(0.0, prepare_ms))
                         scan_stats["scan_start_delay_ms"] = int(max(0, scan_start_delay_ms))
                         scan_stats["stage1_deadline_remaining_ms_at_scan_start"] = int(
                             max(0, stage1_deadline_remaining_ms_at_scan_start)
                         )
+                        scan_stats["stage1_remaining_ms_at_scan_start"] = int(max(0, stage1_remaining_ms_at_scan_start))
                         scan_stats["prepare_over_budget"] = bool(prepare_over_budget)
 
                         stage1_payloads = [p for p in stage1_payloads if p and p.get("profit_raw", -1) != -1]
@@ -1655,6 +2096,7 @@ async def main() -> None:
                 break
 
             if not scan_done:
+                await _confirm_mempool(mempool_engine, int(block_ctx.block_number))
                 continue
 
             if not profitable:
@@ -1673,6 +2115,18 @@ async def main() -> None:
                         "prepare_ms": scan_stats.get("prepare_ms"),
                         "scan_start_delay_ms": scan_stats.get("scan_start_delay_ms"),
                         "stage1_deadline_remaining_ms_at_scan_start": scan_stats.get("stage1_deadline_remaining_ms_at_scan_start"),
+                        "stage1_remaining_ms_at_scan_start": scan_stats.get("stage1_remaining_ms_at_scan_start"),
+                        "stage1_remaining_ms_before_scheduling": scan_stats.get("stage1_remaining_ms_before_scheduling"),
+                        "scan_schedule_ms": scan_stats.get("scan_schedule_ms"),
+                        "scan_await_ms": scan_stats.get("scan_await_ms"),
+                        "expand_ms": scan_stats.get("expand_ms"),
+                        "beam_ms": scan_stats.get("beam_ms"),
+                        "candidates_initial": scan_stats.get("candidates_initial"),
+                        "candidates_after_beam": scan_stats.get("candidates_after_beam"),
+                        "candidates_after_multidex": scan_stats.get("candidates_after_multidex"),
+                        "capped_by_max_candidates_stage1": scan_stats.get("capped_by_max_candidates_stage1"),
+                        "capped_by_max_total_expanded": scan_stats.get("capped_by_max_total_expanded"),
+                        "capped_by_max_expanded_per_candidate": scan_stats.get("capped_by_max_expanded_per_candidate"),
                         "reason_if_zero_scheduled": scan_stats.get("reason_if_zero_scheduled"),
                         "sanity_rejects_total": scan_stats.get("sanity_rejects_total"),
                         "rejects_by_reason": scan_stats.get("rejects_by_reason"),
@@ -1709,6 +2163,18 @@ async def main() -> None:
                         "prepare_ms": scan_stats.get("prepare_ms"),
                         "scan_start_delay_ms": scan_stats.get("scan_start_delay_ms"),
                         "stage1_deadline_remaining_ms_at_scan_start": scan_stats.get("stage1_deadline_remaining_ms_at_scan_start"),
+                        "stage1_remaining_ms_at_scan_start": scan_stats.get("stage1_remaining_ms_at_scan_start"),
+                        "stage1_remaining_ms_before_scheduling": scan_stats.get("stage1_remaining_ms_before_scheduling"),
+                        "scan_schedule_ms": scan_stats.get("scan_schedule_ms"),
+                        "scan_await_ms": scan_stats.get("scan_await_ms"),
+                        "expand_ms": scan_stats.get("expand_ms"),
+                        "beam_ms": scan_stats.get("beam_ms"),
+                        "candidates_initial": scan_stats.get("candidates_initial"),
+                        "candidates_after_beam": scan_stats.get("candidates_after_beam"),
+                        "candidates_after_multidex": scan_stats.get("candidates_after_multidex"),
+                        "capped_by_max_candidates_stage1": scan_stats.get("capped_by_max_candidates_stage1"),
+                        "capped_by_max_total_expanded": scan_stats.get("capped_by_max_total_expanded"),
+                        "capped_by_max_expanded_per_candidate": scan_stats.get("capped_by_max_expanded_per_candidate"),
                         "reason_if_zero_scheduled": scan_stats.get("reason_if_zero_scheduled"),
                         "sanity_rejects_total": scan_stats.get("sanity_rejects_total"),
                         "rejects_by_reason": scan_stats.get("rejects_by_reason"),
@@ -1753,8 +2219,11 @@ async def main() -> None:
                         "GAS_OFF": "1" if _env_flag("GAS_OFF") else "0",
                         "FIXED_GAS_UNITS": str(os.getenv("FIXED_GAS_UNITS", "")),
                         "ENABLE_MULTIDEX": "1" if enable_multidex else "0",
+                        "SCAN_SOURCE": str(scan_source),
+                        "MEMPOOL_ENABLED": "1" if mempool_on else "0",
                     },
                 )
+                await _confirm_mempool(mempool_engine, int(block_ctx.block_number))
                 continue
 
             best_profit = max((float(p.get("profit_adj", p.get("profit", 0))) for p in profitable), default=0.0)
@@ -1773,6 +2242,18 @@ async def main() -> None:
                     "prepare_ms": scan_stats.get("prepare_ms"),
                     "scan_start_delay_ms": scan_stats.get("scan_start_delay_ms"),
                     "stage1_deadline_remaining_ms_at_scan_start": scan_stats.get("stage1_deadline_remaining_ms_at_scan_start"),
+                    "stage1_remaining_ms_at_scan_start": scan_stats.get("stage1_remaining_ms_at_scan_start"),
+                    "stage1_remaining_ms_before_scheduling": scan_stats.get("stage1_remaining_ms_before_scheduling"),
+                    "scan_schedule_ms": scan_stats.get("scan_schedule_ms"),
+                    "scan_await_ms": scan_stats.get("scan_await_ms"),
+                    "expand_ms": scan_stats.get("expand_ms"),
+                    "beam_ms": scan_stats.get("beam_ms"),
+                    "candidates_initial": scan_stats.get("candidates_initial"),
+                    "candidates_after_beam": scan_stats.get("candidates_after_beam"),
+                    "candidates_after_multidex": scan_stats.get("candidates_after_multidex"),
+                    "capped_by_max_candidates_stage1": scan_stats.get("capped_by_max_candidates_stage1"),
+                    "capped_by_max_total_expanded": scan_stats.get("capped_by_max_total_expanded"),
+                    "capped_by_max_expanded_per_candidate": scan_stats.get("capped_by_max_expanded_per_candidate"),
                     "reason_if_zero_scheduled": scan_stats.get("reason_if_zero_scheduled"),
                     "sanity_rejects_total": scan_stats.get("sanity_rejects_total"),
                     "rejects_by_reason": scan_stats.get("rejects_by_reason"),
@@ -1810,6 +2291,18 @@ async def main() -> None:
                     "prepare_ms": scan_stats.get("prepare_ms"),
                     "scan_start_delay_ms": scan_stats.get("scan_start_delay_ms"),
                     "stage1_deadline_remaining_ms_at_scan_start": scan_stats.get("stage1_deadline_remaining_ms_at_scan_start"),
+                    "stage1_remaining_ms_at_scan_start": scan_stats.get("stage1_remaining_ms_at_scan_start"),
+                    "stage1_remaining_ms_before_scheduling": scan_stats.get("stage1_remaining_ms_before_scheduling"),
+                    "scan_schedule_ms": scan_stats.get("scan_schedule_ms"),
+                    "scan_await_ms": scan_stats.get("scan_await_ms"),
+                    "expand_ms": scan_stats.get("expand_ms"),
+                    "beam_ms": scan_stats.get("beam_ms"),
+                    "candidates_initial": scan_stats.get("candidates_initial"),
+                    "candidates_after_beam": scan_stats.get("candidates_after_beam"),
+                    "candidates_after_multidex": scan_stats.get("candidates_after_multidex"),
+                    "capped_by_max_candidates_stage1": scan_stats.get("capped_by_max_candidates_stage1"),
+                    "capped_by_max_total_expanded": scan_stats.get("capped_by_max_total_expanded"),
+                    "capped_by_max_expanded_per_candidate": scan_stats.get("capped_by_max_expanded_per_candidate"),
                     "reason_if_zero_scheduled": scan_stats.get("reason_if_zero_scheduled"),
                     "sanity_rejects_total": scan_stats.get("sanity_rejects_total"),
                     "rejects_by_reason": scan_stats.get("rejects_by_reason"),
@@ -1857,14 +2350,19 @@ async def main() -> None:
                     "GAS_OFF": "1" if _env_flag("GAS_OFF") else "0",
                     "FIXED_GAS_UNITS": str(os.getenv("FIXED_GAS_UNITS", "")),
                     "ENABLE_MULTIDEX": "1" if enable_multidex else "0",
+                    "SCAN_SOURCE": str(scan_source),
+                    "MEMPOOL_ENABLED": "1" if mempool_on else "0",
                 },
             )
 
             for payload in profitable:
                 await simulate(payload, int(block_ctx.block_number))
             log(iteration, profitable, int(block_ctx.block_number))
+            await _confirm_mempool(mempool_engine, int(block_ctx.block_number))
 
     finally:
+        if mempool_engine:
+            await mempool_engine.stop()
         _write_session_summary(
             started_at=session_started_at,
             updated_at=datetime.utcnow(),
@@ -1880,6 +2378,8 @@ async def main() -> None:
                 "GAS_OFF": "1" if _env_flag("GAS_OFF") else "0",
                 "FIXED_GAS_UNITS": str(os.getenv("FIXED_GAS_UNITS", "")),
                 "ENABLE_MULTIDEX": "1" if enable_multidex else "0",
+                "SCAN_SOURCE": str(scan_source),
+                "MEMPOOL_ENABLED": "1" if mempool_on else "0",
             },
         )
         try:

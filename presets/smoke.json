@@ -1,0 +1,33 @@
+{
+  "id": "smoke",
+  "name": "Smoke",
+  "description": "Tiny workload to verify wiring and logs quickly.",
+  "settings": {
+    "sim_profile": "default",
+    "gas_off": true,
+    "debug_funnel": true,
+    "dex_adapters": ["univ3"],
+    "enable_multidex_beam": false,
+    "max_hops": 2,
+    "beam_k": 6,
+    "edge_top_m": 1,
+    "reporting_currency": "USDC",
+    "probe_amount": 1,
+    "stage1_amount": 1,
+    "amounts": [10],
+    "stage2_amount_range": [1000, 3000],
+    "scan_mode": "auto",
+    "stage2_top_k": 50,
+    "stage2_max_evals": 8,
+    "rpc_timeout_stage1_s": 3,
+    "rpc_timeout_stage2_s": 4,
+    "v2_min_reserve_ratio": 0,
+    "v2_max_price_impact_bps": 0,
+    "slippage_safety_bps": 0,
+    "mev_buffer_bps": 0,
+    "max_gas_gwei": null,
+    "concurrency": 8,
+    "block_budget_s": 15,
+    "fixed_gas_units": 0
+  }
+}

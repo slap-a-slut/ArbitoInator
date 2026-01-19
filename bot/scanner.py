@@ -700,6 +700,7 @@ class PriceScanner:
                     if err_info:
                         err_reason = str(err_info.get("reason") or err_reason)
                         err_details["error"] = str(err_info.get("error") or "")
+                    err_details["dex_id"] = str(hop.dex_id)
                 else:
                     errs = []
                     for dex_id in self.adapters.keys():
@@ -717,6 +718,7 @@ class PriceScanner:
                     if errs:
                         err_reason = errs[0]
                         err_details["error_reasons"] = errs[:3]
+                    err_details["dex_id"] = list(self.adapters.keys())
                 out = _error_payload(
                     route,
                     amount_in,
@@ -736,6 +738,7 @@ class PriceScanner:
                     "amount_in": int(amount_in),
                     "amount_out": int(q.amount_out),
                 }
+                details["dex_id"] = str(q.dex_id)
                 out = _error_payload(
                     route,
                     amount_in,
@@ -767,6 +770,7 @@ class PriceScanner:
                     "raw_len": last_meta.get("raw_len"),
                     "raw_prefix": last_meta.get("raw_prefix"),
                 }
+                details["dex_id"] = str(q.dex_id)
                 out = _error_payload(
                     route,
                     amount_in,
@@ -829,6 +833,7 @@ class PriceScanner:
                 "raw_len": last_meta.get("raw_len"),
                 "raw_prefix": last_meta.get("raw_prefix"),
             }
+            details["dex_id"] = str(last_meta.get("dex_id") or "")
             out = _error_payload(
                 route,
                 amount_in,

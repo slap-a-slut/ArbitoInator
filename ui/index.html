@@ -347,6 +347,14 @@
     }
     .stat .k{ color: rgba(255,255,255,0.70); font-size: 12px; }
     .stat .v{ font-size: 18px; font-weight: 700; margin-top: 4px; }
+    .mempoolPanel{ margin-top:16px; background: rgba(10,12,16,0.55); border:1px solid rgba(255,255,255,0.06); border-radius:16px; padding:12px; }
+    .mempoolPanel .panelHead{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
+    .mempoolPanel .panelHead h3{ margin:0; font-size:13px; letter-spacing:0.04em; text-transform:uppercase; color:rgba(255,255,255,0.7); }
+    .mempoolStats .v{ font-size:14px; }
+    .mempoolLists{ display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:10px; margin-top:10px; }
+    .mempoolList{ background: rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:8px; min-height:120px; }
+    .mempoolList .label{ font-size:11px; color: rgba(255,255,255,0.6); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.04em; }
+    .mempoolList .list{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11px; line-height:1.35; max-height:160px; overflow:auto; white-space:pre; }
 
     .chartWrap{
       border-radius: 18px;
@@ -652,12 +660,57 @@
               </div>
             </div>
           </div>
+
+          <div class="mempoolPanel">
+            <div class="panelHead">
+              <h3>Mempool</h3>
+              <button id="copyDebugBtn" class="btn">Copy debug summary</button>
+            </div>
+            <div class="stats mempoolStats">
+              <div class="stat">
+                <div class="k">WS</div>
+                <div class="v" id="mpWs">—</div>
+              </div>
+              <div class="stat">
+                <div class="k">Hashes/sec</div>
+                <div class="v" id="mpRate">0</div>
+              </div>
+              <div class="stat">
+                <div class="k">Fetch success</div>
+                <div class="v" id="mpFetch">0%</div>
+              </div>
+              <div class="stat">
+                <div class="k">Triggers</div>
+                <div class="v" id="mpTriggers">0/0</div>
+              </div>
+            </div>
+            <div class="mempoolLists">
+              <div class="mempoolList">
+                <div class="label">Decoded swaps</div>
+                <div class="list" id="mpSwaps">—</div>
+              </div>
+              <div class="mempoolList">
+                <div class="label">Trigger scans</div>
+                <div class="list" id="mpTriggerScans">—</div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Settings (editable from UI) -->
         <div class="settings" id="settings">
           <h3>Settings</h3>
           <div class="settingsGrid">
+            <div class="field" style="grid-column: 1 / -1;">
+              <label for="cfgPreset">Preset</label>
+              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <select id="cfgPreset">
+                  <option value="">— select preset —</option>
+                </select>
+                <button id="applyPresetBtn" class="btn">Apply preset</button>
+              </div>
+              <small id="cfgPresetDesc">Select a preset to populate the fields below.</small>
+            </div>
             <div class="field" style="grid-column: 1 / -1;">
               <label for="cfgRpcUrls">RPC URLs (parallel pool)</label>
               <textarea id="cfgRpcUrls" rows="3" class="mono" placeholder="https://rpc1\nhttps://rpc2\n..." style="width:100%; resize:vertical;"></textarea>
@@ -733,6 +786,15 @@
               <label for="cfgConc">Concurrency</label>
               <input id="cfgConc" type="number" step="1" min="1" max="200" />
               <small>RPC parallel quotes (25-50 typical)</small>
+            </div>
+            <div class="field">
+              <label for="cfgScanSource">Scan source</label>
+              <select id="cfgScanSource">
+                <option value="block">block scanning</option>
+                <option value="mempool">mempool-triggered</option>
+                <option value="hybrid">hybrid</option>
+              </select>
+              <small>block = current pipeline; mempool = pending tx triggers; hybrid = both</small>
             </div>
             <div class="field">
               <label for="cfgMode">Scan mode</label>
@@ -821,6 +883,36 @@
               <input id="cfgFixedGas" type="number" step="1000" min="0" placeholder="0" />
               <small>override gas units (0 = auto)</small>
             </div>
+            <div class="field" style="grid-column: 1 / -1; margin-top: 8px;">
+              <label for="cfgMempoolWs">Mempool WS URLs</label>
+              <textarea id="cfgMempoolWs" rows="2" class="mono" placeholder="wss://rpc1\nwss://rpc2" style="width:100%; resize:vertical;"></textarea>
+              <small>Public WS endpoints for pending tx stream (one per line or comma-separated).</small>
+            </div>
+            <div class="field">
+              <label for="cfgMempoolMinUsd">Mempool min value (USD)</label>
+              <input id="cfgMempoolMinUsd" type="number" step="1" min="0" />
+              <small>ignore tiny swaps (stables/WETH heuristic)</small>
+            </div>
+            <div class="field">
+              <label for="cfgMempoolInflight">Mempool max inflight</label>
+              <input id="cfgMempoolInflight" type="number" step="1" min="10" />
+              <small>hash queue size limit</small>
+            </div>
+            <div class="field">
+              <label for="cfgMempoolFetchConc">Mempool fetch concurrency</label>
+              <input id="cfgMempoolFetchConc" type="number" step="1" min="1" />
+              <small>tx fetch parallelism</small>
+            </div>
+            <div class="field">
+              <label for="cfgMempoolDedup">Mempool dedup TTL (s)</label>
+              <input id="cfgMempoolDedup" type="number" step="1" min="30" />
+              <small>avoid duplicate hashes</small>
+            </div>
+            <div class="field">
+              <label for="cfgMempoolBudget">Trigger scan budget (s)</label>
+              <input id="cfgMempoolBudget" type="number" step="0.1" min="0.5" />
+              <small>short pre-block scan per trigger</small>
+            </div>
           </div>
           <div class="settingsActions">
             <button id="saveCfgBtn" class="btn">save</button>
@@ -903,6 +995,9 @@
   let profitCurrency = 'USDC'; // currently displayed currency
   const logItems = [];
   const profitEvents = []; // {t, block, profit, route, sym}
+  const mempoolSwaps = [];
+  const mempoolTriggerScans = [];
+  let mempoolStatus = null;
 
   // Settings elements
   const cfgRpcUrls = document.getElementById('cfgRpcUrls');
@@ -919,6 +1014,7 @@
   const cfgMev = document.getElementById('cfgMev');
   const cfgGas = document.getElementById('cfgGas');
   const cfgConc = document.getElementById('cfgConc');
+  const cfgScanSource = document.getElementById('cfgScanSource');
   const cfgMode = document.getElementById('cfgMode');
   const cfgBudget = document.getElementById('cfgBudget');
   const cfgAmts = document.getElementById('cfgAmts');
@@ -934,9 +1030,25 @@
   const cfgDebugFunnel = document.getElementById('cfgDebugFunnel');
   const cfgGasOff = document.getElementById('cfgGasOff');
   const cfgFixedGas = document.getElementById('cfgFixedGas');
+  const cfgMempoolWs = document.getElementById('cfgMempoolWs');
+  const cfgMempoolMinUsd = document.getElementById('cfgMempoolMinUsd');
+  const cfgMempoolInflight = document.getElementById('cfgMempoolInflight');
+  const cfgMempoolFetchConc = document.getElementById('cfgMempoolFetchConc');
+  const cfgMempoolDedup = document.getElementById('cfgMempoolDedup');
+  const cfgMempoolBudget = document.getElementById('cfgMempoolBudget');
+  const cfgPreset = document.getElementById('cfgPreset');
+  const cfgPresetDesc = document.getElementById('cfgPresetDesc');
+  const applyPresetBtn = document.getElementById('applyPresetBtn');
   const saveCfgBtn = document.getElementById('saveCfgBtn');
   const applyCfgBtn = document.getElementById('applyCfgBtn');
   const dealsTable = document.getElementById('dealsTable');
+  const mpWs = document.getElementById('mpWs');
+  const mpRate = document.getElementById('mpRate');
+  const mpFetch = document.getElementById('mpFetch');
+  const mpTriggers = document.getElementById('mpTriggers');
+  const mpSwaps = document.getElementById('mpSwaps');
+  const mpTriggerScans = document.getElementById('mpTriggerScans');
+  const copyDebugBtn = document.getElementById('copyDebugBtn');
 
   // -----------------------------
   // Formatting helpers (avoid scientific notation in UI)
@@ -992,6 +1104,147 @@
     } catch {
       return num.toFixed(decimals) + '%';
     }
+  }
+
+  function renderMempoolStatus(){
+    if (!mpWs || !mpRate || !mpFetch || !mpTriggers) return;
+    const st = mempoolStatus || {};
+    const connected = !!st.ws_connected;
+    const wsLabel = connected ? 'connected' : 'offline';
+    mpWs.textContent = wsLabel;
+    mpWs.style.color = connected ? 'var(--good)' : 'var(--muted)';
+    const rate = Number(st.tx_hash_rate || 0);
+    mpRate.textContent = rate.toFixed(2);
+    const fetchRate = Number(st.tx_fetch_success_rate || 0) * 100;
+    mpFetch.textContent = Number.isFinite(fetchRate) ? fetchRate.toFixed(1) + '%' : '—';
+    const queued = Number(st.triggers_queued || 0);
+    const running = Number(st.triggers_running || 0);
+    mpTriggers.textContent = `${queued}/${running}`;
+    if (lastBlockEl && st.current_block) {
+      lastBlockEl.textContent = String(st.current_block);
+    }
+  }
+
+  function renderMempoolSwaps(){
+    if (!mpSwaps) return;
+    if (!mempoolSwaps.length) {
+      mpSwaps.textContent = '—';
+      return;
+    }
+    const lines = mempoolSwaps.slice(-20).map((s) => {
+      const kind = s.kind || 'swap';
+      const tin = s.token_in ? s.token_in.slice(0, 6) + '…' + s.token_in.slice(-4) : '?';
+      const tout = s.token_out ? s.token_out.slice(0, 6) + '…' + s.token_out.slice(-4) : '?';
+      const amt = (s.amount_in != null) ? String(s.amount_in) : '?';
+      return `${kind} ${tin}->${tout} in=${amt}`;
+    });
+    mpSwaps.textContent = lines.join('\n');
+  }
+
+  function renderMempoolTriggers(){
+    if (!mpTriggerScans) return;
+    if (!mempoolTriggerScans.length) {
+      mpTriggerScans.textContent = '—';
+      return;
+    }
+    const lines = mempoolTriggerScans.slice(-20).map((t) => {
+      const outcome = t.outcome || 'no_hit';
+      const net = Number(t.best_net || 0).toFixed(4);
+      const route = t.best_route ? String(t.best_route) : '—';
+      return `${outcome} net=${net} ${route}`;
+    });
+    mpTriggerScans.textContent = lines.join('\n');
+  }
+
+  function pushMempoolSwap(entry){
+    mempoolSwaps.push(entry);
+    if (mempoolSwaps.length > 20) mempoolSwaps.shift();
+    renderMempoolSwaps();
+  }
+
+  function pushMempoolTrigger(entry){
+    mempoolTriggerScans.push(entry);
+    if (mempoolTriggerScans.length > 20) mempoolTriggerScans.shift();
+    renderMempoolTriggers();
+  }
+
+  function parseCsvList(value){
+    if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter((v) => v.length > 0);
+    const text = String(value || '').trim();
+    if (!text) return [];
+    return text.split(',').map((v) => String(v).trim()).filter((v) => v.length > 0);
+  }
+
+  function parseCsvNumbers(value){
+    return parseCsvList(value).map((v) => Number(v)).filter((v) => Number.isFinite(v));
+  }
+
+  function formatCsvList(value){
+    if (Array.isArray(value)) return value.join(',');
+    if (typeof value === 'string') return value;
+    return '';
+  }
+
+  function parseRangeValue(value){
+    if (Array.isArray(value) && value.length >= 2) {
+      const min = Number(value[0]);
+      const max = Number(value[1]);
+      return {
+        min: Number.isFinite(min) ? min : null,
+        max: Number.isFinite(max) ? max : null,
+      };
+    }
+    const text = String(value || '').trim();
+    if (!text) return { min: null, max: null };
+    if (text.includes('..')) {
+      const parts = text.split('..').map((v) => v.trim());
+      const min = Number(parts[0]);
+      const max = Number(parts[1]);
+      return {
+        min: Number.isFinite(min) ? min : null,
+        max: Number.isFinite(max) ? max : null,
+      };
+    }
+    const n = Number(text);
+    return { min: Number.isFinite(n) ? n : null, max: null };
+  }
+
+  function formatRangeValue(min, max){
+    if (min == null && max == null) return '';
+    const left = (min == null) ? '' : String(min);
+    const right = (max == null) ? '' : String(max);
+    return `${left}..${right}`;
+  }
+
+  function normalizePresetSettings(raw){
+    if (!raw || typeof raw !== 'object') return {};
+    const alias = {
+      dex_adapters: 'dexes',
+      enable_multidex_beam: 'enable_multidex',
+      reporting_currency: 'report_currency',
+      amounts: 'amount_presets',
+      slippage_safety_bps: 'slippage_bps',
+    };
+    const out = {};
+    Object.entries(raw).forEach(([key, value]) => {
+      if (key === 'stage2_amount_range') {
+        const parsed = parseRangeValue(value);
+        if (parsed.min != null) out.stage2_amount_min = parsed.min;
+        if (parsed.max != null) out.stage2_amount_max = parsed.max;
+        return;
+      }
+      const mapped = alias[key] || key;
+      if (mapped === 'dexes') {
+        out[mapped] = parseCsvList(value);
+        return;
+      }
+      if (mapped === 'amount_presets') {
+        out[mapped] = parseCsvNumbers(value);
+        return;
+      }
+      out[mapped] = value;
+    });
+    return out;
   }
 
   function currentTotalProfit(){
@@ -1168,6 +1421,7 @@
           time: (entry && entry.time != null) ? String(entry.time) : '',
           block: (entry && typeof entry.block === 'number') ? entry.block : null,
           text: (entry && entry.text != null) ? String(entry.text) : '',
+          meta: (entry && entry.meta && typeof entry.meta === 'object') ? entry.meta : null,
         };
         logItems.push(e);
         renderLogEntry(e);
@@ -1343,8 +1597,24 @@
     }
   }
 
-  function addLog({type, time, block, text}){
-    const entry = { type: type || 'log', time: time || '', block: block ?? null, text: text || '' };
+  function addLog(msg){
+    const payload = (msg && typeof msg === 'object') ? msg : {};
+    const type = payload.type;
+    const time = payload.time;
+    const block = payload.block;
+    const text = payload.text;
+    const meta = Object.assign({}, payload);
+    delete meta.type;
+    delete meta.time;
+    delete meta.block;
+    delete meta.text;
+    const entry = {
+      type: type || 'log',
+      time: time || '',
+      block: block ?? null,
+      text: text || '',
+      meta: Object.keys(meta).length ? meta : null,
+    };
     logItems.push(entry);
     if (logItems.length > MAX_LOGS) logItems.shift();
     renderLogEntry(entry);
@@ -1693,6 +1963,19 @@
         }
       }
 
+      if (msg.type === 'mempool_status'){
+        mempoolStatus = msg;
+        renderMempoolStatus();
+      }
+
+      if (msg.type === 'mempool_swap'){
+        pushMempoolSwap(msg);
+      }
+
+      if (msg.type === 'trigger_scan'){
+        pushMempoolTrigger(msg);
+      }
+
       if (msg.type === 'profit'){
         if (typeof msg.block === 'number') lastBlockEl.textContent = String(msg.block);
         // Prefer structured fields from the bot; fall back to parsing text.
@@ -1786,15 +2069,102 @@
     return r.json().catch(()=>({ok:false}));
   }
 
+  async function fetchMempoolStatus(){
+    return fetch('/api/mempool/status').then((r)=>r.json()).catch(()=>({ok:false}));
+  }
+
+  async function fetchMempoolRecent(){
+    return fetch('/api/mempool/recent').then((r)=>r.json()).catch(()=>({ok:false}));
+  }
+
+  async function fetchMempoolTriggers(){
+    return fetch('/api/mempool/triggers').then((r)=>r.json()).catch(()=>({ok:false}));
+  }
+
+  async function refreshMempoolPanels(){
+    const [s, r, t] = await Promise.all([fetchMempoolStatus(), fetchMempoolRecent(), fetchMempoolTriggers()]);
+    if (s && s.ok) {
+      mempoolStatus = s.status || null;
+      renderMempoolStatus();
+    }
+    if (r && r.ok && Array.isArray(r.recent)) {
+      mempoolSwaps.length = 0;
+      r.recent.forEach((x) => mempoolSwaps.push(x));
+      renderMempoolSwaps();
+    }
+    if (t && t.ok && Array.isArray(t.triggers)) {
+      mempoolTriggerScans.length = 0;
+      t.triggers.forEach((x) => mempoolTriggerScans.push(x));
+      renderMempoolTriggers();
+    }
+  }
+
+  async function fetchPresetIndex(){
+    return fetch('/api/presets').then((r)=>r.json()).catch(()=>({ok:false}));
+  }
+
+  async function fetchPresetById(id){
+    return fetch(`/api/presets/${encodeURIComponent(id)}`).then((r)=>r.json()).catch(()=>({ok:false}));
+  }
+
+  const presetById = {};
+
+  async function loadPresetIndex(){
+    if (!cfgPreset) return;
+    const out = await fetchPresetIndex();
+    if (!out || !out.ok || !Array.isArray(out.presets)) return;
+    Object.keys(presetById).forEach((k) => { delete presetById[k]; });
+    cfgPreset.textContent = '';
+    const empty = document.createElement('option');
+    empty.value = '';
+    empty.textContent = '— select preset —';
+    cfgPreset.appendChild(empty);
+    out.presets.forEach((p) => {
+      if (!p || typeof p !== 'object') return;
+      const id = String(p.id || '').trim();
+      if (!id) return;
+      presetById[id] = p;
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = String(p.name || id);
+      cfgPreset.appendChild(opt);
+    });
+    if (cfgPresetDesc) cfgPresetDesc.textContent = 'Select a preset to populate the fields below.';
+  }
+
+  function updatePresetDesc(){
+    if (!cfgPresetDesc || !cfgPreset) return;
+    const id = String(cfgPreset.value || '');
+    if (!id) {
+      cfgPresetDesc.textContent = 'Select a preset to populate the fields below.';
+      return;
+    }
+    const p = presetById[id];
+    cfgPresetDesc.textContent = (p && p.description) ? String(p.description) : 'Preset loaded.';
+  }
+
+  async function applyPresetSelection(){
+    if (!cfgPreset) return;
+    const id = String(cfgPreset.value || '').trim();
+    if (!id) {
+      setNotice('warn', 'Select a preset first');
+      return;
+    }
+    const out = await fetchPresetById(id);
+    if (!out || !out.ok || !out.preset) {
+      setNotice('warn', 'Preset load failed');
+      return;
+    }
+    const preset = out.preset || {};
+    const normalized = normalizePresetSettings(preset.settings || {});
+    const merged = { ...cfgFromForm(), ...normalized };
+    fillForm(merged);
+    setNotice('status', `Preset applied: ${String(preset.name || id)}`);
+  }
+
   function cfgFromForm(){
     // range parsing: "min..max"
-    let rmin = null; let rmax = null;
-    const r = String(cfgRange.value || '').trim();
-    if (r.includes('..')){
-      const parts = r.split('..').map(x=>x.trim());
-      rmin = Number(parts[0]);
-      rmax = Number(parts[1]);
-    }
+    const range = parseRangeValue(cfgRange.value);
     return {
       rpc_urls: String(cfgRpcUrls?.value || '').trim(),
       dexes: String(cfgDexes?.value || '').trim(),
@@ -1810,6 +2180,7 @@
       mev_buffer_bps: parseInt(cfgMev.value || '0', 10),
       max_gas_gwei: (cfgGas.value === '' ? null : Number(cfgGas.value)),
       concurrency: parseInt(cfgConc.value || '10', 10),
+      scan_source: String(cfgScanSource?.value || 'block'),
       block_budget_s: Number(cfgBudget.value || 10),
       scan_mode: String(cfgMode.value || 'auto'),
 
@@ -1817,8 +2188,8 @@
 
       stage1_amount: Number(cfgS1Amt.value || 1),
       stage2_top_k: parseInt(cfgTopK.value || '30', 10),
-      stage2_amount_min: (rmin == null || !isFinite(rmin)) ? null : rmin,
-      stage2_amount_max: (rmax == null || !isFinite(rmax)) ? null : rmax,
+      stage2_amount_min: (range.min == null || !isFinite(range.min)) ? null : range.min,
+      stage2_amount_max: (range.max == null || !isFinite(range.max)) ? null : range.max,
       stage2_max_evals: parseInt(cfgEvals.value || '6', 10),
 
       rpc_timeout_stage1_s: Number(cfgT1.value || 3),
@@ -1829,6 +2200,14 @@
       debug_funnel: !!cfgDebugFunnel?.checked,
       gas_off: !!cfgGasOff?.checked,
       fixed_gas_units: Number(cfgFixedGas?.value || 0),
+
+      mempool_enabled: String(cfgScanSource?.value || 'block') !== 'block',
+      mempool_ws_urls: String(cfgMempoolWs?.value || '').trim(),
+      mempool_min_value_usd: Number(cfgMempoolMinUsd?.value || 25),
+      mempool_max_inflight_tx: parseInt(cfgMempoolInflight?.value || '200', 10),
+      mempool_fetch_tx_concurrency: parseInt(cfgMempoolFetchConc?.value || '20', 10),
+      mempool_dedup_ttl_s: parseInt(cfgMempoolDedup?.value || '120', 10),
+      mempool_trigger_scan_budget_s: Number(cfgMempoolBudget?.value || 1.5),
     };
   }
 
@@ -1839,7 +2218,7 @@
     }
     if (cfgDexes) {
       const dx = cfg.dexes;
-      cfgDexes.value = Array.isArray(dx) ? dx.join(',') : String(dx || '');
+      cfgDexes.value = formatCsvList(dx) || String(dx || '');
     }
     if (cfgEnableMultidex) cfgEnableMultidex.checked = !!cfg.enable_multidex;
     if (cfgMaxHops) cfgMaxHops.value = String(cfg.max_hops ?? 3);
@@ -1857,16 +2236,20 @@
     cfgMev.value = String(cfg.mev_buffer_bps ?? 5);
     cfgGas.value = (cfg.max_gas_gwei == null ? '' : String(cfg.max_gas_gwei));
     cfgConc.value = String(cfg.concurrency ?? 10);
+    if (cfgScanSource) {
+      const src = String(cfg.scan_source || 'block').trim().toLowerCase();
+      cfgScanSource.value = ['block','mempool','hybrid'].includes(src) ? src : 'block';
+    }
     cfgMode.value = String(cfg.scan_mode ?? 'auto');
     cfgBudget.value = String(cfg.block_budget_s ?? 10);
     const ap = cfg.amount_presets;
-    cfgAmts.value = Array.isArray(ap) ? ap.join(',') : String(ap ?? '1,3,10');
+    cfgAmts.value = formatCsvList(ap) || String(ap ?? '1,3,10');
 
     cfgS1Amt.value = String(cfg.stage1_amount ?? 1);
     cfgTopK.value = String(cfg.stage2_top_k ?? 30);
     const rmin = cfg.stage2_amount_min ?? 0.5;
     const rmax = cfg.stage2_amount_max ?? 50;
-    cfgRange.value = String(rmin) + '..' + String(rmax);
+    cfgRange.value = formatRangeValue(rmin, rmax);
     cfgEvals.value = String(cfg.stage2_max_evals ?? 6);
     cfgT1.value = String(cfg.rpc_timeout_stage1_s ?? 3);
     cfgT2.value = String(cfg.rpc_timeout_stage2_s ?? 4);
@@ -1876,6 +2259,15 @@
     if (cfgDebugFunnel) cfgDebugFunnel.checked = !!cfg.debug_funnel;
     if (cfgGasOff) cfgGasOff.checked = !!cfg.gas_off;
     if (cfgFixedGas) cfgFixedGas.value = String(cfg.fixed_gas_units ?? 0);
+    if (cfgMempoolWs) {
+      const ws = cfg.mempool_ws_urls;
+      cfgMempoolWs.value = Array.isArray(ws) ? ws.join('\n') : String(ws || '');
+    }
+    if (cfgMempoolMinUsd) cfgMempoolMinUsd.value = String(cfg.mempool_min_value_usd ?? 25);
+    if (cfgMempoolInflight) cfgMempoolInflight.value = String(cfg.mempool_max_inflight_tx ?? 200);
+    if (cfgMempoolFetchConc) cfgMempoolFetchConc.value = String(cfg.mempool_fetch_tx_concurrency ?? 20);
+    if (cfgMempoolDedup) cfgMempoolDedup.value = String(cfg.mempool_dedup_ttl_s ?? 120);
+    if (cfgMempoolBudget) cfgMempoolBudget.value = String(cfg.mempool_trigger_scan_budget_s ?? 1.5);
     updateStats();
     drawChart();
     rebuildProfitTable();
@@ -1956,6 +2348,34 @@
     // actual state will be updated by WS status message
   });
 
+  if (cfgPreset) {
+    cfgPreset.addEventListener('change', updatePresetDesc);
+  }
+  if (applyPresetBtn) {
+    applyPresetBtn.addEventListener('click', applyPresetSelection);
+  }
+  if (copyDebugBtn) {
+    copyDebugBtn.addEventListener('click', async () => {
+      const lastSwap = mempoolSwaps[mempoolSwaps.length - 1] || null;
+      const lastTrigger = mempoolTriggerScans[mempoolTriggerScans.length - 1] || null;
+      const lines = [
+        `last_block=${lastBlockEl ? lastBlockEl.textContent : '—'}`,
+        `mempool_ws=${mempoolStatus && mempoolStatus.ws_connected ? 'connected' : 'offline'}`,
+        `hash_rate=${mempoolStatus ? Number(mempoolStatus.tx_hash_rate || 0).toFixed(2) : '0'}`,
+        `fetch_success=${mempoolStatus ? (Number(mempoolStatus.tx_fetch_success_rate || 0) * 100).toFixed(1) + '%' : '0%'}`,
+        `last_swap=${lastSwap ? (lastSwap.kind + ' ' + (lastSwap.token_in || '?') + '->' + (lastSwap.token_out || '?')) : '—'}`,
+        `last_trigger=${lastTrigger ? (lastTrigger.outcome + ' net=' + Number(lastTrigger.best_net || 0).toFixed(4)) : '—'}`,
+      ];
+      const text = lines.join('\n');
+      try {
+        await navigator.clipboard.writeText(text);
+        setNotice('status', 'Debug summary copied');
+      } catch {
+        setNotice('warn', 'Copy failed');
+      }
+    });
+  }
+
   // -----------------------------
   // Init
   const restored = restoreState();
@@ -1965,6 +2385,9 @@
   getConfig().then((c)=>{
     if (c && c.ok) fillForm(c.config || {});
   }).catch(()=>{});
+  loadPresetIndex();
+  refreshMempoolPanels();
+  setInterval(refreshMempoolPanels, 2500);
 
   fetchServerState();
   connectWS();

@@ -1,0 +1,33 @@
+{
+  "id": "balanced",
+  "name": "Balanced",
+  "description": "Balanced coverage and latency for general testing.",
+  "settings": {
+    "sim_profile": "default",
+    "gas_off": true,
+    "debug_funnel": true,
+    "dex_adapters": ["univ3", "univ2", "sushiswap"],
+    "enable_multidex_beam": true,
+    "max_hops": 3,
+    "beam_k": 12,
+    "edge_top_m": 2,
+    "reporting_currency": "USDC",
+    "probe_amount": 1,
+    "stage1_amount": 1,
+    "amounts": [10, 50, 100],
+    "stage2_amount_range": [1000, 8000],
+    "scan_mode": "auto",
+    "stage2_top_k": 120,
+    "stage2_max_evals": 16,
+    "rpc_timeout_stage1_s": 4,
+    "rpc_timeout_stage2_s": 6,
+    "v2_min_reserve_ratio": 0,
+    "v2_max_price_impact_bps": 0,
+    "slippage_safety_bps": 0,
+    "mev_buffer_bps": 0,
+    "max_gas_gwei": null,
+    "concurrency": 12,
+    "block_budget_s": 30,
+    "fixed_gas_units": 0
+  }
+}

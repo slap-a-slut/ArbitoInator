@@ -108,9 +108,40 @@ UI заметки:
   - edge_top_m → сколько лучших quotes брать на hop  
   - probe_amount → объём для prefilter  
   - prepare_budget_ratio / prepare_budget_min_s / prepare_budget_max_s → бюджет на prepare_block  
+  - expand_ratio_cap / expand_budget_max_s → лимит бюджета на multidex expansion  
+  - min_scan_reserve_s / min_first_task_s → резерв времени на скан и правило "schedule at least one"  
   - max_candidates_stage1 → жёсткий лимит кандидатов на stage1  
   - max_total_expanded / max_expanded_per_candidate → лимиты на multidex expansion  
   - rpc_timeout_s / rpc_retry_count → общий таймаут и ретраи RPC  
+
+## Presets (UI тестовые профили)
+Пресеты лежат в `presets/` (по одному JSON на профиль). UI подхватывает их автоматически.
+
+Как добавить новый пресет:
+1) Создайте `presets/<id>.json` с полями `id`, `name`, `description`, `settings`.
+2) В `settings` указывайте поддерживаемые ключи (см. текущие пресеты за пример).
+3) Перезапустите UI-сервер (или просто обновите страницу, сервер перечитает файлы).
+
+Как использовать:
+- В панели Settings выберите пресет и нажмите “Apply preset”.
+- Поля формы заполнятся, но сохранять/перезапускать нужно вручную через “save” или “apply & restart”.
+
+## Mempool mode (pending tx triggers)
+В проект добавлен мемпул-слой: мы слушаем публичный WS mempool, декодируем свопы и запускаем быстрый “pre‑scan” до майнинга блока. Никаких реальных транзакций не отправляется — это только симуляция.
+
+Как включить:
+1) В UI выберите `Scan source: mempool` или `hybrid`.
+2) Укажите WS URL в `Mempool WS URLs` (публичный провайдер с поддержкой `newPendingTransactions`).
+3) Нажмите `save` и затем `apply & restart`.
+
+Что означает pre/post:
+- Pre‑scan: скан сразу после появления pending tx (до блока).
+- Post‑scan: быстрая проверка после включения tx в блок (для сравнения).
+
+Ожидаемое поведение:
+- Много `no_hit` — это нормально.
+- В логах должны появляться decoded swaps + trigger scans.
+- Файлы: `logs/mempool.jsonl` и `logs/trigger_scans.jsonl`.
   - thresholds, лимиты по газу, режимы scan_mode, etc.  
   - report_currency → базовая валюта в UI (USDC/USDT)  
   - mev_buffer_bps → дополнительная подушка к профиту (bps)  

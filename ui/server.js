@@ -13,6 +13,10 @@ let botStartedAtMs = null;
 const projectRoot = path.join(__dirname, '..');
 const configPath = path.join(projectRoot, 'bot_config.json');
 const uiStatePath = path.join(projectRoot, 'logs', 'ui_state.json');
+const presetsDir = path.join(projectRoot, 'presets');
+const mempoolStatusPath = path.join(projectRoot, 'logs', 'mempool_status.json');
+const mempoolRecentPath = path.join(projectRoot, 'logs', 'mempool_recent.json');
+const mempoolTriggersPath = path.join(projectRoot, 'logs', 'mempool_triggers.json');
 const UI_STATE_MAX_BYTES = 512 * 1024;
 
 const DEFAULT_CONFIG = {
@@ -53,6 +57,7 @@ const DEFAULT_CONFIG = {
 
   // modes
   scan_mode: 'auto', // auto|fixed
+  scan_source: 'block', // block|mempool|hybrid
 
   // fixed mode
   amount_presets: [1, 5],
@@ -79,12 +84,189 @@ const DEFAULT_CONFIG = {
   gas_off: false,
   fixed_gas_units: 0,
 
+  // mempool (optional)
+  mempool_enabled: false,
+  mempool_ws_urls: [
+    'wss://ethereum-rpc.publicnode.com',
+    'wss://eth.merkle.io',
+  ],
+  mempool_max_inflight_tx: 200,
+  mempool_fetch_tx_concurrency: 20,
+  mempool_filter_to: [],
+  mempool_min_value_usd: 25,
+  mempool_usd_per_eth: 2000,
+  mempool_dedup_ttl_s: 120,
+  mempool_trigger_scan_budget_s: 1.5,
+  mempool_trigger_max_queue: 50,
+  mempool_trigger_max_concurrent: 1,
+  mempool_trigger_ttl_s: 60,
+  mempool_confirm_timeout_s: 2,
+  mempool_post_scan_budget_s: 1,
+
   // UI reporting/base currency. We force scanning cycles that start/end in this token
   // so the web panel never mixes numbers with a different symbol.
   report_currency: 'USDC', // USDC|USDT
 
   verbose: false,
 };
+
+const PRESET_ORDER = [
+  'smoke',
+  'fast_rpc_sanity',
+  'balanced',
+  'coverage_heavy',
+  'stress',
+  'realistic_ish',
+];
+
+const PRESET_ALIASES = {
+  dex_adapters: 'dexes',
+  enable_multidex_beam: 'enable_multidex',
+  reporting_currency: 'report_currency',
+  amounts: 'amount_presets',
+  slippage_safety_bps: 'slippage_bps',
+};
+
+const KNOWN_SETTING_KEYS = new Set(Object.keys(DEFAULT_CONFIG));
+
+function _asNumberArray(value) {
+  if (Array.isArray(value)) {
+    return value.map((v) => Number(v)).filter((v) => Number.isFinite(v));
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((v) => Number(String(v).trim()))
+      .filter((v) => Number.isFinite(v));
+  }
+  return null;
+}
+
+function _asStringArray(value) {
+  if (Array.isArray(value)) {
+    return value.map((v) => String(v).trim()).filter((v) => v.length > 0);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((v) => String(v).trim())
+      .filter((v) => v.length > 0);
+  }
+  return null;
+}
+
+function normalizePresetSettings(raw, presetId, fileName) {
+  const out = {};
+  const warnings = [];
+  if (!raw || typeof raw !== 'object') {
+    warnings.push('settings is not an object');
+    return { settings: out, warnings };
+  }
+
+  Object.entries(raw).forEach(([key, value]) => {
+    if (key === 'stage2_amount_range') {
+      const range = Array.isArray(value) ? value : null;
+      if (!range || range.length < 2) {
+        warnings.push('stage2_amount_range must be [min,max]');
+        return;
+      }
+      const min = Number(range[0]);
+      const max = Number(range[1]);
+      if (Number.isFinite(min)) out.stage2_amount_min = min;
+      else warnings.push('stage2_amount_range min is invalid');
+      if (Number.isFinite(max)) out.stage2_amount_max = max;
+      else warnings.push('stage2_amount_range max is invalid');
+      return;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(PRESET_ALIASES, key)) {
+      const mapped = PRESET_ALIASES[key];
+      if (mapped === 'dexes') {
+        const list = _asStringArray(value);
+        if (list) out[mapped] = list;
+        else warnings.push('dex_adapters must be array or csv');
+        return;
+      }
+      if (mapped === 'amount_presets') {
+        const list = _asNumberArray(value);
+        if (list) out[mapped] = list;
+        else warnings.push('amounts must be array or csv');
+        return;
+      }
+      out[mapped] = value;
+      return;
+    }
+
+    if (KNOWN_SETTING_KEYS.has(key)) {
+      out[key] = value;
+      return;
+    }
+
+    warnings.push(`unknown key "${key}"`);
+  });
+
+  if (warnings.length) {
+    const label = presetId ? `${presetId}` : 'unknown';
+    const fileLabel = fileName ? ` (${fileName})` : '';
+    console.warn(`[presets] ${label}${fileLabel}: ${warnings.join('; ')}`);
+  }
+
+  return { settings: out, warnings };
+}
+
+function loadPresetsFromDisk() {
+  const presets = [];
+  const byId = {};
+  if (!fs.existsSync(presetsDir)) return { presets, byId };
+  const files = fs.readdirSync(presetsDir).filter((f) => f.endsWith('.json')).sort();
+  files.forEach((file) => {
+    const full = path.join(presetsDir, file);
+    let raw;
+    try {
+      raw = JSON.parse(fs.readFileSync(full, 'utf8'));
+    } catch (e) {
+      console.warn(`[presets] failed to parse ${file}: ${String(e)}`);
+      return;
+    }
+    if (!raw || typeof raw !== 'object') {
+      console.warn(`[presets] invalid JSON object in ${file}`);
+      return;
+    }
+    const id = String(raw.id || '').trim();
+    const name = String(raw.name || '').trim();
+    const description = String(raw.description || '').trim();
+    if (!id || !name || !raw.settings) {
+      console.warn(`[presets] missing id/name/settings in ${file}`);
+      return;
+    }
+    if (byId[id]) {
+      console.warn(`[presets] duplicate id "${id}" in ${file}`);
+      return;
+    }
+    const normalized = normalizePresetSettings(raw.settings, id, file);
+    const preset = {
+      id,
+      name,
+      description,
+      settings: normalized.settings,
+    };
+    byId[id] = preset;
+    presets.push(preset);
+  });
+
+  presets.sort((a, b) => {
+    const ia = PRESET_ORDER.indexOf(a.id);
+    const ib = PRESET_ORDER.indexOf(b.id);
+    if (ia !== -1 || ib !== -1) {
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    }
+    return String(a.name).localeCompare(String(b.name));
+  });
+
+  return { presets, byId };
+}
 
 function readConfig() {
   try {
@@ -131,6 +313,24 @@ function writeConfig(cfg) {
       .filter((x) => x.length > 0);
   }
 
+  // Parse mempool WS urls from textarea/input into list
+  if (typeof cleaned.mempool_ws_urls === 'string') {
+    cleaned.mempool_ws_urls = cleaned.mempool_ws_urls
+      .replace(/\n/g, ',')
+      .split(',')
+      .map((x) => String(x).trim())
+      .filter((x) => x.length > 0);
+  }
+
+  // Parse mempool filter list
+  if (typeof cleaned.mempool_filter_to === 'string') {
+    cleaned.mempool_filter_to = cleaned.mempool_filter_to
+      .replace(/\n/g, ',')
+      .split(',')
+      .map((x) => String(x).trim().toLowerCase())
+      .filter((x) => x.length > 0);
+  }
+
   const safe = { ...DEFAULT_CONFIG, ...cleaned };
 
   // Normalize report currency
@@ -153,6 +353,7 @@ function writeConfig(cfg) {
   safe.debug_funnel = normBool(safe.debug_funnel);
   safe.gas_off = normBool(safe.gas_off);
   safe.enable_multidex = normBool(safe.enable_multidex);
+  safe.mempool_enabled = normBool(safe.mempool_enabled);
 
   if (typeof safe.sim_profile === 'string') {
     const sp = safe.sim_profile.trim().toLowerCase();
@@ -182,6 +383,12 @@ function writeConfig(cfg) {
     safe.edge_top_m = Math.max(1, Math.min(5, parseInt(safe.edge_top_m || 2, 10)));
   } catch {
     safe.edge_top_m = 2;
+  }
+  try {
+    const src = String(safe.scan_source || 'block').trim().toLowerCase();
+    safe.scan_source = ['block', 'mempool', 'hybrid'].includes(src) ? src : 'block';
+  } catch {
+    safe.scan_source = 'block';
   }
   try {
     const probe = Number(safe.probe_amount || 1);
@@ -216,6 +423,20 @@ function writeUiState(state) {
     return { ok: true };
   } catch (e) {
     return { ok: false, error: String(e) };
+  }
+}
+
+function readJsonSafe(filePath, maxBytes = 256 * 1024) {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const stat = fs.statSync(filePath);
+    if (stat.size > maxBytes) return null;
+    const raw = fs.readFileSync(filePath, 'utf8') || '';
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed;
+  } catch (e) {
+    return null;
   }
 }
 
@@ -374,6 +595,55 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && req.url === '/config') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, config: readConfig() }));
+    return;
+  }
+
+  const urlPath = String(req.url || '').split('?')[0];
+
+  if (req.method === 'GET' && urlPath === '/api/presets') {
+    const { presets } = loadPresetsFromDisk();
+    const list = presets.map((p) => ({
+      id: p.id,
+      name: p.name,
+      description: p.description,
+    }));
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, presets: list }));
+    return;
+  }
+
+  if (req.method === 'GET' && urlPath.startsWith('/api/presets/')) {
+    const id = decodeURIComponent(urlPath.slice('/api/presets/'.length));
+    const { byId } = loadPresetsFromDisk();
+    const preset = byId[id];
+    if (!preset) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'preset not found' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, preset }));
+    return;
+  }
+
+  if (req.method === 'GET' && urlPath === '/api/mempool/status') {
+    const status = readJsonSafe(mempoolStatusPath) || {};
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, status }));
+    return;
+  }
+
+  if (req.method === 'GET' && urlPath === '/api/mempool/recent') {
+    const recent = readJsonSafe(mempoolRecentPath) || [];
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, recent }));
+    return;
+  }
+
+  if (req.method === 'GET' && urlPath === '/api/mempool/triggers') {
+    const triggers = readJsonSafe(mempoolTriggersPath) || [];
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, triggers }));
     return;
   }
 
