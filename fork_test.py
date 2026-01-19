@@ -134,8 +134,16 @@ class Settings:
     max_gas_gwei: Optional[float] = None
 
     # Performance
-    concurrency: int = 12
+    concurrency: int = 10
     block_budget_s: float = 10.0
+    prepare_budget_ratio: float = 0.20
+    prepare_budget_min_s: float = 2.0
+    prepare_budget_max_s: float = 6.0
+    max_candidates_stage1: int = 200
+    max_total_expanded: int = 400
+    max_expanded_per_candidate: int = 6
+    rpc_timeout_s: float = 3.0
+    rpc_retry_count: int = 1
 
     # Fixed mode
     amount_presets: Tuple[float, ...] = (1.0, 5.0)
@@ -245,6 +253,46 @@ def _load_settings() -> Settings:
     except Exception:
         pass
     try:
+        s.concurrency = int(raw.get("concurrency", s.concurrency))
+    except Exception:
+        pass
+    try:
+        s.block_budget_s = float(raw.get("block_budget_s", s.block_budget_s))
+    except Exception:
+        pass
+    try:
+        s.prepare_budget_ratio = float(raw.get("prepare_budget_ratio", s.prepare_budget_ratio))
+    except Exception:
+        pass
+    try:
+        s.prepare_budget_min_s = float(raw.get("prepare_budget_min_s", s.prepare_budget_min_s))
+    except Exception:
+        pass
+    try:
+        s.prepare_budget_max_s = float(raw.get("prepare_budget_max_s", s.prepare_budget_max_s))
+    except Exception:
+        pass
+    try:
+        s.max_candidates_stage1 = int(raw.get("max_candidates_stage1", s.max_candidates_stage1))
+    except Exception:
+        pass
+    try:
+        s.max_total_expanded = int(raw.get("max_total_expanded", s.max_total_expanded))
+    except Exception:
+        pass
+    try:
+        s.max_expanded_per_candidate = int(raw.get("max_expanded_per_candidate", s.max_expanded_per_candidate))
+    except Exception:
+        pass
+    try:
+        s.rpc_timeout_s = float(raw.get("rpc_timeout_s", s.rpc_timeout_s))
+    except Exception:
+        pass
+    try:
+        s.rpc_retry_count = int(raw.get("rpc_retry_count", s.rpc_retry_count))
+    except Exception:
+        pass
+    try:
         s.v2_min_reserve_ratio = float(raw.get("v2_min_reserve_ratio", s.v2_min_reserve_ratio))
     except Exception:
         pass
@@ -329,6 +377,71 @@ def _make_block_context(block_number: int) -> BlockContext:
     return BlockContext(block_number=int(block_number), block_tag=hex(int(block_number)))
 
 
+_last_rpc_latency_ms: Optional[float] = None
+
+
+def _rpc_latency_ms() -> Optional[float]:
+    global _last_rpc_latency_ms
+    try:
+        if hasattr(PS.rpc, "stats"):
+            stats = PS.rpc.stats()
+            vals = [float(s.get("lat_ms", 0.0)) for s in stats if isinstance(s, dict) and s.get("lat_ms") is not None]
+            vals = [v for v in vals if v > 0]
+            if vals:
+                vals.sort()
+                mid = vals[len(vals) // 2]
+                _last_rpc_latency_ms = float(mid)
+                return _last_rpc_latency_ms
+    except Exception:
+        pass
+    return _last_rpc_latency_ms
+
+
+def _prepare_budget_s(s: Settings) -> float:
+    ratio = float(getattr(s, "prepare_budget_ratio", 0.20))
+    base = float(getattr(s, "block_budget_s", 10.0))
+    min_s = float(getattr(s, "prepare_budget_min_s", 2.0))
+    max_s = float(getattr(s, "prepare_budget_max_s", 6.0))
+    budget = base * ratio
+    if max_s < min_s:
+        max_s = min_s
+    return float(max(min_s, min(max_s, budget)))
+
+
+def _compute_scan_budget_s(block_budget_s: float, elapsed_s: float, *, min_scan_s: float = 1.0) -> float:
+    remaining = float(block_budget_s) - float(elapsed_s)
+    if remaining < float(min_scan_s):
+        return float(min_scan_s)
+    return float(remaining)
+
+
+def _adaptive_stage1_ratio(candidate_estimate: int, rpc_latency_ms: Optional[float]) -> float:
+    # Base ratio favors stage1 filtering, but adapts when RPC is slow or candidates are many.
+    ratio = 0.55
+    if candidate_estimate >= 150:
+        ratio += 0.05
+    if candidate_estimate >= 250:
+        ratio += 0.05
+    if candidate_estimate >= 350:
+        ratio += 0.05
+    if rpc_latency_ms is not None:
+        if rpc_latency_ms > 900:
+            ratio += 0.05
+        if rpc_latency_ms > 1300:
+            ratio += 0.05
+    return float(max(0.45, min(0.75, ratio)))
+
+
+def _cap_int(value: int, *, min_value: int = 1) -> int:
+    try:
+        v = int(value)
+    except Exception:
+        v = min_value
+    if v < min_value:
+        return int(min_value)
+    return int(v)
+
+
 def _should_fallback_block(stats: Dict[str, int], *, candidates_count: int) -> bool:
     min_candidates = int(getattr(config, "RPC_OUT_OF_SYNC_MIN_CANDIDATES", 40))
     if candidates_count < min_candidates:
@@ -357,9 +470,23 @@ async def _route_viable(
     fee_tiers: Optional[List[int]],
     timeout_s: float,
     probe_units: float,
+    viability_cache: Optional[Dict[Tuple[str, str, str, int], Optional[int]]] = None,
 ) -> bool:
     amt = _scale_amount(route[0], float(probe_units))
     for i in range(len(route) - 1):
+        key = (
+            str(block_ctx.block_tag),
+            str(route[i]).lower(),
+            str(route[i + 1]).lower(),
+            int(amt),
+        )
+        if viability_cache is not None and getattr(config, "VIABILITY_CACHE_ENABLED", True):
+            if key in viability_cache:
+                cached_out = viability_cache[key]
+                if not cached_out or int(cached_out) <= 0:
+                    return False
+                amt = int(cached_out)
+                continue
         edge = await PS.best_edge(
             route[i],
             route[i + 1],
@@ -369,7 +496,11 @@ async def _route_viable(
             timeout_s=timeout_s,
         )
         if not edge or int(edge.amount_out) <= 0:
+            if viability_cache is not None and getattr(config, "VIABILITY_CACHE_ENABLED", True):
+                viability_cache[key] = None
             return False
+        if viability_cache is not None and getattr(config, "VIABILITY_CACHE_ENABLED", True):
+            viability_cache[key] = int(edge.amount_out)
         amt = int(edge.amount_out)
     return True
 
@@ -454,6 +585,9 @@ async def _expand_multidex_candidates(
     timeout_s: float,
     deadline_s: float,
     settings: Settings,
+    max_total: Optional[int] = None,
+    max_per_route: Optional[int] = None,
+    viability_cache: Optional[Dict[Tuple[str, str, str, int], Optional[int]]] = None,
 ) -> List[Dict[str, Any]]:
     loop = asyncio.get_running_loop()
     sem = asyncio.Semaphore(max(1, int(settings.concurrency)))
@@ -470,10 +604,11 @@ async def _expand_multidex_candidates(
                     fee_tiers=fee_tiers,
                     timeout_s=timeout_s,
                     probe_units=float(settings.probe_amount),
+                    viability_cache=viability_cache,
                 )
                 if not ok:
                     return []
-                return await _beam_candidates_for_route(
+                out = await _beam_candidates_for_route(
                     route,
                     amount_in=int(amount_in),
                     block_ctx=block_ctx,
@@ -483,12 +618,17 @@ async def _expand_multidex_candidates(
                     edge_top_m=int(settings.edge_top_m),
                     eval_budget=int(settings.stage2_max_evals),
                 )
+                if max_per_route is not None and max_per_route > 0:
+                    out = out[: int(max_per_route)]
+                return out
             except Exception:
                 return []
 
     tasks: List[asyncio.Task] = []
     for route in routes:
         if loop.time() >= deadline_s:
+            break
+        if max_total is not None and max_total > 0 and len(results) >= int(max_total):
             break
         tasks.append(asyncio.create_task(one(route)))
 
@@ -501,12 +641,17 @@ async def _expand_multidex_candidates(
                 res = await d
                 if res:
                     results.extend(res)
+                if max_total is not None and max_total > 0 and len(results) >= int(max_total):
+                    pending = set()
+                    break
     finally:
         for t in tasks:
             if not t.done():
                 t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
+    if max_total is not None and max_total > 0:
+        return results[: int(max_total)]
     return results
 
 
@@ -518,7 +663,7 @@ async def _scan_candidates(
     timeout_s: float,
     deadline_s: float,
     keep_all: bool,
-) -> Tuple[List[Dict[str, Any]], int, Dict[str, int]]:
+) -> Tuple[List[Dict[str, Any]], int, Dict[str, Any]]:
     """Scan candidates until deadline.
 
     Returns (payloads, finished_count)
@@ -527,13 +672,20 @@ async def _scan_candidates(
     s = _load_settings()
     loop = asyncio.get_running_loop()
     sem = asyncio.Semaphore(max(1, int(s.concurrency)))
+    stats_lock = asyncio.Lock()
     results: List[Dict[str, Any]] = []
     finished = 0
     invalid = 0
+    sanity_rejects_total = 0
+    rejects_by_reason: Dict[str, int] = {}
+    reason_if_zero_scheduled: Optional[str] = None
+    schedule_guard_s = min(0.25, max(0.05, float(timeout_s) * 0.20))
 
     async def one(c: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         nonlocal finished
         nonlocal invalid
+        nonlocal sanity_rejects_total
+        nonlocal rejects_by_reason
         async with sem:
             try:
                 # Enforce per-candidate timeout hard
@@ -543,18 +695,32 @@ async def _scan_candidates(
                 )
             except Exception:
                 payload = None
-            if not payload or payload.get("profit_raw", -1) == -1:
-                invalid += 1
-            finished += 1
+            async with stats_lock:
+                if not payload or payload.get("profit_raw", -1) == -1:
+                    invalid += 1
+                if payload and isinstance(payload.get("error"), dict):
+                    err = payload.get("error") or {}
+                    reason = str(err.get("reason") or err.get("kind") or "unknown")
+                    rejects_by_reason[reason] = int(rejects_by_reason.get(reason, 0)) + 1
+                    if str(err.get("kind")).lower() == "sanity":
+                        sanity_rejects_total += 1
+                finished += 1
             return payload
 
     tasks: List[asyncio.Task] = []
+    if not candidates:
+        reason_if_zero_scheduled = "no_candidates"
     for c in candidates:
-        if loop.time() >= deadline_s:
+        if loop.time() + schedule_guard_s >= deadline_s:
+            if not tasks:
+                reason_if_zero_scheduled = "deadline_guard"
             break
         tasks.append(asyncio.create_task(one(c)))
     scheduled = len(tasks)
     budget_skipped = max(0, len(candidates) - scheduled)
+    if scheduled == 0 and not reason_if_zero_scheduled:
+        if loop.time() >= deadline_s:
+            reason_if_zero_scheduled = "deadline_exceeded"
 
     try:
         # Avoid asyncio.as_completed(...)+break warnings ("_wait_for_one was never awaited").
@@ -585,7 +751,11 @@ async def _scan_candidates(
         "timeouts": int(timeouts),
         "invalid": int(invalid),
         "budget_skipped": int(budget_skipped),
+        "sanity_rejects_total": int(sanity_rejects_total),
+        "rejects_by_reason": dict(rejects_by_reason),
     }
+    if reason_if_zero_scheduled:
+        stats["reason_if_zero_scheduled"] = str(reason_if_zero_scheduled)
     return results, finished, stats
 
 
@@ -1148,7 +1318,12 @@ async def main() -> None:
     dexes = list(s0.dexes) if getattr(s0, "dexes", None) else None
     if not enable_multidex:
         dexes = ["univ3"]
-    PS = scanner.PriceScanner(rpc_urls=rpc_urls, dexes=dexes)
+    PS = scanner.PriceScanner(
+        rpc_urls=rpc_urls,
+        dexes=dexes,
+        rpc_timeout_s=float(s0.rpc_timeout_s),
+        rpc_retry_count=int(s0.rpc_retry_count),
+    )
     dexes_used = list(getattr(PS, "dexes", []) or (dexes or []))
 
     session_started_at = datetime.utcnow()
@@ -1170,13 +1345,13 @@ async def main() -> None:
                 pass
 
             # 0) wait new block
-            block_number = await wait_for_new_block(last_block)
+            block_number = await wait_for_new_block(last_block, timeout_s=float(s.rpc_timeout_s))
             last_block = block_number
             print(f"Block {block_number}")
 
             # Optional gas gate
             if s.max_gas_gwei is not None:
-                gas_gwei = await _gas_gwei(timeout_s=2.5)
+                gas_gwei = await _gas_gwei(timeout_s=float(s.rpc_timeout_s))
                 if gas_gwei is not None and gas_gwei > float(s.max_gas_gwei):
                     await ui_push(
                         {
@@ -1235,15 +1410,44 @@ async def main() -> None:
             for attempt_idx, ctx in enumerate(attempt_ctxs):
                 block_ctx = ctx
                 loop = asyncio.get_running_loop()
-                start_t = loop.time()
-                deadline = start_t + float(s.block_budget_s)
-                stage1_deadline = start_t + float(s.block_budget_s) * 0.60
+                block_start_t = loop.time()
+                prepare_budget_s = _prepare_budget_s(s)
+                prepare_start_t = loop.time()
+                prepare_over_budget = False
 
                 # prepare per-block caches (gas + WETH/USDC warmup)
                 try:
-                    await PS.prepare_block(block_ctx)
+                    await asyncio.wait_for(PS.prepare_block(block_ctx), timeout=float(prepare_budget_s))
+                except asyncio.TimeoutError:
+                    prepare_over_budget = True
                 except Exception:
                     pass
+
+                prepare_ms = (loop.time() - prepare_start_t) * 1000.0
+                if prepare_ms / 1000.0 > float(prepare_budget_s):
+                    prepare_over_budget = True
+
+                scan_start_t = loop.time()
+                scan_start_delay_ms = int(max(0.0, (scan_start_t - block_start_t) * 1000.0))
+                scan_budget_s = _compute_scan_budget_s(float(s.block_budget_s), scan_start_t - block_start_t, min_scan_s=1.0)
+
+                cap_ratio = 0.5 if prepare_over_budget else 1.0
+                max_candidates_stage1 = _cap_int(int(getattr(s, "max_candidates_stage1", 200)))
+                max_total_expanded = _cap_int(int(getattr(s, "max_total_expanded", 400)))
+                max_per_candidate = _cap_int(int(getattr(s, "max_expanded_per_candidate", 6)))
+                if cap_ratio < 1.0:
+                    max_candidates_stage1 = max(1, int(max_candidates_stage1 * cap_ratio))
+                    max_total_expanded = max(1, int(max_total_expanded * cap_ratio))
+                    max_per_candidate = max(1, int(max_per_candidate * cap_ratio))
+
+                cand_estimate = len(routes)
+                if enable_multidex:
+                    cand_estimate = min(int(len(routes) * max_per_candidate), int(max_total_expanded))
+                cand_estimate = min(int(cand_estimate), int(max_candidates_stage1))
+                stage1_ratio = _adaptive_stage1_ratio(int(cand_estimate), _rpc_latency_ms())
+                deadline = scan_start_t + float(scan_budget_s)
+                stage1_deadline = scan_start_t + float(scan_budget_s) * float(stage1_ratio)
+                stage1_deadline_remaining_ms_at_scan_start = int(max(0.0, (stage1_deadline - scan_start_t) * 1000.0))
 
                 profitable: List[Dict[str, Any]] = []
                 candidates_count = 0
@@ -1252,14 +1456,32 @@ async def main() -> None:
                 funnel_counts = {"raw": 0, "gas": 0, "safety": 0, "ready": 0}
                 funnel_stats: Dict[str, Optional[float]] = {}
                 top_examples: Dict[str, List[Dict[str, Any]]] = {}
-                scan_stats: Dict[str, int] = {"scheduled": 0, "finished": 0, "timeouts": 0, "invalid": 0, "budget_skipped": 0}
+                scan_stats: Dict[str, Any] = {
+                    "scheduled": 0,
+                    "finished": 0,
+                    "timeouts": 0,
+                    "invalid": 0,
+                    "budget_skipped": 0,
+                    "sanity_rejects_total": 0,
+                    "rejects_by_reason": {},
+                }
+                scan_stats["prepare_ms"] = int(max(0.0, prepare_ms))
+                scan_stats["scan_start_delay_ms"] = int(max(0, scan_start_delay_ms))
+                scan_stats["stage1_deadline_remaining_ms_at_scan_start"] = int(stage1_deadline_remaining_ms_at_scan_start)
+                scan_stats["prepare_over_budget"] = bool(prepare_over_budget)
 
                 try:
                     if str(s.scan_mode).lower() == "fixed":
                         candidates = []
+                        viability_cache: Optional[Dict[Tuple[str, str, str, int], Optional[int]]] = (
+                            {} if getattr(config, "VIABILITY_CACHE_ENABLED", True) else None
+                        )
                         if enable_multidex:
                             base_token = routes[0][0]
+                            remaining_total = int(max_total_expanded)
                             for u in list(s.amount_presets):
+                                if remaining_total <= 0:
+                                    break
                                 amt_in = _scale_amount(base_token, float(u))
                                 more = await _expand_multidex_candidates(
                                     routes,
@@ -1269,15 +1491,29 @@ async def main() -> None:
                                     timeout_s=float(s.rpc_timeout_stage2_s),
                                     deadline_s=deadline,
                                     settings=s,
+                                    max_total=int(remaining_total),
+                                    max_per_route=int(max_per_candidate),
+                                    viability_cache=viability_cache,
                                 )
                                 if more:
                                     candidates.extend(more)
+                                    remaining_total = int(max_total_expanded) - len(candidates)
                         else:
                             for route in routes:
                                 token_in = route[0]
                                 for u in list(s.amount_presets):
                                     candidates.append({"route": route, "amount_in": _scale_amount(token_in, float(u))})
+                                    if len(candidates) >= int(max_candidates_stage1):
+                                        break
+                                if len(candidates) >= int(max_candidates_stage1):
+                                    break
+                        if len(candidates) > int(max_candidates_stage1):
+                            candidates = candidates[: int(max_candidates_stage1)]
                         candidates_count = len(candidates)
+                        scan_start_delay_ms = int(max(0.0, (loop.time() - block_start_t) * 1000.0))
+                        stage1_deadline_remaining_ms_at_scan_start = int(
+                            max(0.0, (stage1_deadline - loop.time()) * 1000.0)
+                        )
                         payloads, finished_count, scan_stats = await _scan_candidates(
                             candidates,
                             block_ctx,
@@ -1286,6 +1522,12 @@ async def main() -> None:
                             deadline_s=deadline,
                             keep_all=True,
                         )
+                        scan_stats["prepare_ms"] = int(max(0.0, prepare_ms))
+                        scan_stats["scan_start_delay_ms"] = int(max(0, scan_start_delay_ms))
+                        scan_stats["stage1_deadline_remaining_ms_at_scan_start"] = int(
+                            max(0, stage1_deadline_remaining_ms_at_scan_start)
+                        )
+                        scan_stats["prepare_over_budget"] = bool(prepare_over_budget)
                         payloads = [p for p in payloads if p and p.get("profit_raw", -1) != -1]
                         payloads2 = [_apply_safety(p, s) for p in payloads]
                         funnel_payloads = payloads2
@@ -1298,6 +1540,7 @@ async def main() -> None:
 
                     else:
                         # Stage 1
+                        viability_cache = {} if getattr(config, "VIABILITY_CACHE_ENABLED", True) else None
                         if enable_multidex:
                             base_token = routes[0][0]
                             stage1_amount = _scale_amount(base_token, float(s.stage1_amount))
@@ -1309,13 +1552,22 @@ async def main() -> None:
                                 timeout_s=float(s.rpc_timeout_stage1_s),
                                 deadline_s=stage1_deadline,
                                 settings=s,
+                                max_total=int(max_total_expanded),
+                                max_per_route=int(max_per_candidate),
+                                viability_cache=viability_cache,
                             )
                         else:
                             stage1_candidates = [
                                 {"route": route, "amount_in": _scale_amount(route[0], float(s.stage1_amount))} for route in routes
                             ]
+                        if len(stage1_candidates) > int(max_candidates_stage1):
+                            stage1_candidates = stage1_candidates[: int(max_candidates_stage1)]
                         candidates_count = len(stage1_candidates)
 
+                        scan_start_delay_ms = int(max(0.0, (loop.time() - block_start_t) * 1000.0))
+                        stage1_deadline_remaining_ms_at_scan_start = int(
+                            max(0.0, (stage1_deadline - loop.time()) * 1000.0)
+                        )
                         stage1_payloads, finished_count, scan_stats = await _scan_candidates(
                             stage1_candidates,
                             block_ctx,
@@ -1324,6 +1576,12 @@ async def main() -> None:
                             deadline_s=stage1_deadline,
                             keep_all=True,
                         )
+                        scan_stats["prepare_ms"] = int(max(0.0, prepare_ms))
+                        scan_stats["scan_start_delay_ms"] = int(max(0, scan_start_delay_ms))
+                        scan_stats["stage1_deadline_remaining_ms_at_scan_start"] = int(
+                            max(0, stage1_deadline_remaining_ms_at_scan_start)
+                        )
+                        scan_stats["prepare_over_budget"] = bool(prepare_over_budget)
 
                         stage1_payloads = [p for p in stage1_payloads if p and p.get("profit_raw", -1) != -1]
                         stage1_payloads2 = [_apply_safety(p, s) for p in stage1_payloads]
@@ -1345,7 +1603,10 @@ async def main() -> None:
                         if not soft:
                             soft = ranked
 
-                        topk = soft[: int(s.stage2_top_k)]
+                        stage2_top_k = int(s.stage2_top_k)
+                        if prepare_over_budget:
+                            stage2_top_k = max(5, int(stage2_top_k * 0.7))
+                        topk = soft[: int(stage2_top_k)]
                         sem2 = asyncio.Semaphore(max(1, min(int(s.concurrency), 12)))
 
                         async def opt_one(p: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -1409,6 +1670,12 @@ async def main() -> None:
                         "safety_opps": int(funnel_counts["safety"]),
                         "gas_opps": int(funnel_counts["gas"]),
                         "final_opps": int(funnel_counts["ready"]),
+                        "prepare_ms": scan_stats.get("prepare_ms"),
+                        "scan_start_delay_ms": scan_stats.get("scan_start_delay_ms"),
+                        "stage1_deadline_remaining_ms_at_scan_start": scan_stats.get("stage1_deadline_remaining_ms_at_scan_start"),
+                        "reason_if_zero_scheduled": scan_stats.get("reason_if_zero_scheduled"),
+                        "sanity_rejects_total": scan_stats.get("sanity_rejects_total"),
+                        "rejects_by_reason": scan_stats.get("rejects_by_reason"),
                         "text": (
                             f"Scanned {int(finished_count)}/{int(candidates_count)} routes | "
                             f"raw={int(funnel_counts['raw'])} gas={int(funnel_counts['gas'])} "
@@ -1439,6 +1706,12 @@ async def main() -> None:
                         "scan_invalid": int(scan_stats.get("invalid", 0)),
                         "scan_timeouts": int(scan_stats.get("timeouts", 0)),
                         "scan_budget_skipped": int(scan_stats.get("budget_skipped", 0)),
+                        "prepare_ms": scan_stats.get("prepare_ms"),
+                        "scan_start_delay_ms": scan_stats.get("scan_start_delay_ms"),
+                        "stage1_deadline_remaining_ms_at_scan_start": scan_stats.get("stage1_deadline_remaining_ms_at_scan_start"),
+                        "reason_if_zero_scheduled": scan_stats.get("reason_if_zero_scheduled"),
+                        "sanity_rejects_total": scan_stats.get("sanity_rejects_total"),
+                        "rejects_by_reason": scan_stats.get("rejects_by_reason"),
                         "profitable": 0,
                         "raw_opps": int(funnel_counts["raw"]),
                         "raw_gross_hits": int(funnel_counts["raw"]),
@@ -1497,6 +1770,12 @@ async def main() -> None:
                     "safety_opps": int(funnel_counts["safety"]),
                     "gas_opps": int(funnel_counts["gas"]),
                     "final_opps": int(funnel_counts["ready"]),
+                    "prepare_ms": scan_stats.get("prepare_ms"),
+                    "scan_start_delay_ms": scan_stats.get("scan_start_delay_ms"),
+                    "stage1_deadline_remaining_ms_at_scan_start": scan_stats.get("stage1_deadline_remaining_ms_at_scan_start"),
+                    "reason_if_zero_scheduled": scan_stats.get("reason_if_zero_scheduled"),
+                    "sanity_rejects_total": scan_stats.get("sanity_rejects_total"),
+                    "rejects_by_reason": scan_stats.get("rejects_by_reason"),
                     "text": (
                         f"Scanned {int(finished_count)}/{int(candidates_count)} routes | "
                         f"raw={int(funnel_counts['raw'])} gas={int(funnel_counts['gas'])} "
@@ -1528,6 +1807,12 @@ async def main() -> None:
                     "scan_invalid": int(scan_stats.get("invalid", 0)),
                     "scan_timeouts": int(scan_stats.get("timeouts", 0)),
                     "scan_budget_skipped": int(scan_stats.get("budget_skipped", 0)),
+                    "prepare_ms": scan_stats.get("prepare_ms"),
+                    "scan_start_delay_ms": scan_stats.get("scan_start_delay_ms"),
+                    "stage1_deadline_remaining_ms_at_scan_start": scan_stats.get("stage1_deadline_remaining_ms_at_scan_start"),
+                    "reason_if_zero_scheduled": scan_stats.get("reason_if_zero_scheduled"),
+                    "sanity_rejects_total": scan_stats.get("sanity_rejects_total"),
+                    "rejects_by_reason": scan_stats.get("rejects_by_reason"),
                     "profitable": int(len(profitable)),
                     "best_profit": float(best_profit),
                     "raw_opps": int(funnel_counts["raw"]),

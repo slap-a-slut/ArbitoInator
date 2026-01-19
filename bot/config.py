@@ -26,10 +26,18 @@ RPC_FALLBACK_ONLY = ["rpc.flashbots.net"]
 RPC_TIMEOUT_MIN_S = 2.0
 RPC_TIMEOUT_MAX_S = 4.0
 RPC_DEFAULT_TIMEOUT_S = 3.0
+RPC_TIMEOUT_S = 3.0
+RPC_RETRY_COUNT = 1
+RPC_BACKOFF_BASE_S = 0.35
+RPC_RATE_LIMIT_BACKOFF_S = 0.35
 
 # Circuit breaker: N consecutive errors -> open for cooldown.
 RPC_CB_THRESHOLD = 5
 RPC_CB_COOLDOWN_S = 30.0
+
+# Per-block caches (quotes/edges). TTL is one block (cleared on prepare_block).
+QUOTE_CACHE_ENABLED = True
+VIABILITY_CACHE_ENABLED = True
 
 # If a block returns too many failed/invalid quotes, treat it as out-of-sync
 # and retry N-1 (prevents mixing blocks across RPCs).

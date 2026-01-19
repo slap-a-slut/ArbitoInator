@@ -21,6 +21,7 @@ class Quote:
     fee: int
     amount_out: int
     gas_estimate: Optional[int] = None
+    raw_hex: Optional[str] = None
 
 class UniV3:
     def __init__(self, rpc: AsyncRPC):
@@ -39,7 +40,7 @@ class UniV3:
         block: str = "latest",
         *,
         timeout_s: Optional[float] = None,
-    ) -> int:
+    ) -> Quote:
         """Quoter (v1) quoteExactInputSingle.
 
         Note: Quoter uses a revert-based mechanism to return data. Our AsyncRPC
@@ -58,7 +59,7 @@ class UniV3:
             timeout_s=timeout_s,
             allow_revert_data=True,
         )
-        return int(raw, 16)
+        return Quote(fee=fee, amount_out=int(raw, 16), gas_estimate=None, raw_hex=str(raw))
 
     async def quote_v2(
         self,
@@ -95,7 +96,7 @@ class UniV3:
         amount_out, _sqrt_price_after, _ticks_crossed, gas_estimate = decode(
             ["uint256", "uint160", "uint32", "uint256"], blob
         )
-        return Quote(fee=fee, amount_out=int(amount_out), gas_estimate=int(gas_estimate))
+        return Quote(fee=fee, amount_out=int(amount_out), gas_estimate=int(gas_estimate), raw_hex=str(raw))
 
     async def best_quote(
         self,
@@ -121,8 +122,8 @@ class UniV3:
             except Exception:
                 # fall back to v1
                 try:
-                    out = await self.quote_v1(token_in, token_out, amount_in, fee, block=block, timeout_s=timeout_s)
-                    results.append(Quote(fee=fee, amount_out=int(out), gas_estimate=None))
+                    q1 = await self.quote_v1(token_in, token_out, amount_in, fee, block=block, timeout_s=timeout_s)
+                    results.append(q1)
                 except Exception:
                     pass
 

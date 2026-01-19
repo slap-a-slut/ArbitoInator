@@ -896,6 +896,8 @@
   let safetyOpps = 0;
   let gasOpps = 0;
   let readyOpps = 0;
+  let sanityRejectsTotal = 0;
+  const rejectsByReason = {};
   const totalProfitBySym = {}; // {USDC: 1.23, USDT: 0.10, ...}
   const totalSpentBySym = {};  // {USDC: 10.0, USDT: 5.0, ...}
   let profitCurrency = 'USDC'; // currently displayed currency
@@ -1071,6 +1073,8 @@
         safetyOpps: safetyOpps,
         gasOpps: gasOpps,
         readyOpps: readyOpps,
+        sanityRejectsTotal: sanityRejectsTotal,
+        rejectsByReason: { ...rejectsByReason },
         profitCurrency: profitCurrency,
         totalProfitBySym: { ...totalProfitBySym },
         totalSpentBySym: { ...totalSpentBySym },
@@ -1190,6 +1194,16 @@
     }
     if (typeof state.readyOpps === 'number' && Number.isFinite(state.readyOpps)){
       readyOpps = state.readyOpps;
+    }
+    if (typeof state.sanityRejectsTotal === 'number' && Number.isFinite(state.sanityRejectsTotal)){
+      sanityRejectsTotal = state.sanityRejectsTotal;
+    }
+    if (state.rejectsByReason && typeof state.rejectsByReason === 'object'){
+      clearObject(rejectsByReason);
+      Object.entries(state.rejectsByReason).forEach(([k, v]) => {
+        const n = Number(v);
+        if (Number.isFinite(n)) rejectsByReason[String(k)] = n;
+      });
     }
 
     if (typeof state.profitCurrency === 'string' && state.profitCurrency.trim()){
@@ -1591,6 +1605,8 @@
         safetyOpps = 0;
         gasOpps = 0;
         readyOpps = 0;
+        sanityRejectsTotal = 0;
+        clearObject(rejectsByReason);
         clearObject(totalProfitBySym);
         clearObject(totalSpentBySym);
         profitEvents.length = 0;
@@ -1629,6 +1645,13 @@
           if (typeof msg.safety_opps === 'number') safetyOpps += msg.safety_opps;
           if (typeof msg.gas_opps === 'number') gasOpps += msg.gas_opps;
           if (typeof msg.final_opps === 'number') readyOpps += msg.final_opps;
+          if (typeof msg.sanity_rejects_total === 'number') sanityRejectsTotal += msg.sanity_rejects_total;
+          if (msg.rejects_by_reason && typeof msg.rejects_by_reason === 'object'){
+            Object.entries(msg.rejects_by_reason).forEach(([k, v]) => {
+              const n = Number(v);
+              if (Number.isFinite(n)) rejectsByReason[String(k)] = Number(rejectsByReason[String(k)] || 0) + n;
+            });
+          }
           updateStats();
           const candidates = (typeof msg.candidates === 'number') ? msg.candidates : null;
           const profitable = (typeof msg.profitable === 'number') ? msg.profitable : null;
@@ -1786,7 +1809,7 @@
       slippage_bps: parseInt(cfgSlip.value || '0', 10),
       mev_buffer_bps: parseInt(cfgMev.value || '0', 10),
       max_gas_gwei: (cfgGas.value === '' ? null : Number(cfgGas.value)),
-      concurrency: parseInt(cfgConc.value || '12', 10),
+      concurrency: parseInt(cfgConc.value || '10', 10),
       block_budget_s: Number(cfgBudget.value || 10),
       scan_mode: String(cfgMode.value || 'auto'),
 
@@ -1833,7 +1856,7 @@
     cfgSlip.value = String(cfg.slippage_bps ?? 8);
     cfgMev.value = String(cfg.mev_buffer_bps ?? 5);
     cfgGas.value = (cfg.max_gas_gwei == null ? '' : String(cfg.max_gas_gwei));
-    cfgConc.value = String(cfg.concurrency ?? 12);
+    cfgConc.value = String(cfg.concurrency ?? 10);
     cfgMode.value = String(cfg.scan_mode ?? 'auto');
     cfgBudget.value = String(cfg.block_budget_s ?? 10);
     const ap = cfg.amount_presets;

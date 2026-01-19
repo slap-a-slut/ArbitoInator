@@ -98,16 +98,21 @@ class AsyncRPC:
         url: str,
         *,
         default_timeout_s: float = 3.0,
-        max_retries: int = 4,
-        backoff_base_s: float = 0.35,
+        max_retries: Optional[int] = None,
+        backoff_base_s: Optional[float] = None,
     ):
         self.url = url
         self.default_timeout_s = float(default_timeout_s)
+        if max_retries is None:
+            max_retries = int(getattr(config, "RPC_RETRY_COUNT", 1))
+        if backoff_base_s is None:
+            backoff_base_s = float(getattr(config, "RPC_BACKOFF_BASE_S", 0.35))
         self.max_retries = int(max_retries)
         self.backoff_base_s = float(backoff_base_s)
         self._id = 0
         self._session: Optional[aiohttp.ClientSession] = None
         self._connector: Optional[aiohttp.TCPConnector] = None
+        self.last_url: Optional[str] = None
 
         # Lightweight stats (useful even for single-RPC mode)
         self._stats_lock = asyncio.Lock()
@@ -152,6 +157,7 @@ class AsyncRPC:
         payload = {"jsonrpc": "2.0", "id": self._id, "method": method, "params": params}
 
         session = await self._get_session()
+        self.last_url = self.url
         to_s = float(timeout_s) if timeout_s is not None else self.default_timeout_s
         min_t = float(getattr(config, "RPC_TIMEOUT_MIN_S", 2.0))
         max_t = float(getattr(config, "RPC_TIMEOUT_MAX_S", 4.0))
@@ -236,6 +242,8 @@ class AsyncRPC:
 
                 if attempt < self.max_retries:
                     sleep_s = (self.backoff_base_s * (2 ** attempt)) + random.random() * 0.25
+                    if last_err and ("http_429" in last_err or "rate limit" in last_err.lower()):
+                        sleep_s += float(getattr(config, "RPC_RATE_LIMIT_BACKOFF_S", 0.35))
                     await asyncio.sleep(sleep_s)
 
             async with self._stats_lock:
@@ -299,7 +307,7 @@ class RPCPool:
         urls: Sequence[str],
         *,
         default_timeout_s: Optional[float] = None,
-        max_retries_per_call: int = 0,
+        max_retries_per_call: Optional[int] = None,
         per_rpc_max_inflight: int = 10,
         ewma_alpha: float = 0.20,
         priority_weights: Optional[Sequence[float]] = None,
@@ -308,13 +316,14 @@ class RPCPool:
         cb_cooldown_s: Optional[float] = None,
     ):
         if default_timeout_s is None:
-            default_timeout_s = float(getattr(config, "RPC_DEFAULT_TIMEOUT_S", 3.0))
+            default_timeout_s = float(getattr(config, "RPC_TIMEOUT_S", getattr(config, "RPC_DEFAULT_TIMEOUT_S", 3.0)))
         cleaned = [_normalize_url(u) for u in (urls or []) if str(u).strip()]
         if not cleaned:
             raise ValueError("RPCPool requires at least one url")
 
         self.urls: List[str] = cleaned
         self._clients = [AsyncRPC(u, default_timeout_s=default_timeout_s, max_retries=0) for u in self.urls]
+        self.last_url: Optional[str] = None
 
         # Per-endpoint concurrency guard (prevents a single RPC from being flooded)
         self._sems: List[asyncio.Semaphore] = [asyncio.Semaphore(max(1, int(per_rpc_max_inflight))) for _ in self._clients]
@@ -335,6 +344,9 @@ class RPCPool:
         self._cb_cooldown_s = float(cb_cooldown_s if cb_cooldown_s is not None else getattr(config, "RPC_CB_COOLDOWN_S", 30.0))
         self._cb_fail: List[int] = [0 for _ in self._clients]
         self._cb_open_until: List[float] = [0.0 for _ in self._clients]
+        if max_retries_per_call is None:
+            max_retries_per_call = int(getattr(config, "RPC_RETRY_COUNT", 1))
+        self.max_retries_per_call = int(max_retries_per_call)
 
         # Latency EWMA per endpoint (ms). Start with a modest baseline so a new RPC isn't unfairly punished.
         self._lat_ewma_ms: List[float] = [350.0 for _ in self._clients]
@@ -347,8 +359,6 @@ class RPCPool:
         # Simple stats (useful for debugging)
         self._ok: List[int] = [0 for _ in self._clients]
         self._fail: List[int] = [0 for _ in self._clients]
-
-        self.max_retries_per_call = int(max_retries_per_call)
 
     async def close(self) -> None:
         for c in self._clients:
@@ -447,6 +457,7 @@ class RPCPool:
             if idx is None:
                 break
             c = self._clients[idx]
+            self.last_url = self.urls[idx]
             try:
                 # Per-endpoint concurrency guard + latency tracking
                 async with self._sems[idx]:
@@ -462,6 +473,13 @@ class RPCPool:
                 banned.add(idx)
                 await self._done_idx(idx, ok=False)
                 attempts += 1
+                try:
+                    msg = str(e).lower()
+                    if "http_429" in msg or "rate limit" in msg:
+                        sleep_s = float(getattr(config, "RPC_RATE_LIMIT_BACKOFF_S", 0.35)) + random.random() * 0.25
+                        await asyncio.sleep(sleep_s)
+                except Exception:
+                    pass
                 continue
 
         raise last_err or Exception("RPCPool call failed")

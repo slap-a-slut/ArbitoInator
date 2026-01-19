@@ -107,6 +107,10 @@ UI заметки:
   - beam_k → сколько лучших комбинаций DEX держать  
   - edge_top_m → сколько лучших quotes брать на hop  
   - probe_amount → объём для prefilter  
+  - prepare_budget_ratio / prepare_budget_min_s / prepare_budget_max_s → бюджет на prepare_block  
+  - max_candidates_stage1 → жёсткий лимит кандидатов на stage1  
+  - max_total_expanded / max_expanded_per_candidate → лимиты на multidex expansion  
+  - rpc_timeout_s / rpc_retry_count → общий таймаут и ретраи RPC  
   - thresholds, лимиты по газу, режимы scan_mode, etc.  
   - report_currency → базовая валюта в UI (USDC/USDT)  
   - mev_buffer_bps → дополнительная подушка к профиту (bps)  
@@ -119,6 +123,7 @@ UI заметки:
   - STRATEGY_* → дефолтные базы/хабы/вселенная токенов  
   - RPC_PRIORITY_WEIGHTS / RPC_FALLBACK_ONLY → приоритеты пула RPC  
   - RPC_CB_* / RPC_TIMEOUT_* → circuit breaker и таймауты RPC  
+  - RPC_RETRY_COUNT / RPC_RATE_LIMIT_BACKOFF_S → ретраи и backoff  
 
 - `bot/risk` → настройки slippage и reorg
 
@@ -142,6 +147,10 @@ Multi-DEX mode строит dex_path (в т.ч. fee tier) и показывае�
 Во время работы пишутся JSONL логи:
 - `logs/blocks.jsonl` — статистика по блокам
 - `logs/hits.jsonl` — профитные события
+
+В `blocks.jsonl` теперь есть диагностические поля:
+`prepare_ms`, `scan_start_delay_ms`, `stage1_deadline_remaining_ms_at_scan_start`,
+`reason_if_zero_scheduled`, `sanity_rejects_total`, `rejects_by_reason`.
 
 Папка `logs/` игнорируется git.
 

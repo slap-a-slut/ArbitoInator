@@ -1,11 +1,20 @@
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from bot import config
 from bot.dex.base import DEXAdapter, QuoteEdge
 from bot.dex.uniswap_v3 import UniV3
 from infra.rpc import AsyncRPC
+
+
+def _raw_fingerprint(raw_hex: Optional[str]) -> Dict[str, Optional[str]]:
+    if not raw_hex:
+        return {"raw_len": None, "raw_prefix": None}
+    hx = raw_hex[2:] if raw_hex.startswith("0x") else raw_hex
+    raw_len = len(hx) // 2
+    raw_prefix = "0x" + hx[:32] if hx else "0x"
+    return {"raw_len": int(raw_len), "raw_prefix": raw_prefix}
 
 
 class UniswapV3Adapter(DEXAdapter):
@@ -48,6 +57,7 @@ class UniswapV3Adapter(DEXAdapter):
                     block=block,
                     timeout_s=timeout_s,
                 )
+                fp = _raw_fingerprint(getattr(q, "raw_hex", None))
                 out.append(
                     QuoteEdge(
                         dex_id=self.dex_id,
@@ -56,7 +66,14 @@ class UniswapV3Adapter(DEXAdapter):
                         amount_in=amount_in,
                         amount_out=int(q.amount_out),
                         gas_estimate=int(q.gas_estimate) if q.gas_estimate is not None else None,
-                        meta={"fee_tier": int(fee), "fee_bps": int(fee) // 100},
+                        meta={
+                            "fee_tier": int(fee),
+                            "fee_bps": int(fee) // 100,
+                            "adapter": "univ3_quoter_v2",
+                            "raw_len": fp.get("raw_len"),
+                            "raw_prefix": fp.get("raw_prefix"),
+                            "rpc_url": getattr(self.rpc, "last_url", None),
+                        },
                     )
                 )
                 continue
@@ -64,7 +81,7 @@ class UniswapV3Adapter(DEXAdapter):
                 pass
 
             try:
-                out_amt = await self._v3.quote_v1(
+                q1 = await self._v3.quote_v1(
                     token_in,
                     token_out,
                     amount_in,
@@ -72,15 +89,23 @@ class UniswapV3Adapter(DEXAdapter):
                     block=block,
                     timeout_s=timeout_s,
                 )
+                fp = _raw_fingerprint(getattr(q1, "raw_hex", None))
                 out.append(
                     QuoteEdge(
                         dex_id=self.dex_id,
                         token_in=token_in,
                         token_out=token_out,
                         amount_in=amount_in,
-                        amount_out=int(out_amt),
+                        amount_out=int(q1.amount_out),
                         gas_estimate=None,
-                        meta={"fee_tier": int(fee), "fee_bps": int(fee) // 100},
+                        meta={
+                            "fee_tier": int(fee),
+                            "fee_bps": int(fee) // 100,
+                            "adapter": "univ3_quoter_v1",
+                            "raw_len": fp.get("raw_len"),
+                            "raw_prefix": fp.get("raw_prefix"),
+                            "rpc_url": getattr(self.rpc, "last_url", None),
+                        },
                     )
                 )
             except Exception:

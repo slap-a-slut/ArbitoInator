@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from eth_abi import decode, encode
 from eth_utils import keccak
@@ -13,6 +13,15 @@ from infra.rpc import AsyncRPC
 
 def _selector(sig: str) -> str:
     return keccak(text=sig)[:4].hex()
+
+
+def _raw_fingerprint(raw_hex: Optional[str]) -> Dict[str, Optional[str]]:
+    if not raw_hex:
+        return {"raw_len": None, "raw_prefix": None}
+    hx = raw_hex[2:] if raw_hex.startswith("0x") else raw_hex
+    raw_len = len(hx) // 2
+    raw_prefix = "0x" + hx[:32] if hx else "0x"
+    return {"raw_len": int(raw_len), "raw_prefix": raw_prefix}
 
 
 class UniV2RouterAdapter(DEXAdapter):
@@ -92,7 +101,12 @@ class UniV2RouterAdapter(DEXAdapter):
                 amount_in=int(amount_in),
                 amount_out=int(amount_out),
                 gas_estimate=int(self.gas_estimate),
-                meta={"fee_bps": int(self.fee_bps)},
+                meta={
+                    "fee_bps": int(self.fee_bps),
+                    "adapter": f"{self.dex_id}_router",
+                    "rpc_url": getattr(self.rpc, "last_url", None),
+                    **_raw_fingerprint(raw),
+                },
             )
         ]
 

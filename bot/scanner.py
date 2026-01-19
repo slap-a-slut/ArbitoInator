@@ -113,6 +113,89 @@ def _edge_label(edge: QuoteEdge) -> str:
     return str(edge.dex_id)
 
 
+def _edge_meta_snapshot(edge: QuoteEdge) -> Dict[str, Any]:
+    meta = dict(edge.meta or {})
+    return {
+        "dex_id": str(edge.dex_id),
+        "fee_bps": int(_edge_fee_bps(edge)) if _edge_fee_bps(edge) else None,
+        "fee_tier": int(_edge_fee_tier(edge)) if _edge_fee_tier(edge) else None,
+        "adapter": meta.get("adapter"),
+        "raw_len": meta.get("raw_len"),
+        "raw_prefix": meta.get("raw_prefix"),
+        "rpc_url": meta.get("rpc_url"),
+    }
+
+
+def _is_nonsensical_amount(amount_in: int, amount_out: int) -> bool:
+    # Guard against absurd quotes that usually come from decode/revert issues.
+    try:
+        if int(amount_in) <= 0 or int(amount_out) <= 0:
+            return True
+        if int(amount_out) > 10**36:
+            return True
+        if int(amount_out) > int(amount_in) * 10**12:
+            return True
+    except Exception:
+        return True
+    return False
+
+
+def _classify_quote_error(err: Exception) -> str:
+    msg = str(err).lower()
+    if "revert" in msg:
+        return "reverted"
+    if "decode" in msg or "short blob" in msg:
+        return "decode_error"
+    if "timeout" in msg or "http_" in msg or "rpc call failed" in msg:
+        return "rpc_error"
+    return "quote_error"
+
+
+def _error_payload(
+    route: Tuple[str, ...],
+    amount_in: int,
+    *,
+    kind: str,
+    reason: str,
+    details: Optional[Dict[str, Any]] = None,
+    hops: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    return {
+        "route": route,
+        "amount_in": int(amount_in),
+        "profit": -1,
+        "profit_raw": -1,
+        "error": {
+            "kind": str(kind),
+            "reason": str(reason),
+            "details": details or {},
+        },
+        "hops": hops,
+    }
+
+
+def _log_sanity_reject(details: Dict[str, Any]) -> None:
+    try:
+        route = details.get("route")
+        dex_path = details.get("dex_path")
+        fee_tiers = details.get("fee_tiers")
+        amount_in = details.get("amount_in")
+        amount_out = details.get("amount_out")
+        adapter = details.get("adapter")
+        rpc_url = details.get("rpc_url")
+        raw_prefix = details.get("raw_prefix")
+        raw_len = details.get("raw_len")
+        reason = details.get("reason")
+        print(
+            "[SANITY] "
+            f"reason={reason} route={route} dex_path={dex_path} fee_tiers={fee_tiers} "
+            f"amount_in={amount_in} amount_out={amount_out} adapter={adapter} "
+            f"rpc={rpc_url} raw_len={raw_len} raw_prefix={raw_prefix}"
+        )
+    except Exception:
+        return
+
+
 @dataclass(frozen=True)
 class Candidate:
     route: Tuple[str, ...]
@@ -126,6 +209,8 @@ class PriceScanner:
         rpc_url: str = None,
         rpc_urls: Optional[List[str]] = None,
         dexes: Optional[List[str]] = None,
+        rpc_timeout_s: Optional[float] = None,
+        rpc_retry_count: Optional[int] = None,
     ):
         """Create a scanner.
 
@@ -142,7 +227,20 @@ class PriceScanner:
         if rpc_url:
             urls = [rpc_url]
 
-        self.rpc = RPCPool(urls) if len(urls) > 1 else AsyncRPC(urls[0])
+        default_timeout_s = float(
+            rpc_timeout_s
+            if rpc_timeout_s is not None
+            else getattr(config, "RPC_TIMEOUT_S", getattr(config, "RPC_DEFAULT_TIMEOUT_S", 3.0))
+        )
+        retry_count = int(
+            rpc_retry_count
+            if rpc_retry_count is not None
+            else getattr(config, "RPC_RETRY_COUNT", 1)
+        )
+        if len(urls) > 1:
+            self.rpc = RPCPool(urls, default_timeout_s=default_timeout_s, max_retries_per_call=retry_count)
+        else:
+            self.rpc = AsyncRPC(urls[0], default_timeout_s=default_timeout_s, max_retries=retry_count)
         raw_dexes = [
             str(d).strip().lower()
             for d in (dexes or getattr(config, "DEXES", ["univ3"]))
@@ -167,6 +265,8 @@ class PriceScanner:
         self._dead_edge: Dict[Tuple[str, str, str, str, Tuple[Tuple[str, Any], ...]], bool] = {}
         # cache: (block, route_tuple, amount_in, params_key) -> payload
         self._payload_cache: Dict[Tuple[str, Tuple[str, ...], int, Tuple[Tuple[str, Any], ...]], Dict[str, Any]] = {}
+        # cache: (block, dex_id, token_in, token_out, amount_in, params_key) -> error details
+        self._quote_error: Dict[Tuple[str, str, str, str, int, Tuple[Tuple[str, Any], ...]], Dict[str, Any]] = {}
 
     async def prepare_block(self, block: int | BlockContext) -> None:
         """Warm up per-block values (gas + WETH/USDC) and reset caches."""
@@ -183,6 +283,7 @@ class PriceScanner:
         self._quote_cache.clear()
         self._payload_cache.clear()
         self._dead_edge.clear()
+        self._quote_error.clear()
 
         # Warmup (best-effort) — failures are OK
         try:
@@ -253,11 +354,12 @@ class PriceScanner:
         token_out = config.token_address(token_out)
         dex_id = str(dex_id)
         params_key = _param_key(params)
+        cache_enabled = bool(getattr(config, "QUOTE_CACHE_ENABLED", True))
         edge_key = (block_tag, dex_id, str(token_in).lower(), str(token_out).lower(), params_key)
-        if self._dead_edge.get(edge_key):
+        if cache_enabled and self._dead_edge.get(edge_key):
             return None
         key = (block_tag, dex_id, token_in, token_out, int(amount_in), params_key)
-        if key in self._quote_cache:
+        if cache_enabled and key in self._quote_cache:
             return self._quote_cache[key]
         adapter = self.adapters.get(dex_id)
         if not adapter:
@@ -271,11 +373,14 @@ class PriceScanner:
                 timeout_s=timeout_s,
                 **(params or {}),
             )
-        except Exception:
+            self._quote_error.pop(key, None)
+        except Exception as e:
+            self._quote_error[key] = {"reason": _classify_quote_error(e), "error": str(e)}
             q = None
-        self._quote_cache[key] = q
-        if not q or int(q.amount_out) == 0:
-            self._dead_edge[edge_key] = True
+        if cache_enabled:
+            self._quote_cache[key] = q
+            if not q or int(q.amount_out) == 0:
+                self._dead_edge[edge_key] = True
         return q
 
     async def _quote_many_cached(
@@ -295,8 +400,9 @@ class PriceScanner:
         token_out = config.token_address(token_out)
         dex_id = str(dex_id)
         params_key = _param_key(params)
+        cache_enabled = bool(getattr(config, "QUOTE_CACHE_ENABLED", True))
         edge_key = (block_tag, dex_id, str(token_in).lower(), str(token_out).lower(), params_key)
-        if self._dead_edge.get(edge_key):
+        if cache_enabled and self._dead_edge.get(edge_key):
             return []
 
         adapter = self.adapters.get(dex_id)
@@ -312,11 +418,17 @@ class PriceScanner:
                 timeout_s=timeout_s,
                 **(params or {}),
             )
-        except Exception:
+            self._quote_error.pop((block_tag, dex_id, token_in, token_out, int(amount_in), params_key), None)
+        except Exception as e:
+            self._quote_error[(block_tag, dex_id, token_in, token_out, int(amount_in), params_key)] = {
+                "reason": _classify_quote_error(e),
+                "error": str(e),
+            }
             edges = []
 
         if not edges:
-            self._dead_edge[edge_key] = True
+            if cache_enabled:
+                self._dead_edge[edge_key] = True
             return []
 
         for edge in edges:
@@ -325,10 +437,11 @@ class PriceScanner:
                 edge_params["fee_tier"] = int(edge.meta.get("fee_tier"))
             edge_key2 = (block_tag, dex_id, token_in, token_out, _param_key(edge_params))
             key2 = (block_tag, dex_id, token_in, token_out, int(amount_in), _param_key(edge_params))
-            if key2 not in self._quote_cache:
-                self._quote_cache[key2] = edge
-            if edge.amount_out <= 0:
-                self._dead_edge[edge_key2] = True
+            if cache_enabled:
+                if key2 not in self._quote_cache:
+                    self._quote_cache[key2] = edge
+                if edge.amount_out <= 0:
+                    self._dead_edge[edge_key2] = True
 
         return edges
 
@@ -488,6 +601,12 @@ class PriceScanner:
         amount_in = int(candidate["amount_in"])
         hops = _normalize_hops(candidate.get("hops"))
         tiers = tuple(int(x) for x in (fee_tiers if fee_tiers else config.FEE_TIERS))
+        hop_payload = None
+        if hops:
+            hop_payload = [
+                {"token_in": h.token_in, "token_out": h.token_out, "dex_id": h.dex_id, "params": dict(h.params or {})}
+                for h in hops
+            ]
 
         if hops:
             tokens: List[str] = []
@@ -503,7 +622,14 @@ class PriceScanner:
                 tokens.append(t_out)
             route = tuple(tokens)
             if not ok_chain:
-                out = {"route": route, "amount_in": amount_in, "profit": -1, "profit_raw": -1}
+                out = _error_payload(
+                    route,
+                    amount_in,
+                    kind="invalid_route",
+                    reason="broken_hops",
+                    details={"route": route},
+                    hops=hop_payload,
+                )
                 return out
             params_key = _hops_key(hops)
         else:
@@ -511,22 +637,31 @@ class PriceScanner:
             params_key = _param_key({"fee_tiers": tiers})
 
         cache_key = (block_tag, route, amount_in, params_key)
-        if cache_key in self._payload_cache:
+        cache_enabled = bool(getattr(config, "QUOTE_CACHE_ENABLED", True))
+        if cache_enabled and cache_key in self._payload_cache:
             return self._payload_cache[cache_key]
 
         if len(route) < 2:
-            out = {"route": route, "amount_in": amount_in, "profit": -1, "profit_raw": -1}
-            self._payload_cache[cache_key] = out
+            out = _error_payload(
+                route,
+                amount_in,
+                kind="invalid_route",
+                reason="too_short",
+                details={"route": route},
+                hops=hop_payload,
+            )
+            if cache_enabled:
+                self._payload_cache[cache_key] = out
             return out
 
         # sequential quotes
         amt = amount_in
         gas_units = 60_000  # base overhead
-        ok = True
         route_dex: List[str] = []
         route_fee_bps: List[int] = []
         route_fee_tier: List[int] = []
         dex_path: List[str] = []
+        edge_meta: List[Dict[str, Any]] = []
         for i in range(len(route) - 1):
             if hops:
                 hop = hops[i]
@@ -549,14 +684,101 @@ class PriceScanner:
                     timeout_s=timeout_s,
                 )
 
-            if not q or int(q.amount_out) == 0:
-                ok = False
-                break
+            if not q:
+                err_reason = "quote_fail"
+                err_details: Dict[str, Any] = {"route": route, "dex_path": list(dex_path)}
+                if hops:
+                    err_key = (
+                        block_tag,
+                        str(hop.dex_id),
+                        config.token_address(hop.token_in),
+                        config.token_address(hop.token_out),
+                        int(amt),
+                        _param_key(dict(hop.params or {})),
+                    )
+                    err_info = self._quote_error.get(err_key)
+                    if err_info:
+                        err_reason = str(err_info.get("reason") or err_reason)
+                        err_details["error"] = str(err_info.get("error") or "")
+                else:
+                    errs = []
+                    for dex_id in self.adapters.keys():
+                        err_key = (
+                            block_tag,
+                            str(dex_id),
+                            route[i],
+                            route[i + 1],
+                            int(amt),
+                            _param_key({"fee_tiers": list(tiers)}),
+                        )
+                        err_info = self._quote_error.get(err_key)
+                        if err_info and err_info.get("reason"):
+                            errs.append(str(err_info.get("reason")))
+                    if errs:
+                        err_reason = errs[0]
+                        err_details["error_reasons"] = errs[:3]
+                out = _error_payload(
+                    route,
+                    amount_in,
+                    kind="quote",
+                    reason=err_reason,
+                    details=err_details,
+                    hops=hop_payload,
+                )
+                if cache_enabled:
+                    self._payload_cache[cache_key] = out
+                return out
+            if int(q.amount_out) == 0:
+                details = {
+                    "route": route,
+                    "dex_path": list(dex_path),
+                    "fee_tiers": list(route_fee_tier),
+                    "amount_in": int(amount_in),
+                    "amount_out": int(q.amount_out),
+                }
+                out = _error_payload(
+                    route,
+                    amount_in,
+                    kind="sanity",
+                    reason="nonsensical_price",
+                    details=details,
+                    hops=hop_payload,
+                )
+                _log_sanity_reject({**details, "reason": "nonsensical_price"})
+                if cache_enabled:
+                    self._payload_cache[cache_key] = out
+                return out
 
             route_dex.append(str(q.dex_id))
             route_fee_bps.append(int(_edge_fee_bps(q)))
             route_fee_tier.append(int(_edge_fee_tier(q)))
             dex_path.append(_edge_label(q))
+            edge_meta.append(_edge_meta_snapshot(q))
+            if _is_nonsensical_amount(amt, int(q.amount_out)):
+                last_meta = edge_meta[-1] if edge_meta else {}
+                details = {
+                    "route": route,
+                    "dex_path": list(dex_path),
+                    "fee_tiers": list(route_fee_tier),
+                    "amount_in": int(amount_in),
+                    "amount_out": int(q.amount_out),
+                    "adapter": last_meta.get("adapter"),
+                    "rpc_url": last_meta.get("rpc_url"),
+                    "raw_len": last_meta.get("raw_len"),
+                    "raw_prefix": last_meta.get("raw_prefix"),
+                }
+                out = _error_payload(
+                    route,
+                    amount_in,
+                    kind="sanity",
+                    reason="nonsensical_price",
+                    details=details,
+                    hops=hop_payload,
+                )
+                _log_sanity_reject({**details, "reason": "nonsensical_price"})
+                if cache_enabled:
+                    self._payload_cache[cache_key] = out
+                return out
             amt = int(q.amount_out)
             if q.gas_estimate is not None:
                 gas_units += int(q.gas_estimate)
@@ -565,11 +787,6 @@ class PriceScanner:
                     gas_units += int(getattr(config, "V3_GAS_ESTIMATE", 110_000))
                 else:
                     gas_units += int(getattr(config, "V2_GAS_ESTIMATE", 90_000))
-
-        if not ok:
-            out = {"route": route, "amount_in": amount_in, "profit": -1, "profit_raw": -1}
-            self._payload_cache[cache_key] = out
-            return out
 
         gas_units += 25_000  # cushion
         fixed_gas_units = 0
@@ -598,16 +815,32 @@ class PriceScanner:
         # Sanity guard: if something upstream returned garbage (e.g., revert-bytes decoded as values),
         # profit can become astronomically large. Drop such payloads early so UI doesn't show nonsense.
         if abs(profit_net_raw) > 10**30 or abs(profit_pct) > 1e9:
-            out = {"route": route, "amount_in": amount_in, "profit": -1, "profit_raw": -1}
-            self._payload_cache[cache_key] = out
+            last_meta = edge_meta[-1] if edge_meta else {}
+            details = {
+                "route": route,
+                "dex_path": list(dex_path),
+                "fee_tiers": list(route_fee_tier),
+                "amount_in": int(amount_in),
+                "amount_out": int(amt),
+                "profit_net_raw": int(profit_net_raw),
+                "profit_pct": float(profit_pct),
+                "adapter": last_meta.get("adapter"),
+                "rpc_url": last_meta.get("rpc_url"),
+                "raw_len": last_meta.get("raw_len"),
+                "raw_prefix": last_meta.get("raw_prefix"),
+            }
+            out = _error_payload(
+                route,
+                amount_in,
+                kind="sanity",
+                reason="overflow_like",
+                details=details,
+                hops=hop_payload,
+            )
+            _log_sanity_reject({**details, "reason": "overflow_like"})
+            if cache_enabled:
+                self._payload_cache[cache_key] = out
             return out
-
-        hop_payload = None
-        if hops:
-            hop_payload = [
-                {"token_in": h.token_in, "token_out": h.token_out, "dex_id": h.dex_id, "params": dict(h.params or {})}
-                for h in hops
-            ]
 
         payload = {
             "route": route,
@@ -635,5 +868,6 @@ class PriceScanner:
             "hops": hop_payload,
             "to": "0x0000000000000000000000000000000000000000",
         }
-        self._payload_cache[cache_key] = payload
+        if cache_enabled:
+            self._payload_cache[cache_key] = payload
         return payload

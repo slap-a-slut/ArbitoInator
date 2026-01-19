@@ -33,8 +33,16 @@ const DEFAULT_CONFIG = {
   max_gas_gwei: null,
 
   // performance
-  concurrency: 12,
+  concurrency: 10,
   block_budget_s: 10,
+  prepare_budget_ratio: 0.2,
+  prepare_budget_min_s: 2,
+  prepare_budget_max_s: 6,
+  max_candidates_stage1: 200,
+  max_total_expanded: 400,
+  max_expanded_per_candidate: 6,
+  rpc_timeout_s: 3,
+  rpc_retry_count: 1,
 
   // multidex / routing
   enable_multidex: false,
