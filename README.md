@@ -106,6 +106,10 @@ UI заметки:
   - max_hops → максимальная длина цикла (2..4)  
   - beam_k → сколько лучших комбинаций DEX держать  
   - edge_top_m → сколько лучших quotes брать на hop  
+  - trigger_prefer_cross_dex / trigger_require_cross_dex → предпочтение/требование к смешанным DEX маршрутам (trigger scan)  
+  - trigger_require_three_hops → требовать 3-hop циклы для trigger scan  
+  - trigger_cross_dex_bonus_bps / trigger_same_dex_penalty_bps → бонус/штраф для скоринга  
+  - trigger_edge_top_m_per_dex → сколько топ‑квот брать на hop на каждый DEX  
   - probe_amount → объём для prefilter  
   - prepare_budget_ratio / prepare_budget_min_s / prepare_budget_max_s → бюджет на prepare_block  
   - expand_ratio_cap / expand_budget_max_s → лимит бюджета на multidex expansion  
@@ -138,23 +142,32 @@ UI заметки:
 - Pre‑scan: скан сразу после появления pending tx (до блока).
 - Post‑scan: быстрая проверка после включения tx в блок (для сравнения).
 
+Trigger‑скан (mempool):
+- По умолчанию предпочитает смешанные DEX‑маршруты и 3‑hop циклы (настраивается в UI).
+- В `logs/trigger_scans.jsonl` пишутся `classification`, `backend`, `dex_mix`, `hops`, `post_best_net`, `post_delta_net`.
+
 Ожидаемое поведение:
 - Много `no_hit` — это нормально.
 - В логах должны появляться decoded swaps + trigger scans.
 - Файлы: `logs/mempool.jsonl` и `logs/trigger_scans.jsonl`.
-  - thresholds, лимиты по газу, режимы scan_mode, etc.  
-  - report_currency → базовая валюта в UI (USDC/USDT)  
-  - mev_buffer_bps → дополнительная подушка к профиту (bps)  
-  - v2_min_reserve_ratio / v2_max_price_impact_bps → фильтры V2 пулов  
+  - thresholds, лимиты по газу, режимы scan_mode, etc.
 
-- `bot/config.py`  
-  - RPC_URL → ETH mainnet публичный RPC  
-  - TOKENS → поддерживаемые токены (USDC, WETH, ...)  
-  - UNISWAP_V3_QUOTER → Quoter адрес  
-  - STRATEGY_* → дефолтные базы/хабы/вселенная токенов  
-  - RPC_PRIORITY_WEIGHTS / RPC_FALLBACK_ONLY → приоритеты пула RPC  
-  - RPC_CB_* / RPC_TIMEOUT_* → circuit breaker и таймауты RPC  
-  - RPC_RETRY_COUNT / RPC_RATE_LIMIT_BACKOFF_S → ретраи и backoff  
+## Execution‑grade симуляция (dry‑run)
+Сканер считает gross/net с учётом газа + slippage/MEV buffers. Это всё ещё симуляция (без реального исполнения).
+
+Готовность к тестнету:
+- `bot/arb_builder.py` строит calldata для контракта `ArbitrageExecutor`.
+- `deploy/deploy_executor.py` деплоит контракт (нужен `solc`, `RPC_URL`, `PRIVATE_KEY`).
+- Укажите `ARB_EXECUTOR_ADDRESS` в `bot/config.py`, чтобы включить dry‑run calldata (без broadcast).
+
+`bot/config.py`  
+- RPC_URL → ETH mainnet публичный RPC  
+- TOKENS → поддерживаемые токены (USDC, WETH, ...)  
+- UNISWAP_V3_QUOTER → Quoter адрес  
+- STRATEGY_* → дефолтные базы/хабы/вселенная токенов  
+- RPC_PRIORITY_WEIGHTS / RPC_FALLBACK_ONLY → приоритеты пула RPC  
+- RPC_CB_* / RPC_TIMEOUT_* → circuit breaker и таймауты RPC  
+- RPC_RETRY_COUNT / RPC_RATE_LIMIT_BACKOFF_S → ретраи и backoff  
 
 - `bot/risk` → настройки slippage и reorg
 

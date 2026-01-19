@@ -17,6 +17,8 @@ const presetsDir = path.join(projectRoot, 'presets');
 const mempoolStatusPath = path.join(projectRoot, 'logs', 'mempool_status.json');
 const mempoolRecentPath = path.join(projectRoot, 'logs', 'mempool_recent.json');
 const mempoolTriggersPath = path.join(projectRoot, 'logs', 'mempool_triggers.json');
+const mempoolLogPath = path.join(projectRoot, 'logs', 'mempool.jsonl');
+const triggerLogPath = path.join(projectRoot, 'logs', 'trigger_scans.jsonl');
 const UI_STATE_MAX_BYTES = 512 * 1024;
 
 const DEFAULT_CONFIG = {
@@ -53,6 +55,12 @@ const DEFAULT_CONFIG = {
   max_hops: 3,
   beam_k: 20,
   edge_top_m: 2,
+  trigger_prefer_cross_dex: true,
+  trigger_require_cross_dex: true,
+  trigger_require_three_hops: true,
+  trigger_cross_dex_bonus_bps: 5,
+  trigger_same_dex_penalty_bps: 5,
+  trigger_edge_top_m_per_dex: 2,
   probe_amount: 1,
 
   // modes
@@ -353,6 +361,9 @@ function writeConfig(cfg) {
   safe.debug_funnel = normBool(safe.debug_funnel);
   safe.gas_off = normBool(safe.gas_off);
   safe.enable_multidex = normBool(safe.enable_multidex);
+  safe.trigger_prefer_cross_dex = normBool(safe.trigger_prefer_cross_dex);
+  safe.trigger_require_cross_dex = normBool(safe.trigger_require_cross_dex);
+  safe.trigger_require_three_hops = normBool(safe.trigger_require_three_hops);
   safe.mempool_enabled = normBool(safe.mempool_enabled);
 
   if (typeof safe.sim_profile === 'string') {
@@ -385,6 +396,11 @@ function writeConfig(cfg) {
     safe.edge_top_m = 2;
   }
   try {
+    safe.trigger_edge_top_m_per_dex = Math.max(1, Math.min(5, parseInt(safe.trigger_edge_top_m_per_dex || 2, 10)));
+  } catch {
+    safe.trigger_edge_top_m_per_dex = 2;
+  }
+  try {
     const src = String(safe.scan_source || 'block').trim().toLowerCase();
     safe.scan_source = ['block', 'mempool', 'hybrid'].includes(src) ? src : 'block';
   } catch {
@@ -395,6 +411,18 @@ function writeConfig(cfg) {
     safe.probe_amount = (Number.isFinite(probe) && probe > 0) ? probe : 1;
   } catch {
     safe.probe_amount = 1;
+  }
+  try {
+    const bonus = Number(safe.trigger_cross_dex_bonus_bps || 0);
+    safe.trigger_cross_dex_bonus_bps = Number.isFinite(bonus) ? bonus : 0;
+  } catch {
+    safe.trigger_cross_dex_bonus_bps = 0;
+  }
+  try {
+    const penalty = Number(safe.trigger_same_dex_penalty_bps || 0);
+    safe.trigger_same_dex_penalty_bps = Number.isFinite(penalty) ? penalty : 0;
+  } catch {
+    safe.trigger_same_dex_penalty_bps = 0;
   }
 
   fs.writeFileSync(configPath, JSON.stringify(safe, null, 2));
@@ -455,8 +483,17 @@ function broadcast(data) {
   });
 }
 
+function resetMempoolArtifacts() {
+  try { fs.writeFileSync(mempoolRecentPath, JSON.stringify([])); } catch {}
+  try { fs.writeFileSync(mempoolTriggersPath, JSON.stringify([])); } catch {}
+  try { fs.writeFileSync(mempoolStatusPath, JSON.stringify({})); } catch {}
+  try { fs.writeFileSync(mempoolLogPath, ''); } catch {}
+  try { fs.writeFileSync(triggerLogPath, ''); } catch {}
+}
+
 function startBot() {
   if (isRunning()) return { ok: true, alreadyRunning: true };
+  resetMempoolArtifacts();
 
   const script = path.join(projectRoot, 'fork_test.py');
   const python = process.env.PYTHON || 'python3';
@@ -764,6 +801,7 @@ const server = http.createServer((req, res) => {
       }
 
       // Start fresh (will read config + env again)
+      resetMempoolArtifacts();
       const started = startBot();
       return started;
     })()

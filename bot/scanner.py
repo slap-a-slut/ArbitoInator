@@ -662,6 +662,7 @@ class PriceScanner:
         route_fee_tier: List[int] = []
         dex_path: List[str] = []
         edge_meta: List[Dict[str, Any]] = []
+        hop_amounts: List[Dict[str, Any]] = []
         for i in range(len(route) - 1):
             if hops:
                 hop = hops[i]
@@ -757,6 +758,14 @@ class PriceScanner:
             route_fee_tier.append(int(_edge_fee_tier(q)))
             dex_path.append(_edge_label(q))
             edge_meta.append(_edge_meta_snapshot(q))
+            hop_amounts.append(
+                {
+                    "amount_in": int(amt),
+                    "amount_out": int(q.amount_out),
+                    "dex_id": str(q.dex_id),
+                    "fee_tier": int(_edge_fee_tier(q)),
+                }
+            )
             if _is_nonsensical_amount(amt, int(q.amount_out)):
                 last_meta = edge_meta[-1] if edge_meta else {}
                 details = {
@@ -871,8 +880,14 @@ class PriceScanner:
             "route_fee_tier": tuple(route_fee_tier),
             "dex_path": tuple(dex_path),
             "hops": hop_payload,
+            "hop_amounts": list(hop_amounts),
             "to": "0x0000000000000000000000000000000000000000",
         }
+        dex_mix: Dict[str, int] = {}
+        for d in route_dex:
+            dex_mix[str(d)] = int(dex_mix.get(str(d), 0)) + 1
+        payload["dex_mix"] = dex_mix
+        payload["hops_count"] = int(len(route) - 1)
         if cache_enabled:
             self._payload_cache[cache_key] = payload
         return payload

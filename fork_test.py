@@ -9,8 +9,11 @@ from pathlib import Path
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
 
 from bot import scanner, strategies, executor, config
+from bot.simulator import simulate_candidate_async
+from bot.arb_builder import build_execute_call_from_payload
 from bot.block_context import BlockContext
 from bot.routes import Hop
 from ui_notify import ui_push
@@ -124,6 +127,12 @@ class Settings:
     max_hops: int = 3
     beam_k: int = 20
     edge_top_m: int = 2
+    trigger_prefer_cross_dex: bool = True
+    trigger_require_cross_dex: bool = True
+    trigger_require_three_hops: bool = True
+    trigger_cross_dex_bonus_bps: float = 5.0
+    trigger_same_dex_penalty_bps: float = 5.0
+    trigger_edge_top_m_per_dex: int = 2
     probe_amount: float = 1.0
 
     # Mode
@@ -246,6 +255,30 @@ def _load_settings() -> Settings:
     except Exception:
         s.enable_multidex = False
     try:
+        val = raw.get("trigger_prefer_cross_dex", s.trigger_prefer_cross_dex)
+        if isinstance(val, str):
+            s.trigger_prefer_cross_dex = val.strip().lower() in ("1", "true", "yes", "on")
+        else:
+            s.trigger_prefer_cross_dex = bool(val)
+    except Exception:
+        pass
+    try:
+        val = raw.get("trigger_require_cross_dex", s.trigger_require_cross_dex)
+        if isinstance(val, str):
+            s.trigger_require_cross_dex = val.strip().lower() in ("1", "true", "yes", "on")
+        else:
+            s.trigger_require_cross_dex = bool(val)
+    except Exception:
+        pass
+    try:
+        val = raw.get("trigger_require_three_hops", s.trigger_require_three_hops)
+        if isinstance(val, str):
+            s.trigger_require_three_hops = val.strip().lower() in ("1", "true", "yes", "on")
+        else:
+            s.trigger_require_three_hops = bool(val)
+    except Exception:
+        pass
+    try:
         src = str(raw.get("scan_source", s.scan_source)).strip().lower()
         if src in ("block", "mempool", "hybrid"):
             s.scan_source = src
@@ -261,6 +294,10 @@ def _load_settings() -> Settings:
         pass
     try:
         s.edge_top_m = int(raw.get("edge_top_m", s.edge_top_m))
+    except Exception:
+        pass
+    try:
+        s.trigger_edge_top_m_per_dex = int(raw.get("trigger_edge_top_m_per_dex", s.trigger_edge_top_m_per_dex))
     except Exception:
         pass
     try:
@@ -280,6 +317,14 @@ def _load_settings() -> Settings:
     # numeric fields
     try:
         s.mev_buffer_bps = float(raw.get("mev_buffer_bps", s.mev_buffer_bps))
+    except Exception:
+        pass
+    try:
+        s.trigger_cross_dex_bonus_bps = float(raw.get("trigger_cross_dex_bonus_bps", s.trigger_cross_dex_bonus_bps))
+    except Exception:
+        pass
+    try:
+        s.trigger_same_dex_penalty_bps = float(raw.get("trigger_same_dex_penalty_bps", s.trigger_same_dex_penalty_bps))
     except Exception:
         pass
     try:
@@ -431,9 +476,17 @@ def _decimals_by_token(addr: str) -> int:
     return int(config.token_decimals(addr))
 
 
-def _scale_amount(token_in: str, amount_units: float) -> int:
+def _scale_amount(token_in: str, amount_units: Any) -> int:
     dec = _decimals_by_token(token_in)
-    return int(float(amount_units) * (10 ** dec))
+    try:
+        amt = Decimal(str(amount_units))
+    except (InvalidOperation, ValueError, TypeError):
+        return 0
+    scale = Decimal(10) ** int(dec)
+    try:
+        return int((amt * scale).to_integral_value(rounding=ROUND_DOWN))
+    except (InvalidOperation, ValueError, OverflowError):
+        return 0
 
 
 def _route_pretty(
@@ -492,43 +545,62 @@ async def scan_routes() -> List[Tuple[str, ...]]:
     return strategies.Strategy(bases=[base_addr]).get_routes(max_hops=int(getattr(s, "max_hops", 3)))
 
 
-def _build_trigger_routes(tokens_involved: List[str], *, max_hops: int) -> List[Tuple[str, ...]]:
+def _build_trigger_routes(
+    tokens_involved: List[str],
+    *,
+    max_hops: int,
+    token_universe: Optional[List[str]] = None,
+    require_three_hops: bool = False,
+) -> List[Tuple[str, ...]]:
     s = _load_settings()
     rc = str(getattr(s, "report_currency", "USDC") or "USDC").upper()
     base_addr = config.TOKENS.get(rc, config.TOKENS["USDC"])
-    connectors = [
+    base_norm = str(base_addr).lower()
+    connectors = list(getattr(config, "MEMPOOL_TRIGGER_CONNECTORS", [])) or [
         config.TOKENS.get("WETH"),
         config.TOKENS.get("USDC"),
         config.TOKENS.get("USDT"),
         config.TOKENS.get("DAI"),
     ]
+    token_source = token_universe or tokens_involved
     tokens: List[str] = []
-    for t in tokens_involved + connectors:
+    seen: set[str] = set()
+    for t in list(token_source) + connectors:
         if not t:
             continue
-        t_norm = str(t)
-        if t_norm not in tokens and t_norm != base_addr:
-            tokens.append(t_norm)
+        try:
+            addr = config.token_address(str(t))
+        except Exception:
+            addr = str(t)
+        addr = str(addr).lower()
+        if addr == base_norm:
+            continue
+        if addr in seen:
+            continue
+        seen.add(addr)
+        tokens.append(addr)
     if not tokens:
         return []
     if max_hops < 2:
         max_hops = 2
     if max_hops > 4:
         max_hops = 4
+    if require_three_hops and max_hops < 3:
+        max_hops = 3
     # Limit tokens to keep trigger scan fast.
     tokens = tokens[:8]
 
     routes: List[Tuple[str, ...]] = []
-    if max_hops >= 2:
+    if max_hops >= 2 and not require_three_hops:
         for x in tokens:
-            if x != base_addr:
-                routes.append((base_addr, x, base_addr))
+            if x != base_norm:
+                routes.append((base_norm, x, base_norm))
     if max_hops >= 3:
         for a in tokens:
             for b in tokens:
                 if a == b:
                     continue
-                routes.append((base_addr, a, b, base_addr))
+                routes.append((base_norm, a, b, base_norm))
     if max_hops >= 4:
         mids = tokens[:6]
         for a in mids:
@@ -538,7 +610,7 @@ def _build_trigger_routes(tokens_involved: List[str], *, max_hops: int) -> List[
                 for c in mids:
                     if c == a or c == b:
                         continue
-                    routes.append((base_addr, a, b, c, base_addr))
+                    routes.append((base_norm, a, b, c, base_norm))
 
     uniq: List[Tuple[str, ...]] = []
     seen = set()
@@ -563,7 +635,13 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
             "outcome": "no_context",
         }
     block_ctx = MEMPOOL_BLOCK_CTX
-    routes = _build_trigger_routes(trigger.tokens_involved, max_hops=int(getattr(s, "max_hops", 3)))
+    require_three_hops = bool(getattr(s, "trigger_require_three_hops", getattr(config, "TRIGGER_REQUIRE_THREE_HOPS", True)))
+    routes = _build_trigger_routes(
+        trigger.tokens_involved,
+        max_hops=int(getattr(s, "max_hops", 3)),
+        token_universe=trigger.token_universe,
+        require_three_hops=require_three_hops,
+    )
     if not routes:
         return {
             "scheduled": 0,
@@ -580,8 +658,38 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
 
     rc = str(getattr(s, "report_currency", "USDC") or "USDC").upper()
     base_addr = config.TOKENS.get(rc, config.TOKENS["USDC"])
-    amount_in = _scale_amount(base_addr, float(s.stage1_amount))
+    amount_in = _scale_amount(base_addr, s.stage1_amount)
     candidates = [{"route": route, "amount_in": int(amount_in)} for route in routes]
+
+    prefer_cross_dex = bool(getattr(s, "trigger_prefer_cross_dex", getattr(config, "TRIGGER_PREFER_CROSS_DEX", True)))
+    require_cross_dex = bool(getattr(s, "trigger_require_cross_dex", getattr(config, "TRIGGER_REQUIRE_CROSS_DEX", True)))
+    cross_bonus = float(getattr(s, "trigger_cross_dex_bonus_bps", getattr(config, "TRIGGER_CROSS_DEX_BONUS_BPS", 0.0)))
+    same_penalty = float(getattr(s, "trigger_same_dex_penalty_bps", getattr(config, "TRIGGER_SAME_DEX_PENALTY_BPS", 0.0)))
+    edge_top_m_per_dex = int(getattr(s, "trigger_edge_top_m_per_dex", getattr(config, "TRIGGER_EDGE_TOP_M_PER_DEX", 0)))
+    if not getattr(PS, "dexes", None) or len(getattr(PS, "dexes", [])) < 2:
+        require_cross_dex = False
+        prefer_cross_dex = False
+
+    use_beam = bool(getattr(s, "enable_multidex", False)) or prefer_cross_dex or require_cross_dex
+    if use_beam:
+        expand_stats: Dict[str, Any] = {}
+        candidates = await _expand_multidex_candidates(
+            routes,
+            amount_in=int(amount_in),
+            block_ctx=block_ctx,
+            fee_tiers=list(s.stage1_fee_tiers) if s.stage1_fee_tiers else None,
+            timeout_s=timeout_s,
+            deadline_s=deadline,
+            settings=s,
+            max_total=int(getattr(s, "max_total_expanded", 0)) or None,
+            max_per_route=int(getattr(s, "max_expanded_per_candidate", 0)) or None,
+            stats=expand_stats,
+            edge_top_m_per_dex=edge_top_m_per_dex if edge_top_m_per_dex > 0 else None,
+            prefer_cross_dex=prefer_cross_dex,
+            require_cross_dex=require_cross_dex,
+            cross_dex_bonus_bps=cross_bonus,
+            same_dex_penalty_bps=same_penalty,
+        )
 
     payloads, _, scan_stats = await _scan_candidates(
         candidates,
@@ -597,20 +705,47 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
     best_gross = 0.0
     best_net = 0.0
     best_route = None
+    best_dex_mix = None
+    best_hops = None
+    best_reason = None
+    best_classification = "no_hit"
+    best_backend = "quote"
+    arb_calldata_len = None
+    arb_calldata_prefix = None
+    arb_call = None
     if payloads:
         dec = _decimals_by_token(base_addr)
         ranked = sorted(payloads, key=lambda p: int(p.get("profit_gross_raw", 0)), reverse=True)
         best = ranked[0]
         best_route = _route_pretty(tuple(best.get("route")), best.get("route_dex"), best.get("route_fee_bps"), best.get("route_fee_tier"), best.get("dex_path"))
-        gross_raw = int(best.get("profit_gross_raw", 0) or 0)
-        net_raw = int(best.get("profit_raw_net", best.get("profit_raw", 0)) or 0)
+        if getattr(config, "ARB_EXECUTOR_ADDRESS", ""):
+            try:
+                arb_call = build_execute_call_from_payload(best, min_profit=1, to_addr=SIM_FROM_ADDRESS)
+                arb_calldata_len = int(len(arb_call))
+                arb_calldata_prefix = "0x" + arb_call.hex()[:16]
+            except Exception:
+                arb_call = None
+        sim = await simulate_candidate_async(
+            best,
+            s,
+            backends=list(getattr(config, "EXEC_SIM_BACKENDS", ["quote"])),
+            rpc=PS.rpc,
+            block_ctx=block_ctx,
+            arb_call=arb_call,
+        )
+        gross_raw = int(sim.gross_raw)
         best_gross = float(gross_raw) / float(10 ** dec)
-        best_net = float(net_raw) / float(10 ** dec)
+        best_net = float(int(sim.net_after_buffers_raw)) / float(10 ** dec)
+        best_classification = sim.classification
+        best_backend = sim.backend
+        best_dex_mix = best.get("dex_mix")
+        best_hops = best.get("hops_count")
+        best_reason = best.get("reason_selected")
 
     outcome = "no_hit"
-    if best_net > 0:
+    if best_classification == "net_hit":
         outcome = "net_hit"
-    elif best_gross > 0:
+    elif best_classification == "gross_hit":
         outcome = "gross_hit"
 
     return {
@@ -620,6 +755,13 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
         "best_gross": float(best_gross),
         "best_net": float(best_net),
         "best_route_summary": best_route,
+        "dex_mix": best_dex_mix,
+        "hops": best_hops,
+        "reason_selected": best_reason,
+        "classification": best_classification,
+        "backend": best_backend,
+        "arb_calldata_len": arb_calldata_len,
+        "arb_calldata_prefix": arb_calldata_prefix,
         "outcome": outcome,
     }
 
@@ -731,7 +873,7 @@ async def _route_viable(
     probe_units: float,
     viability_cache: Optional[Dict[Tuple[str, str, str, int], Optional[int]]] = None,
 ) -> bool:
-    amt = _scale_amount(route[0], float(probe_units))
+    amt = _scale_amount(route[0], probe_units)
     for i in range(len(route) - 1):
         key = (
             str(block_ctx.block_tag),
@@ -784,13 +926,18 @@ async def _beam_candidates_for_route(
     timeout_s: float,
     beam_k: int,
     edge_top_m: int,
+    edge_top_m_per_dex: Optional[int] = None,
     eval_budget: int,
+    prefer_cross_dex: bool = False,
+    require_cross_dex: bool = False,
+    cross_dex_bonus_bps: float = 0.0,
+    same_dex_penalty_bps: float = 0.0,
     deadline_s: Optional[float] = None,
     stats: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     loop = asyncio.get_running_loop()
     t0 = loop.time()
-    states: List[Dict[str, Any]] = [{"amount": int(amount_in), "hops": []}]
+    states: List[Dict[str, Any]] = [{"amount": int(amount_in), "hops": [], "dexes": [], "score": float(amount_in)}]
     max_drawdown = float(getattr(config, "BEAM_MAX_DRAWDOWN", 0.35))
     max_drawdown = min(0.9, max(0.0, max_drawdown))
 
@@ -813,22 +960,51 @@ async def _beam_candidates_for_route(
             )
             if not edges:
                 continue
-            edges = sorted(edges, key=lambda e: int(e.amount_out), reverse=True)
-            edges = edges[: max(1, int(edge_top_m))]
+            if edge_top_m_per_dex:
+                edges_by_dex: Dict[str, List[Any]] = {}
+                for edge in edges:
+                    edges_by_dex.setdefault(str(edge.dex_id), []).append(edge)
+                filtered: List[Any] = []
+                for dex_id, group in edges_by_dex.items():
+                    group = sorted(group, key=lambda e: int(e.amount_out), reverse=True)
+                    filtered.extend(group[: max(1, int(edge_top_m_per_dex))])
+                edges = filtered
+            else:
+                edges = sorted(edges, key=lambda e: int(e.amount_out), reverse=True)
+                edges = edges[: max(1, int(edge_top_m))]
             for edge in edges:
                 if len(new_states) >= int(eval_budget):
                     break
                 if int(edge.amount_out) <= 0:
                     continue
                 next_hops = list(st["hops"]) + [_edge_to_hop(edge, token_in, token_out)]
-                new_states.append({"amount": int(edge.amount_out), "hops": next_hops})
+                next_dexes = list(st.get("dexes") or []) + [str(edge.dex_id)]
+                distinct = len(set(next_dexes))
+                score = float(edge.amount_out)
+                reason = st.get("reason_selected")
+                if distinct >= 2 and (prefer_cross_dex or require_cross_dex):
+                    if cross_dex_bonus_bps:
+                        score *= 1.0 + (float(cross_dex_bonus_bps) / 10_000.0)
+                    reason = "cross_dex_bonus"
+                elif distinct == 1 and same_dex_penalty_bps:
+                    score *= max(0.0, 1.0 - (float(same_dex_penalty_bps) / 10_000.0))
+                    reason = "same_dex_penalty"
+                new_states.append(
+                    {
+                        "amount": int(edge.amount_out),
+                        "hops": next_hops,
+                        "dexes": next_dexes,
+                        "score": score,
+                        "reason_selected": reason,
+                    }
+                )
             if len(new_states) >= int(eval_budget):
                 break
 
         if not new_states:
             return []
 
-        new_states = sorted(new_states, key=lambda st: int(st["amount"]), reverse=True)
+        new_states = sorted(new_states, key=lambda st: float(st.get("score", st.get("amount", 0))), reverse=True)
         if max_drawdown > 0:
             floor_amt = int(float(amount_in) * (1.0 - max_drawdown))
             new_states = [st for st in new_states if int(st["amount"]) >= floor_amt]
@@ -837,9 +1013,20 @@ async def _beam_candidates_for_route(
         if not states:
             return []
 
+    if require_cross_dex:
+        states = [st for st in states if len(set(st.get("dexes") or [])) >= 2]
+        if not states:
+            return []
+
     out: List[Dict[str, Any]] = []
     for st in states:
+        dex_mix: Dict[str, int] = {}
+        for hop in st.get("hops", []):
+            dex_mix[str(hop.dex_id)] = int(dex_mix.get(str(hop.dex_id), 0)) + 1
         out.append({"route": route, "hops": list(st["hops"]), "amount_in": int(amount_in)})
+        out[-1]["dex_mix"] = dex_mix
+        out[-1]["hops_count"] = int(len(route) - 1)
+        out[-1]["reason_selected"] = st.get("reason_selected")
     if stats is not None:
         stats["beam_ms"] = float(stats.get("beam_ms", 0.0)) + (loop.time() - t0) * 1000.0
         stats["beam_candidates_total"] = int(stats.get("beam_candidates_total", 0)) + len(out)
@@ -859,6 +1046,11 @@ async def _expand_multidex_candidates(
     max_per_route: Optional[int] = None,
     viability_cache: Optional[Dict[Tuple[str, str, str, int], Optional[int]]] = None,
     stats: Optional[Dict[str, Any]] = None,
+    edge_top_m_per_dex: Optional[int] = None,
+    prefer_cross_dex: bool = False,
+    require_cross_dex: bool = False,
+    cross_dex_bonus_bps: float = 0.0,
+    same_dex_penalty_bps: float = 0.0,
 ) -> List[Dict[str, Any]]:
     loop = asyncio.get_running_loop()
     expand_t0 = loop.time()
@@ -893,7 +1085,12 @@ async def _expand_multidex_candidates(
                     timeout_s=timeout_s,
                     beam_k=int(settings.beam_k),
                     edge_top_m=int(settings.edge_top_m),
+                    edge_top_m_per_dex=edge_top_m_per_dex,
                     eval_budget=int(settings.stage2_max_evals),
+                    prefer_cross_dex=prefer_cross_dex,
+                    require_cross_dex=require_cross_dex,
+                    cross_dex_bonus_bps=cross_dex_bonus_bps,
+                    same_dex_penalty_bps=same_dex_penalty_bps,
                     deadline_s=deadline_s,
                     stats=stats,
                 )
@@ -990,6 +1187,9 @@ async def _scan_candidates(
                 )
             except Exception:
                 payload = None
+            if payload and isinstance(c, dict):
+                if c.get("reason_selected") is not None:
+                    payload["reason_selected"] = c.get("reason_selected")
             async with stats_lock:
                 if not payload or payload.get("profit_raw", -1) == -1:
                     invalid += 1
@@ -1427,7 +1627,7 @@ async def _optimize_amount_for_route(
             best = p
 
     # Quick sanity: also test around seed amount
-    seed_amt = int(seed_payload.get("amount_in", _scale_amount(token_in, float(s.stage1_amount))))
+    seed_amt = int(seed_payload.get("amount_in", _scale_amount(token_in, s.stage1_amount)))
     seed_amt = max(lo, min(hi, seed_amt))
 
     # Golden-section style search with max_evals total
@@ -1894,7 +2094,7 @@ async def main() -> None:
                             for u in list(s.amount_presets):
                                 if remaining_total <= 0:
                                     break
-                                amt_in = _scale_amount(base_token, float(u))
+                                amt_in = _scale_amount(base_token, u)
                                 more = await _expand_multidex_candidates(
                                     routes,
                                     amount_in=int(amt_in),
@@ -1922,7 +2122,7 @@ async def main() -> None:
                             for route in routes:
                                 token_in = route[0]
                                 for u in list(s.amount_presets):
-                                    candidates.append({"route": route, "amount_in": _scale_amount(token_in, float(u))})
+                                    candidates.append({"route": route, "amount_in": _scale_amount(token_in, u)})
                                     if len(candidates) >= int(max_candidates_stage1):
                                         break
                                 if len(candidates) >= int(max_candidates_stage1):
@@ -1969,7 +2169,7 @@ async def main() -> None:
                         viability_cache = {} if getattr(config, "VIABILITY_CACHE_ENABLED", True) else None
                         if enable_multidex:
                             base_token = routes[0][0]
-                            stage1_amount = _scale_amount(base_token, float(s.stage1_amount))
+                            stage1_amount = _scale_amount(base_token, s.stage1_amount)
                             expand_stats: Dict[str, Any] = {}
                             stage1_candidates = await _expand_multidex_candidates(
                                 routes,
@@ -1993,7 +2193,7 @@ async def main() -> None:
                                 scan_stats["capped_by_max_expanded_per_candidate"] = bool(expand_stats.get("capped_by_max_expanded_per_candidate", False))
                         else:
                             stage1_candidates = [
-                                {"route": route, "amount_in": _scale_amount(route[0], float(s.stage1_amount))} for route in routes
+                                {"route": route, "amount_in": _scale_amount(route[0], s.stage1_amount)} for route in routes
                             ]
                             scan_stats["candidates_after_beam"] = int(len(stage1_candidates))
                             scan_stats["candidates_after_multidex"] = int(len(stage1_candidates))

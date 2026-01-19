@@ -40,10 +40,16 @@ class Trigger:
     tx_hash: str
     trigger_type: str
     tokens_involved: List[str]
+    token_universe: Optional[List[str]]
     suggested_routes: Optional[List[List[str]]]
     created_at_ms: int
     amount_in: Optional[int]
     token_in: Optional[str]
+    pending_to: Optional[str] = None
+    pending_input: Optional[str] = None
+    pending_value: Optional[int] = None
+    pending_max_fee_per_gas: Optional[int] = None
+    pending_max_priority_fee_per_gas: Optional[int] = None
 
 
 @dataclass(frozen=True)

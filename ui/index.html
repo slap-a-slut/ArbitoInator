@@ -355,6 +355,9 @@
     .mempoolList{ background: rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:8px; min-height:120px; }
     .mempoolList .label{ font-size:11px; color: rgba(255,255,255,0.6); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.04em; }
     .mempoolList .list{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11px; line-height:1.35; max-height:160px; overflow:auto; white-space:pre; }
+    .mempoolList .row{ padding:2px 4px; border-radius:6px; cursor:pointer; }
+    .mempoolList .row:hover{ background: rgba(255,255,255,0.06); }
+    .mempoolDetail{ margin-top:10px; background: rgba(8,10,14,0.5); border:1px solid rgba(255,255,255,0.06); border-radius:12px; padding:8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11px; line-height:1.35; white-space:pre-wrap; max-height:160px; overflow:auto; }
 
     .chartWrap{
       border-radius: 18px;
@@ -683,6 +686,26 @@
                 <div class="k">Triggers</div>
                 <div class="v" id="mpTriggers">0/0</div>
               </div>
+              <div class="stat">
+                <div class="k">Triggers total</div>
+                <div class="v" id="mpTotal">0/0</div>
+              </div>
+              <div class="stat">
+                <div class="k">Dropped/TTL</div>
+                <div class="v" id="mpDropped">0/0</div>
+              </div>
+              <div class="stat">
+                <div class="k">Avg latency</div>
+                <div class="v" id="mpLatency">0ms</div>
+              </div>
+              <div class="stat">
+                <div class="k">Decoded swaps</div>
+                <div class="v" id="mpDecoded">0</div>
+              </div>
+              <div class="stat">
+                <div class="k">Persistent hits</div>
+                <div class="v" id="mpPersist">0</div>
+              </div>
             </div>
             <div class="mempoolLists">
               <div class="mempoolList">
@@ -694,6 +717,7 @@
                 <div class="list" id="mpTriggerScans">—</div>
               </div>
             </div>
+            <div class="mempoolDetail" id="mpDetail">Select a trigger to view details.</div>
           </div>
         </div>
 
@@ -730,6 +754,22 @@
               <small>off = UniV3-only (legacy)</small>
             </div>
             <div class="field">
+              <label for="cfgTriggerPreferCrossDex">Trigger scan bias</label>
+              <label class="checkRow">
+                <input id="cfgTriggerPreferCrossDex" type="checkbox" />
+                <span>prefer cross-DEX routes (mempool)</span>
+              </label>
+              <small>adds a score bonus for mixed DEX paths</small>
+            </div>
+            <div class="field">
+              <label for="cfgTriggerRequire3Hops">Trigger scan hops</label>
+              <label class="checkRow">
+                <input id="cfgTriggerRequire3Hops" type="checkbox" />
+                <span>require 3-hop routes for triggers</span>
+              </label>
+              <small>triangular cycles only; 2-hop is skipped</small>
+            </div>
+            <div class="field">
               <label for="cfgMaxHops">Max hops</label>
               <input id="cfgMaxHops" type="number" step="1" min="2" max="4" />
               <small>2–4; higher = more cycles</small>
@@ -742,7 +782,7 @@
             <div class="field">
               <label for="cfgEdgeTopM">Edge top-M</label>
               <input id="cfgEdgeTopM" type="number" step="1" min="1" max="5" />
-              <small>top quotes per hop per DEX</small>
+              <small>top quotes per hop (trigger scans use per-DEX cap)</small>
             </div>
             <div class="field">
               <label for="cfgProbeAmount">Probe amount</label>
@@ -998,11 +1038,14 @@
   const mempoolSwaps = [];
   const mempoolTriggerScans = [];
   let mempoolStatus = null;
+  let selectedTriggerDetail = null;
 
   // Settings elements
   const cfgRpcUrls = document.getElementById('cfgRpcUrls');
   const cfgDexes = document.getElementById('cfgDexes');
   const cfgEnableMultidex = document.getElementById('cfgEnableMultidex');
+  const cfgTriggerPreferCrossDex = document.getElementById('cfgTriggerPreferCrossDex');
+  const cfgTriggerRequire3Hops = document.getElementById('cfgTriggerRequire3Hops');
   const cfgMaxHops = document.getElementById('cfgMaxHops');
   const cfgBeamK = document.getElementById('cfgBeamK');
   const cfgEdgeTopM = document.getElementById('cfgEdgeTopM');
@@ -1046,8 +1089,14 @@
   const mpRate = document.getElementById('mpRate');
   const mpFetch = document.getElementById('mpFetch');
   const mpTriggers = document.getElementById('mpTriggers');
+  const mpTotal = document.getElementById('mpTotal');
+  const mpDropped = document.getElementById('mpDropped');
+  const mpLatency = document.getElementById('mpLatency');
+  const mpDecoded = document.getElementById('mpDecoded');
+  const mpPersist = document.getElementById('mpPersist');
   const mpSwaps = document.getElementById('mpSwaps');
   const mpTriggerScans = document.getElementById('mpTriggerScans');
+  const mpDetail = document.getElementById('mpDetail');
   const copyDebugBtn = document.getElementById('copyDebugBtn');
 
   // -----------------------------
@@ -1120,6 +1169,31 @@
     const queued = Number(st.triggers_queued || 0);
     const running = Number(st.triggers_running || 0);
     mpTriggers.textContent = `${queued}/${running}`;
+    if (mpTotal) {
+      const seen = Number(st.total_triggers_seen || 0);
+      const processed = Number(st.total_triggers_processed || 0);
+      mpTotal.textContent = `${seen}/${processed}`;
+    }
+    if (mpDropped) {
+      const droppedQ = Number(st.total_triggers_dropped_queue || 0);
+      const droppedTtl = Number(st.total_triggers_dropped_ttl || 0);
+      mpDropped.textContent = `${droppedQ}/${droppedTtl}`;
+    }
+    if (mpLatency) {
+      const lat = Number(st.avg_trigger_latency_ms || 0);
+      mpLatency.textContent = Number.isFinite(lat) ? `${lat.toFixed(0)}ms` : '—';
+    }
+    if (mpDecoded) {
+      const dec = Number(st.decoded_swaps_total || 0);
+      mpDecoded.textContent = String(dec);
+    }
+    if (mpPersist) {
+      const pers = Number(st.persistent_hits_total || 0);
+      const total = Number(st.post_validations_total || 0);
+      const warn = !!st.persistent_hit_warning;
+      mpPersist.textContent = total > 0 ? `${pers}/${total}` : String(pers);
+      mpPersist.style.color = warn ? 'var(--bad)' : 'var(--muted)';
+    }
     if (lastBlockEl && st.current_block) {
       lastBlockEl.textContent = String(st.current_block);
     }
@@ -1147,13 +1221,23 @@
       mpTriggerScans.textContent = '—';
       return;
     }
-    const lines = mempoolTriggerScans.slice(-20).map((t) => {
-      const outcome = t.outcome || 'no_hit';
+    mpTriggerScans.textContent = '';
+    mempoolTriggerScans.slice(-20).forEach((t) => {
+      const row = document.createElement('div');
+      row.className = 'row';
+      const outcome = t.classification || t.outcome || 'no_hit';
       const net = Number(t.best_net || 0).toFixed(4);
+      const hops = (t.hops != null) ? `h${t.hops}` : '';
+      const backend = t.backend ? `@${t.backend}` : '';
+      const dexMix = t.dex_mix ? JSON.stringify(t.dex_mix) : '';
       const route = t.best_route ? String(t.best_route) : '—';
-      return `${outcome} net=${net} ${route}`;
+      row.textContent = `${outcome} net=${net} ${hops}${backend} ${dexMix} ${route}`;
+      row.addEventListener('click', () => {
+        selectedTriggerDetail = t;
+        renderTriggerDetail();
+      });
+      mpTriggerScans.appendChild(row);
     });
-    mpTriggerScans.textContent = lines.join('\n');
   }
 
   function pushMempoolSwap(entry){
@@ -1166,6 +1250,19 @@
     mempoolTriggerScans.push(entry);
     if (mempoolTriggerScans.length > 20) mempoolTriggerScans.shift();
     renderMempoolTriggers();
+  }
+
+  function renderTriggerDetail(){
+    if (!mpDetail) return;
+    if (!selectedTriggerDetail) {
+      mpDetail.textContent = 'Select a trigger to view details.';
+      return;
+    }
+    try {
+      mpDetail.textContent = JSON.stringify(selectedTriggerDetail, null, 2);
+    } catch {
+      mpDetail.textContent = String(selectedTriggerDetail);
+    }
   }
 
   function parseCsvList(value){
@@ -1880,8 +1977,15 @@
         clearObject(totalProfitBySym);
         clearObject(totalSpentBySym);
         profitEvents.length = 0;
+        mempoolSwaps.length = 0;
+        mempoolTriggerScans.length = 0;
+        mempoolStatus = null;
+        selectedTriggerDetail = null;
         if (profitRows) profitRows.textContent = '';
         if (rpcStatsBody) rpcStatsBody.textContent = '—';
+        renderMempoolSwaps();
+        renderMempoolTriggers();
+        if (mpDetail) mpDetail.textContent = 'Select a trigger to view details.';
         drawChart();
         updateStats();
         setNotice('status', msg.text || 'restarting...');
@@ -2169,6 +2273,8 @@
       rpc_urls: String(cfgRpcUrls?.value || '').trim(),
       dexes: String(cfgDexes?.value || '').trim(),
       enable_multidex: !!cfgEnableMultidex?.checked,
+      trigger_prefer_cross_dex: !!cfgTriggerPreferCrossDex?.checked,
+      trigger_require_three_hops: !!cfgTriggerRequire3Hops?.checked,
       max_hops: parseInt(cfgMaxHops?.value || '3', 10),
       beam_k: parseInt(cfgBeamK?.value || '20', 10),
       edge_top_m: parseInt(cfgEdgeTopM?.value || '2', 10),
@@ -2221,6 +2327,8 @@
       cfgDexes.value = formatCsvList(dx) || String(dx || '');
     }
     if (cfgEnableMultidex) cfgEnableMultidex.checked = !!cfg.enable_multidex;
+    if (cfgTriggerPreferCrossDex) cfgTriggerPreferCrossDex.checked = !!cfg.trigger_prefer_cross_dex;
+    if (cfgTriggerRequire3Hops) cfgTriggerRequire3Hops.checked = !!cfg.trigger_require_three_hops;
     if (cfgMaxHops) cfgMaxHops.value = String(cfg.max_hops ?? 3);
     if (cfgBeamK) cfgBeamK.value = String(cfg.beam_k ?? 20);
     if (cfgEdgeTopM) cfgEdgeTopM.value = String(cfg.edge_top_m ?? 2);

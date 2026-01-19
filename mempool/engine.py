@@ -99,6 +99,16 @@ class MempoolEngine:
         self._recent_triggers: Deque[Dict[str, Any]] = deque(maxlen=20)
         self._pending: Dict[str, TriggerRecord] = {}
         self._running_triggers = 0
+        self._triggers_seen = 0
+        self._triggers_processed = 0
+        self._triggers_dropped_ttl = 0
+        self._triggers_dropped_queue = 0
+        self._trigger_latency_sum_ms = 0.0
+        self._trigger_latency_count = 0
+        self._decoded_swaps_total = 0
+        self._post_validations_total = 0
+        self._persistent_hits = 0
+        self._valid_hits = 0
 
     async def start(self, scan_fn: ScanFn) -> None:
         if self._running:
@@ -150,6 +160,24 @@ class MempoolEngine:
         payload["triggers_queued"] = int(self._queue.qsize())
         payload["triggers_running"] = int(self._running_triggers)
         payload["current_block"] = int(self._current_block or 0)
+        payload["total_triggers_seen"] = int(self._triggers_seen)
+        payload["total_triggers_processed"] = int(self._triggers_processed)
+        payload["total_triggers_dropped_ttl"] = int(self._triggers_dropped_ttl)
+        payload["total_triggers_dropped_queue"] = int(self._triggers_dropped_queue)
+        payload["decoded_swaps_total"] = int(self._decoded_swaps_total)
+        payload["post_validations_total"] = int(self._post_validations_total)
+        payload["persistent_hits_total"] = int(self._persistent_hits)
+        payload["valid_hits_total"] = int(self._valid_hits)
+        if self._post_validations_total > 0:
+            ratio = float(self._persistent_hits) / float(self._post_validations_total)
+        else:
+            ratio = 0.0
+        payload["persistent_hit_ratio"] = float(ratio)
+        payload["persistent_hit_warning"] = bool(self._post_validations_total >= 3 and ratio >= 0.5)
+        if self._trigger_latency_count > 0:
+            payload["avg_trigger_latency_ms"] = float(self._trigger_latency_sum_ms / self._trigger_latency_count)
+        else:
+            payload["avg_trigger_latency_ms"] = 0.0
         self._write_json(self.status_path, payload)
         if self.ui_push:
             await self.ui_push({"type": "mempool_status", **payload})
@@ -165,8 +193,14 @@ class MempoolEngine:
             await self._log_mempool(tx, status="failed", reason=reason or "decode_failed")
             return
 
-        trigger, reason = build_trigger(decoded, min_value_usd=self.min_value_usd, usd_per_eth=self.usd_per_eth)
+        trigger, reason = build_trigger(
+            decoded,
+            min_value_usd=self.min_value_usd,
+            usd_per_eth=self.usd_per_eth,
+            pending_tx=tx,
+        )
         summary = self._decoded_summary(decoded)
+        self._decoded_swaps_total += 1
         self._recent_swaps.append(summary)
         self._write_json(self.recent_path, list(self._recent_swaps))
         if self.ui_push:
@@ -176,15 +210,18 @@ class MempoolEngine:
             return
 
         if self._queue.full():
+            self._triggers_dropped_queue += 1
             await self._log_mempool(tx, status="ignored", reason="trigger_queue_full", decoded_summary=summary)
             return
 
         try:
             self._queue.put_nowait(trigger)
         except Exception:
+            self._triggers_dropped_queue += 1
             await self._log_mempool(tx, status="ignored", reason="trigger_enqueue_failed", decoded_summary=summary)
             return
 
+        self._triggers_seen += 1
         await self._log_mempool(tx, status="decoded", reason=None, decoded_summary=summary)
 
     async def _trigger_worker(self) -> None:
@@ -197,6 +234,7 @@ class MempoolEngine:
                 continue
             now_ms = int(time.time() * 1000)
             if now_ms - trigger.created_at_ms > int(self.trigger_ttl_s * 1000):
+                self._triggers_dropped_ttl += 1
                 continue
             if not self._scan_fn:
                 continue
@@ -213,20 +251,30 @@ class MempoolEngine:
                 )
                 self._pending[trigger.tx_hash] = record
                 self._append_trigger_result(record, post_result=None)
+                self._triggers_processed += 1
+                self._trigger_latency_sum_ms += max(0.0, float(time.time() * 1000) - float(trigger.created_at_ms))
+                self._trigger_latency_count += 1
             except Exception:
                 continue
             finally:
                 self._running_triggers = max(0, self._running_triggers - 1)
 
     def _decoded_summary(self, decoded: DecodedSwap) -> Dict[str, Any]:
+        def _fmt_int(v: Optional[int]) -> Optional[str]:
+            if v is None:
+                return None
+            try:
+                return str(int(v))
+            except Exception:
+                return None
         return {
             "hash": decoded.tx_hash,
             "kind": decoded.kind,
             "router": decoded.router,
             "token_in": decoded.token_in,
             "token_out": decoded.token_out,
-            "amount_in": decoded.amount_in,
-            "amount_out_min": decoded.amount_out_min,
+            "amount_in": _fmt_int(decoded.amount_in),
+            "amount_out_min": _fmt_int(decoded.amount_out_min),
             "path": decoded.path,
             "fee_tiers": decoded.fee_tiers,
             "seen_at_ms": decoded.seen_at_ms,
@@ -234,6 +282,35 @@ class MempoolEngine:
 
     def _append_trigger_result(self, record: TriggerRecord, post_result: Optional[Dict[str, Any]]) -> None:
         pre = record.pre_result or {}
+        trigger_amount_in = None
+        if record.trigger.amount_in is not None:
+            try:
+                trigger_amount_in = str(int(record.trigger.amount_in))
+            except Exception:
+                trigger_amount_in = None
+        classification = pre.get("classification")
+        if post_result:
+            try:
+                pre_net = float(pre.get("best_net", 0.0))
+                post_net = float(post_result.get("best_net", 0.0))
+                if pre_net > 0 and post_net <= 0:
+                    classification = "VALID_HIT"
+                elif pre_net > 0 and post_net > 0:
+                    classification = "PERSISTENT_HIT"
+            except Exception:
+                pass
+        post_delta = None
+        if post_result:
+            try:
+                post_delta = float(pre.get("best_net", 0.0)) - float(post_result.get("best_net", 0.0))
+            except Exception:
+                post_delta = None
+        if post_result:
+            self._post_validations_total += 1
+            if classification == "PERSISTENT_HIT":
+                self._persistent_hits += 1
+            elif classification == "VALID_HIT":
+                self._valid_hits += 1
         entry = {
             "trigger_id": record.trigger.trigger_id,
             "tx_hash": record.trigger.tx_hash,
@@ -244,10 +321,20 @@ class MempoolEngine:
             "best_net": float(pre.get("best_net", 0.0)),
             "best_route": pre.get("best_route_summary"),
             "outcome": pre.get("outcome", "no_hit"),
+            "classification": classification,
+            "backend": pre.get("backend"),
+            "dex_mix": pre.get("dex_mix"),
+            "hops": pre.get("hops"),
+            "reason_selected": pre.get("reason_selected"),
+            "arb_calldata_len": pre.get("arb_calldata_len"),
+            "arb_calldata_prefix": pre.get("arb_calldata_prefix"),
+            "trigger_amount_in": trigger_amount_in,
+            "token_universe": record.trigger.token_universe,
             "ts": int(time.time() * 1000),
             "pre_block": record.pre_block,
             "post_block": record.post_block,
             "post_best_net": record.post_best_net,
+            "post_delta_net": post_delta,
         }
         self._recent_triggers.append(entry)
         self._write_json(self.triggers_path, list(self._recent_triggers))
