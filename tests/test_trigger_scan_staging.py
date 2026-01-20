@@ -1,3 +1,4 @@
+import time
 import pytest
 
 from bot.block_context import BlockContext
@@ -10,17 +11,22 @@ class DummyPS:
     dexes = ["univ3", "univ2"]
     rpc = None
 
+    def __init__(self, on_call=None):
+        self._on_call = on_call
+
     async def price_payload(self, c, *, block_ctx=None, fee_tiers=None, timeout_s=None):
-        return {"route": c.get("route", ()), "amount_in": c.get("amount_in", 1), "profit_raw": -1}
+        if self._on_call:
+            self._on_call()
+        return {"route": c.get("route", ()), "amount_in": c.get("amount_in", 1), "profit_raw": 0}
 
 
-def _make_trigger(tokens, token_universe=None):
+def _make_trigger(tokens):
     return Trigger(
         trigger_id="trg-test",
         tx_hash="0x" + "11" * 32,
         trigger_type="backrun_candidate",
         tokens_involved=tokens,
-        token_universe=token_universe,
+        token_universe=tokens,
         suggested_routes=None,
         created_at_ms=0,
         amount_in=None,
@@ -29,7 +35,7 @@ def _make_trigger(tokens, token_universe=None):
 
 
 @pytest.mark.asyncio
-async def test_trigger_funnel_diagnostics() -> None:
+async def test_schedule_at_least_one_when_candidates_exist() -> None:
     old_ps = fork_test.PS
     old_ctx = fork_test.MEMPOOL_BLOCK_CTX
     old_loader = fork_test._load_settings
@@ -38,17 +44,13 @@ async def test_trigger_funnel_diagnostics() -> None:
     try:
         s = fork_test.Settings()
         s.trigger_connectors = ("",)
-        s.trigger_base_fallback_enabled = True
+        s.trigger_prepare_budget_ms = 50
+        s.min_first_task_s = 0.05
         fork_test._load_settings = lambda: s  # type: ignore[assignment]
-        trigger = _make_trigger([], token_universe=[])
-        out = await fork_test._scan_trigger(trigger, 0.5)
-        assert out.get("zero_candidates_reason") == "no_cycles_generated"
-        assert out.get("candidates_raw") == 0
-        assert out.get("candidates_after_universe") == 0
-        assert out.get("candidates_after_base_filter") == 0
-        assert out.get("zero_candidates_stage") == "hops"
-        assert out.get("scheduled", 0) == 0
-        assert out.get("zero_candidates_reason") is not None
+        trigger = _make_trigger([config.TOKENS["WETH"]])
+        out = await fork_test._scan_trigger(trigger, 0.3)
+        assert out.get("scheduled", 0) >= 1
+        assert out.get("candidates_raw", 0) > 0
     finally:
         fork_test.PS = old_ps
         fork_test.MEMPOOL_BLOCK_CTX = old_ctx
@@ -56,49 +58,28 @@ async def test_trigger_funnel_diagnostics() -> None:
 
 
 @pytest.mark.asyncio
-async def test_base_fallback() -> None:
+async def test_prepare_budget_truncation_still_schedules(monkeypatch) -> None:
     old_ps = fork_test.PS
     old_ctx = fork_test.MEMPOOL_BLOCK_CTX
     old_loader = fork_test._load_settings
     fork_test.PS = DummyPS()
     fork_test.MEMPOOL_BLOCK_CTX = BlockContext(block_number=1, block_tag="0x1")
+
+    original_builder = fork_test._build_trigger_routes
+
+    def slow_routes(*args, **kwargs):
+        time.sleep(0.02)
+        return original_builder(*args, **kwargs)
+
     try:
         s = fork_test.Settings()
+        s.trigger_prepare_budget_ms = 1
         s.trigger_connectors = ("",)
-        s.trigger_base_fallback_enabled = True
-        s.trigger_allow_two_hop_fallback = True
-        s.trigger_require_three_hops = True
-        s.max_hops = 3
         fork_test._load_settings = lambda: s  # type: ignore[assignment]
-        trigger = _make_trigger([config.TOKENS["USDC"]])
-        out = await fork_test._scan_trigger(trigger, 0.5)
-        assert out.get("base_fallback_used") is True
-        assert out.get("base_used") in ("USDT", "DAI")
-        assert out.get("candidates_after_base_filter", 0) > 0
-    finally:
-        fork_test.PS = old_ps
-        fork_test.MEMPOOL_BLOCK_CTX = old_ctx
-        fork_test._load_settings = old_loader
-
-
-@pytest.mark.asyncio
-async def test_hop_fallback() -> None:
-    old_ps = fork_test.PS
-    old_ctx = fork_test.MEMPOOL_BLOCK_CTX
-    old_loader = fork_test._load_settings
-    fork_test.PS = DummyPS()
-    fork_test.MEMPOOL_BLOCK_CTX = BlockContext(block_number=1, block_tag="0x1")
-    try:
-        s = fork_test.Settings()
-        s.trigger_connectors = ("",)
-        s.trigger_allow_two_hop_fallback = True
-        s.trigger_require_three_hops = True
-        s.max_hops = 3
-        fork_test._load_settings = lambda: s  # type: ignore[assignment]
-        trigger = _make_trigger(["0x0000000000000000000000000000000000000009"])
-        out = await fork_test._scan_trigger(trigger, 0.5)
-        assert out.get("hop_fallback_used") is True
-        assert out.get("hops_attempted") == [3, 2]
+        monkeypatch.setattr(fork_test, "_build_trigger_routes", slow_routes)
+        trigger = _make_trigger([config.TOKENS["WETH"]])
+        out = await fork_test._scan_trigger(trigger, 0.3)
+        assert out.get("prepare_truncated") is True
         assert out.get("scheduled", 0) >= 1
     finally:
         fork_test.PS = old_ps
@@ -107,7 +88,35 @@ async def test_hop_fallback() -> None:
 
 
 @pytest.mark.asyncio
-async def test_connectors_added() -> None:
+async def test_no_rpc_in_prepare_stage() -> None:
+    calls = {"count": 0}
+
+    def _bump():
+        calls["count"] += 1
+
+    old_ps = fork_test.PS
+    old_ctx = fork_test.MEMPOOL_BLOCK_CTX
+    old_loader = fork_test._load_settings
+    fork_test.PS = DummyPS(on_call=_bump)
+    fork_test.MEMPOOL_BLOCK_CTX = BlockContext(block_number=1, block_tag="0x1")
+    try:
+        s = fork_test.Settings()
+        s.min_first_task_s = 0.5
+        s.trigger_prepare_budget_ms = 1
+        s.trigger_connectors = ("",)
+        fork_test._load_settings = lambda: s  # type: ignore[assignment]
+        trigger = _make_trigger([config.TOKENS["WETH"]])
+        out = await fork_test._scan_trigger(trigger, 0.0)
+        assert out.get("scheduled", 0) == 0
+        assert calls["count"] == 0
+    finally:
+        fork_test.PS = old_ps
+        fork_test.MEMPOOL_BLOCK_CTX = old_ctx
+        fork_test._load_settings = old_loader
+
+
+@pytest.mark.asyncio
+async def test_zero_schedule_reason_explained() -> None:
     old_ps = fork_test.PS
     old_ctx = fork_test.MEMPOOL_BLOCK_CTX
     old_loader = fork_test._load_settings
@@ -115,15 +124,14 @@ async def test_connectors_added() -> None:
     fork_test.MEMPOOL_BLOCK_CTX = BlockContext(block_number=1, block_tag="0x1")
     try:
         s = fork_test.Settings()
+        s.min_first_task_s = 0.5
+        s.trigger_prepare_budget_ms = 1
         s.trigger_connectors = ("",)
-        s.trigger_allow_two_hop_fallback = True
-        s.trigger_require_three_hops = True
-        s.max_hops = 3
         fork_test._load_settings = lambda: s  # type: ignore[assignment]
         trigger = _make_trigger([config.TOKENS["WETH"]])
-        out = await fork_test._scan_trigger(trigger, 0.5)
-        usdt_norm = str(config.token_address(config.TOKENS["USDT"])).lower()
-        assert usdt_norm in (out.get("connectors_added") or [])
+        out = await fork_test._scan_trigger(trigger, 0.0)
+        assert out.get("scheduled", 0) == 0
+        assert out.get("zero_schedule_reason") is not None
     finally:
         fork_test.PS = old_ps
         fork_test.MEMPOOL_BLOCK_CTX = old_ctx

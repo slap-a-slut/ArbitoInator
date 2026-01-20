@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import asyncio
+import hashlib
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -21,6 +22,7 @@ from bot.dex.base import QuoteEdge
 from bot.dex.registry import build_adapters
 from bot.routes import Hop
 from infra.rpc import AsyncRPC, RPCPool, get_rpc_urls
+from infra import gas as gas_oracle
 
 
 def _sym_by_addr(addr: str) -> str:
@@ -44,6 +46,22 @@ def _param_key(params: Optional[Dict[str, Any]]) -> Tuple[Tuple[str, Any], ...]:
             v = tuple(sorted((str(kk), vv) for kk, vv in v.items()))
         items.append((str(k), v))
     return tuple(items)
+
+
+def _make_candidate_id(
+    *,
+    block_tag: str,
+    trigger_tx_hash: Optional[str],
+    route: Tuple[str, ...],
+    amount_in: int,
+) -> str:
+    base = "|".join([
+        str(block_tag),
+        str(trigger_tx_hash or ""),
+        ",".join(str(x) for x in route),
+        str(int(amount_in)),
+    ])
+    return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
 
 def _normalize_hops(hops: Optional[List[Any]]) -> Optional[List[Hop]]:
@@ -159,12 +177,14 @@ def _error_payload(
     reason: str,
     details: Optional[Dict[str, Any]] = None,
     hops: Optional[List[Dict[str, Any]]] = None,
+    candidate_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     return {
         "route": route,
         "amount_in": int(amount_in),
         "profit": -1,
         "profit_raw": -1,
+        "candidate_id": candidate_id,
         "error": {
             "kind": str(kind),
             "reason": str(reason),
@@ -257,6 +277,7 @@ class PriceScanner:
         # Per-block caches
         self._block_tag: Optional[str] = None
         self._gas_price_wei: Optional[int] = None
+        self._fee_params: Optional[Dict[str, int]] = None
         self._weth_to_usdc_6: Optional[int] = None
 
         # cache: (block, dex_id, token_in, token_out, amount_in, params_key) -> QuoteEdge
@@ -279,6 +300,7 @@ class PriceScanner:
 
         self._block_tag = block_tag
         self._gas_price_wei = None
+        self._fee_params = None
         self._weth_to_usdc_6 = None
         self._quote_cache.clear()
         self._payload_cache.clear()
@@ -287,10 +309,11 @@ class PriceScanner:
 
         # Warmup (best-effort) — failures are OK
         try:
-            gp = await self.rpc.call("eth_gasPrice", [], timeout_s=6.0)
-            self._gas_price_wei = int(gp, 16)
+            self._fee_params = await gas_oracle.get_fee_params(self.rpc, timeout_s=6.0)
+            if self._fee_params.get("max_fee_per_gas"):
+                self._gas_price_wei = int(self._fee_params["max_fee_per_gas"])
         except Exception:
-            pass
+            self._fee_params = None
 
         try:
             # USDC per 1 WETH (1e18)
@@ -541,10 +564,13 @@ class PriceScanner:
         token_out = config.token_address(token_out)
         if self._gas_price_wei is None:
             try:
-                gp = await self.rpc.call("eth_gasPrice", [], timeout_s=timeout_s)
-                self._gas_price_wei = int(gp, 16)
+                self._fee_params = await gas_oracle.get_fee_params(self.rpc, timeout_s=timeout_s)
+                if self._fee_params.get("max_fee_per_gas"):
+                    self._gas_price_wei = int(self._fee_params["max_fee_per_gas"])
             except Exception:
-                return 0
+                self._fee_params = None
+        if self._gas_price_wei is None:
+            return 0
 
         gas_cost_wei = int(gas_units) * int(self._gas_price_wei)
 
@@ -599,6 +625,7 @@ class PriceScanner:
 
         block_tag = _require_block_tag(block, block_ctx)
         amount_in = int(candidate["amount_in"])
+        trigger_tx_hash = candidate.get("trigger_tx_hash")
         hops = _normalize_hops(candidate.get("hops"))
         tiers = tuple(int(x) for x in (fee_tiers if fee_tiers else config.FEE_TIERS))
         hop_payload = None
@@ -622,6 +649,12 @@ class PriceScanner:
                 tokens.append(t_out)
             route = tuple(tokens)
             if not ok_chain:
+                candidate_id = _make_candidate_id(
+                    block_tag=block_tag,
+                    trigger_tx_hash=trigger_tx_hash,
+                    route=route,
+                    amount_in=amount_in,
+                )
                 out = _error_payload(
                     route,
                     amount_in,
@@ -629,12 +662,20 @@ class PriceScanner:
                     reason="broken_hops",
                     details={"route": route},
                     hops=hop_payload,
+                    candidate_id=candidate_id,
                 )
                 return out
             params_key = _hops_key(hops)
         else:
             route = tuple(config.token_address(t) for t in candidate["route"])
             params_key = _param_key({"fee_tiers": tiers})
+
+        candidate_id = _make_candidate_id(
+            block_tag=block_tag,
+            trigger_tx_hash=trigger_tx_hash,
+            route=route,
+            amount_in=amount_in,
+        )
 
         cache_key = (block_tag, route, amount_in, params_key)
         cache_enabled = bool(getattr(config, "QUOTE_CACHE_ENABLED", True))
@@ -649,6 +690,7 @@ class PriceScanner:
                 reason="too_short",
                 details={"route": route},
                 hops=hop_payload,
+                candidate_id=candidate_id,
             )
             if cache_enabled:
                 self._payload_cache[cache_key] = out
@@ -727,6 +769,7 @@ class PriceScanner:
                     reason=err_reason,
                     details=err_details,
                     hops=hop_payload,
+                    candidate_id=candidate_id,
                 )
                 if cache_enabled:
                     self._payload_cache[cache_key] = out
@@ -747,6 +790,7 @@ class PriceScanner:
                     reason="nonsensical_price",
                     details=details,
                     hops=hop_payload,
+                    candidate_id=candidate_id,
                 )
                 _log_sanity_reject({**details, "reason": "nonsensical_price"})
                 if cache_enabled:
@@ -787,6 +831,7 @@ class PriceScanner:
                     reason="nonsensical_price",
                     details=details,
                     hops=hop_payload,
+                    candidate_id=candidate_id,
                 )
                 _log_sanity_reject({**details, "reason": "nonsensical_price"})
                 if cache_enabled:
@@ -850,6 +895,7 @@ class PriceScanner:
                 reason="overflow_like",
                 details=details,
                 hops=hop_payload,
+                candidate_id=candidate_id,
             )
             _log_sanity_reject({**details, "reason": "overflow_like"})
             if cache_enabled:
@@ -861,7 +907,9 @@ class PriceScanner:
             "amount_in": int(amount_in),
             "amount_out": int(amt),
             "gas_cost": int(gas_cost_in),
+            "gas_cost_in": int(gas_cost_in),
             "gas_units": int(gas_units),
+            "candidate_id": candidate_id,
             "profit_raw_no_gas": int(profit_gross_raw),
             "profit_no_gas": float(profit_gross),
             "profit_pct_no_gas": float(profit_pct_gross),

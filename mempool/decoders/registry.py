@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from mempool.decoders.base import Decoder
 from mempool.decoders.uniswap_v2 import UniswapV2Decoder, SELECTORS as V2_SELECTORS
@@ -25,10 +25,21 @@ def build_router_registry(
     return registry
 
 
-def build_decoders(router_registry: Dict[str, str]) -> List[Decoder]:
-    v2 = {addr for addr, kind in router_registry.items() if kind == "univ2"}
-    v3 = {addr for addr, kind in router_registry.items() if kind == "univ3"}
-    universal = {addr for addr, kind in router_registry.items() if kind == "universal_router"}
+def _router_kind(value: Any) -> str:
+    if hasattr(value, "dex_type"):
+        try:
+            return str(value.dex_type)
+        except Exception:
+            return ""
+    if isinstance(value, dict):
+        return str(value.get("dex_type", ""))
+    return str(value)
+
+
+def build_decoders(router_registry: Dict[str, Any]) -> List[Decoder]:
+    v2 = {addr for addr, kind in router_registry.items() if _router_kind(kind) in ("univ2", "sushi")}
+    v3 = {addr for addr, kind in router_registry.items() if _router_kind(kind) == "univ3"}
+    universal = {addr for addr, kind in router_registry.items() if _router_kind(kind) in ("universal", "universal_router")}
     return [
         UniswapV2Decoder(v2),
         UniswapV3Decoder(v3),

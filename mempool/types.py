@@ -50,6 +50,9 @@ class Trigger:
     pending_value: Optional[int] = None
     pending_max_fee_per_gas: Optional[int] = None
     pending_max_priority_fee_per_gas: Optional[int] = None
+    usd_value: Optional[str] = None
+    unknown_value: bool = False
+    has_unknown_token: bool = False
 
 
 @dataclass(frozen=True)

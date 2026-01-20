@@ -42,7 +42,7 @@ def _encode_v3_data(router: str, fee_tier: int) -> bytes:
     return abi_encode(["address", "uint24"], [to_checksum_address(router), int(fee_tier)])
 
 
-def build_swap_route(hop: Hop, *, amount_in: int) -> Tuple[str, str, int, bytes]:
+def build_swap_route(hop: Hop, *, amount_in: int, amount_out_min: int) -> Tuple[str, str, int, int, bytes]:
     dex_type = _dex_type(hop.dex_id)
     router = _dex_router(hop.dex_id)
     if not router:
@@ -55,31 +55,38 @@ def build_swap_route(hop: Hop, *, amount_in: int) -> Tuple[str, str, int, bytes]
         fee = int((hop.params or {}).get("fee_tier") or 3000)
         inner = _encode_v3_data(router, fee)
     dex_data = abi_encode(["uint8", "bytes"], [int(dex_type), inner])
-    return (token_in, token_out, int(amount_in), dex_data)
+    return (token_in, token_out, int(amount_in), int(amount_out_min), dex_data)
 
 
 def build_execute_call(
     hops: Iterable[Hop],
     *,
     hop_amounts: Iterable[int],
+    hop_min_outs: Iterable[int],
     profit_token: str,
     min_profit: int,
     to_addr: str,
 ) -> bytes:
-    routes: List[Tuple[str, str, int, bytes]] = []
-    for hop, amount_in in zip(hops, hop_amounts):
-        routes.append(build_swap_route(hop, amount_in=int(amount_in)))
+    routes: List[Tuple[str, str, int, int, bytes]] = []
+    for hop, amount_in, min_out in zip(hops, hop_amounts, hop_min_outs):
+        routes.append(build_swap_route(hop, amount_in=int(amount_in), amount_out_min=int(min_out)))
     selector = function_signature_to_4byte_selector(
-        "execute((address,address,uint256,bytes)[],uint256,address,address)"
+        "execute((address,address,uint256,uint256,bytes)[],uint256,address,address)"
     )
     encoded = abi_encode(
-        ["(address,address,uint256,bytes)[]", "uint256", "address", "address"],
+        ["(address,address,uint256,uint256,bytes)[]", "uint256", "address", "address"],
         [routes, int(min_profit), to_checksum_address(profit_token), to_checksum_address(to_addr)],
     )
     return bytes(selector) + encoded
 
 
-def build_execute_call_from_payload(payload: Dict[str, Any], *, min_profit: int, to_addr: str) -> bytes:
+def build_execute_call_from_payload(
+    payload: Dict[str, Any],
+    *,
+    min_profit: int,
+    to_addr: str,
+    slippage_bps: float = 0.0,
+) -> bytes:
     hops_raw = payload.get("hops") or []
     hop_amounts_raw = payload.get("hop_amounts") or []
     if not hops_raw or not hop_amounts_raw or len(hops_raw) != len(hop_amounts_raw):
@@ -94,7 +101,23 @@ def build_execute_call_from_payload(payload: Dict[str, Any], *, min_profit: int,
         for h in hops_raw
     ]
     hop_amounts = [int(x.get("amount_in") or 0) for x in hop_amounts_raw]
+    hop_min_outs: List[int] = []
+    for raw in hop_amounts_raw:
+        amt_out = int(raw.get("amount_out") or 0)
+        if amt_out <= 0:
+            hop_min_outs.append(1)
+            continue
+        slip = max(0.0, float(slippage_bps))
+        min_out = int(int(amt_out) * (1.0 - (slip / 10_000.0)))
+        hop_min_outs.append(max(1, min_out))
     profit_token = str(payload.get("route", [None])[0] or "")
     if not profit_token:
         raise ValueError("missing profit token")
-    return build_execute_call(hops, hop_amounts=hop_amounts, profit_token=profit_token, min_profit=min_profit, to_addr=to_addr)
+    return build_execute_call(
+        hops,
+        hop_amounts=hop_amounts,
+        hop_min_outs=hop_min_outs,
+        profit_token=profit_token,
+        min_profit=min_profit,
+        to_addr=to_addr,
+    )

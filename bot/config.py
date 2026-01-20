@@ -3,8 +3,11 @@
 # Do not hardcode private keys in the repo. If/when you move to execution mode,
 # provide a key via env var (e.g. PRIVATE_KEY) and keep it out of git.
 
+from bot.chain_config import load_chain_config
+
 # Primary RPC (kept for backwards compatibility)
 RPC_URL = "https://ethereum-rpc.publicnode.com"
+CHAIN_ID = 1
 
 # Optional pool (used when RPC_URLS is provided via config/env/UI).
 # Priority order: primary -> secondary -> fallback -> fallback-only.
@@ -47,6 +50,8 @@ MEMPOOL_MIN_VALUE_USD = 25.0
 MEMPOOL_USD_PER_ETH = 2000.0
 MEMPOOL_DEDUP_TTL_S = 120
 MEMPOOL_TRIGGER_SCAN_BUDGET_S = 1.5
+# Trigger scan staging budgets
+TRIGGER_PREPARE_BUDGET_MS = 250
 MEMPOOL_TRIGGER_MAX_QUEUE = 50
 MEMPOOL_TRIGGER_MAX_CONCURRENT = 1
 MEMPOOL_TRIGGER_TTL_S = 60
@@ -56,6 +61,9 @@ MEMPOOL_TRIGGER_MIN_STABLE = 1000.0
 MEMPOOL_TRIGGER_MIN_WETH = 0.5
 MEMPOOL_TRIGGER_MIN_UNKNOWN = None  # set float to allow unknown tokens
 MEMPOOL_TRIGGER_MIN_BY_TOKEN = {}
+MEMPOOL_ALLOW_UNKNOWN_TOKENS = True
+MEMPOOL_RAW_MIN_ENABLED = False
+MEMPOOL_STRICT_UNKNOWN_TOKENS = False
 
 # Per-block caches (quotes/edges). TTL is one block (cleared on prepare_block).
 QUOTE_CACHE_ENABLED = True
@@ -126,7 +134,7 @@ STRATEGY_MAX_MIDS = 8
 BEAM_MAX_DRAWDOWN = 0.35
 
 # Fast reverse lookup (address -> symbol). Lower-case for stable comparisons.
-TOKEN_BY_ADDR = {str(addr).lower(): sym for sym, addr in TOKENS.items()}
+TOKEN_BY_ADDR = {str(addr).lower(): sym for sym, addr in TOKENS.items() if addr}
 
 
 def _norm_token(token: str) -> str:
@@ -138,10 +146,10 @@ def token_address(token: str) -> str:
     t = _norm_token(token)
     if not t:
         return t
-    if t in TOKENS:
+    if t in TOKENS and TOKENS[t]:
         return TOKENS[t]
     t_up = t.upper()
-    if t_up in TOKENS:
+    if t_up in TOKENS and TOKENS[t_up]:
         return TOKENS[t_up]
     return t
 
@@ -151,10 +159,10 @@ def token_symbol(token: str) -> str:
     t = _norm_token(token)
     if not t:
         return ""
-    if t in TOKENS:
+    if t in TOKENS and TOKENS[t]:
         return t
     t_up = t.upper()
-    if t_up in TOKENS:
+    if t_up in TOKENS and TOKENS[t_up]:
         return t_up
     sym = TOKEN_BY_ADDR.get(t.lower())
     if sym:
@@ -209,12 +217,17 @@ UNISWAP_UNIVERSAL_ROUTER = "0xEf1c6E67703c7BD7107eed8303Fbe6EC2554BF6B"
 
 # Mempool router filter default.
 MEMPOOL_FILTER_TO = [
-    UNISWAP_V2_ROUTER,
-    SUSHISWAP_ROUTER,
-    UNISWAP_V3_SWAP_ROUTER,
-    UNISWAP_V3_SWAP_ROUTER02,
-    UNISWAP_UNIVERSAL_ROUTER,
+    x for x in (
+        UNISWAP_V2_ROUTER,
+        SUSHISWAP_ROUTER,
+        UNISWAP_V3_SWAP_ROUTER,
+        UNISWAP_V3_SWAP_ROUTER02,
+        UNISWAP_UNIVERSAL_ROUTER,
+    )
+    if x
 ]
+MEMPOOL_WATCH_MODE = "strict"  # strict | routers_only
+MEMPOOL_WATCHED_ROUTER_SETS = "core"  # core | extended
 
 MEMPOOL_STABLE_SET = [
     TOKENS.get("USDC"),
@@ -244,11 +257,16 @@ TRIGGER_SAME_DEX_PENALTY_BPS = 5.0
 TRIGGER_EDGE_TOP_M_PER_DEX = 2
 TRIGGER_BASE_FALLBACK_ENABLED = True
 TRIGGER_ALLOW_TWO_HOP_FALLBACK = True
+TRIGGER_CROSS_DEX_FALLBACK = True
 TRIGGER_MAX_CANDIDATES_RAW = 80
 
 # Execution simulation
 EXEC_SIM_BACKENDS = ["trace", "state_override", "quote"]
 ARB_EXECUTOR_ADDRESS = ""
+ARB_EXECUTOR_OWNER = ""
+SIM_FROM_ADDRESS = "0x0000000000000000000000000000000000000000"
+EXECUTION_MODE = "off"  # off | dryrun
+PREFLIGHT_ENFORCE_ALLOWANCE = False
 
 # Uniswap V2-style fees in bps (0.30% == 30 bps).
 UNISWAP_V2_FEE_BPS = 30
@@ -257,3 +275,69 @@ SUSHISWAP_FEE_BPS = 30
 # Fallback gas estimates for quoting when DEX doesn't provide gas.
 V3_GAS_ESTIMATE = 110_000
 V2_GAS_ESTIMATE = 90_000
+
+
+def _refresh_token_maps() -> None:
+    global TOKEN_BY_ADDR, MEMPOOL_STABLE_SET, MEMPOOL_WETH, MEMPOOL_TRIGGER_CONNECTORS, MEMPOOL_TRIGGER_BASE_FALLBACK
+    TOKEN_BY_ADDR = {str(addr).lower(): sym for sym, addr in TOKENS.items() if addr}
+    MEMPOOL_STABLE_SET = [TOKENS.get("USDC"), TOKENS.get("USDT"), TOKENS.get("DAI")]
+    MEMPOOL_WETH = TOKENS.get("WETH")
+    MEMPOOL_TRIGGER_CONNECTORS = [TOKENS.get("WETH"), TOKENS.get("USDC"), TOKENS.get("USDT"), TOKENS.get("DAI")]
+    MEMPOOL_TRIGGER_BASE_FALLBACK = [TOKENS.get("USDC"), TOKENS.get("USDT"), TOKENS.get("DAI")]
+
+
+def _apply_chain_overrides() -> None:
+    chain_cfg = load_chain_config()
+    if not chain_cfg:
+        return
+
+    global RPC_URLS, RPC_URL, CHAIN_ID
+    if chain_cfg.rpc_urls:
+        RPC_URLS = list(chain_cfg.rpc_urls)
+        RPC_URL = RPC_URLS[0]
+    if chain_cfg.chain_id is not None:
+        CHAIN_ID = int(chain_cfg.chain_id)
+
+    if chain_cfg.tokens:
+        for sym, addr in chain_cfg.tokens.items():
+            TOKENS[str(sym).upper()] = addr
+    if chain_cfg.token_decimals:
+        for sym, dec in chain_cfg.token_decimals.items():
+            try:
+                TOKEN_DECIMALS[str(sym).upper()] = int(dec)
+            except Exception:
+                continue
+
+    dex = chain_cfg.dex or {}
+
+    def _set_if_present(key: str, target_name: str) -> None:
+        if key in dex:
+            globals()[target_name] = dex.get(key, "")
+
+    _set_if_present("uniswap_v3_quoter", "UNISWAP_V3_QUOTER")
+    _set_if_present("uniswap_v3_quoter_v2", "UNISWAP_V3_QUOTER_V2")
+    _set_if_present("uniswap_v2_factory", "UNISWAP_V2_FACTORY")
+    _set_if_present("sushiswap_factory", "SUSHISWAP_FACTORY")
+    _set_if_present("uniswap_v2_router", "UNISWAP_V2_ROUTER")
+    _set_if_present("sushiswap_router", "SUSHISWAP_ROUTER")
+    _set_if_present("uniswap_v3_swap_router", "UNISWAP_V3_SWAP_ROUTER")
+    _set_if_present("uniswap_v3_swap_router02", "UNISWAP_V3_SWAP_ROUTER02")
+    _set_if_present("uniswap_universal_router", "UNISWAP_UNIVERSAL_ROUTER")
+    _set_if_present("arb_executor_address", "ARB_EXECUTOR_ADDRESS")
+
+    global MEMPOOL_FILTER_TO
+    MEMPOOL_FILTER_TO = [
+        x for x in (
+            UNISWAP_V2_ROUTER,
+            SUSHISWAP_ROUTER,
+            UNISWAP_V3_SWAP_ROUTER,
+            UNISWAP_V3_SWAP_ROUTER02,
+            UNISWAP_UNIVERSAL_ROUTER,
+        )
+        if x
+    ]
+
+    _refresh_token_maps()
+
+
+_apply_chain_overrides()

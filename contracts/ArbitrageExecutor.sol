@@ -19,6 +19,7 @@ contract ArbitrageExecutor {
         address tokenIn;
         address tokenOut;
         uint256 amountIn;
+        uint256 amountOutMin;
         bytes dexData; // encoded routing
     }
 
@@ -68,7 +69,7 @@ contract ArbitrageExecutor {
         // execute
         IUniswapV2Router(router).swapExactTokensForTokens(
             route.amountIn,
-            1,                          // minOut = 1 (bot handles slippage offchain)
+            route.amountOutMin > 0 ? route.amountOutMin : 1,
             path,
             address(this),
             block.timestamp
@@ -88,7 +89,7 @@ contract ArbitrageExecutor {
                 recipient: address(this),
                 deadline: block.timestamp,
                 amountIn: route.amountIn,
-                amountOutMinimum: 1,   // minOut = 1, handled offchain
+                amountOutMinimum: route.amountOutMin > 0 ? route.amountOutMin : 1,
                 sqrtPriceLimitX96: 0   // no price limit
             })
         );

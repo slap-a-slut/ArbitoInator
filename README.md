@@ -40,6 +40,8 @@ ArbitoInator/
   infra/
     rpc.py          # async RPC client + pool + web3 helper
   deploy/           # build/deploy скрипты
+  configs/          # chain presets (mainnet/sepolia)
+  execution/        # dry-run tx pipeline
   ui/
     server.js       # web UI + bot runner
     index.html
@@ -117,6 +119,9 @@ UI заметки:
   - max_candidates_stage1 → жёсткий лимит кандидатов на stage1  
   - max_total_expanded / max_expanded_per_candidate → лимиты на multidex expansion  
   - rpc_timeout_s / rpc_retry_count → общий таймаут и ретраи RPC  
+  - execution_mode → off / dryrun (dryrun пишет tx_ready.jsonl)  
+  - sim_backend → quote / eth_call / state_override  
+  - arb_executor_address / arb_executor_owner → адрес контракта + owner для eth_call  
 
 ## Presets (UI тестовые профили)
 Пресеты лежат в `presets/` (по одному JSON на профиль). UI подхватывает их автоматически.
@@ -157,8 +162,26 @@ Trigger‑скан (mempool):
 
 Готовность к тестнету:
 - `bot/arb_builder.py` строит calldata для контракта `ArbitrageExecutor`.
-- `deploy/deploy_executor.py` деплоит контракт (нужен `solc`, `RPC_URL`, `PRIVATE_KEY`).
-- Укажите `ARB_EXECUTOR_ADDRESS` в `bot/config.py`, чтобы включить dry‑run calldata (без broadcast).
+- `deploy/deploy.py` деплоит контракт (нужен `RPC_URL`, `PRIVATE_KEY`).
+- В `bot_config.json` выставьте `execution_mode: "dryrun"`.
+- Заполните `arb_executor_address` и `arb_executor_owner` (owner нужен для onlyOwner в eth_call).
+- Dry‑run пишет `logs/tx_ready.jsonl` (calldata + gas + eth_call результат). Никаких транзакций не отправляется.
+
+### Chain presets
+Файлы в `configs/chains/` задают токены/адреса/DEX‑контракты по сети.
+- По умолчанию используется `configs/chains/mainnet.json`.
+- Чтобы выбрать сеть, задайте `CHAIN_NAME=sepolia` или `CHAIN_ID=11155111`.
+
+Пример:
+```bash
+CHAIN_NAME=sepolia python3 -u fork_test.py
+```
+
+### Preflight replay (fork test)
+Чтобы прогнать последние N триггеров через eth_call:
+```bash
+python3 -u fork_test.py --preflight-replay --limit 20
+```
 
 `bot/config.py`  
 - RPC_URL → ETH mainnet публичный RPC  
@@ -192,6 +215,7 @@ Multi-DEX mode строит dex_path (в т.ч. fee tier) и показывае�
 - `logs/blocks.jsonl` — статистика по блокам
 - `logs/hits.jsonl` — профитные события
 - `logs/diagnostic_snapshot.json` — единый диагностический снимок состояния (обновляется на старте, по таймеру и при остановке)
+- `logs/tx_ready.jsonl` — dry‑run tx (calldata + gas + eth_call)
 
 В `blocks.jsonl` теперь есть диагностические поля:
 `prepare_ms`, `scan_start_delay_ms`, `stage1_deadline_remaining_ms_at_scan_start`,

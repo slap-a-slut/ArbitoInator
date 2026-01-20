@@ -1,0 +1,31 @@
+{
+  "chain_id": 11155111,
+  "name": "sepolia",
+  "rpc_urls": [
+    "https://rpc.sepolia.org"
+  ],
+  "tokens": {
+    "WETH": "0x7b79995e5f793A07Bc00c21412e50ECae098E7f9",
+    "USDC": null,
+    "USDT": null,
+    "DAI": null
+  },
+  "token_decimals": {
+    "WETH": 18,
+    "USDC": 6,
+    "USDT": 6,
+    "DAI": 18
+  },
+  "dex": {
+    "uniswap_v3_quoter": "",
+    "uniswap_v3_quoter_v2": "",
+    "uniswap_v2_factory": "",
+    "sushiswap_factory": "",
+    "uniswap_v2_router": "",
+    "sushiswap_router": "",
+    "uniswap_v3_swap_router": "",
+    "uniswap_v3_swap_router02": "",
+    "uniswap_universal_router": "",
+    "arb_executor_address": ""
+  }
+}

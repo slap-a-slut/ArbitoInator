@@ -144,6 +144,7 @@ class AsyncRPC:
         *,
         timeout_s: Optional[float] = None,
         allow_revert_data: bool = False,
+        allow_error_data: bool = False,
     ) -> Any:
         """Perform a JSON-RPC call.
 
@@ -216,8 +217,8 @@ class AsyncRPC:
                         revert_hex = _extract_revert_hex(err_data)
                         if revert_hex and allow_revert_data and method == "eth_call":
                             hx = revert_hex if revert_hex.startswith("0x") else ("0x" + revert_hex)
-                            # Guard against common Solidity error selectors.
-                            if hx.startswith("0x08c379a0") or hx.startswith("0x4e487b71"):
+                            # Guard against common Solidity error selectors unless explicitly allowed.
+                            if not allow_error_data and (hx.startswith("0x08c379a0") or hx.startswith("0x4e487b71")):
                                 last_err = f"revert({hx[:10]})"
                                 raise RuntimeError(last_err)
                             async with self._stats_lock:
@@ -273,12 +274,14 @@ class AsyncRPC:
         *,
         timeout_s: Optional[float] = None,
         allow_revert_data: bool = False,
+        allow_error_data: bool = False,
     ) -> str:
         return await self.call(
             "eth_call",
             [{"to": to, "data": data}, block],
             timeout_s=timeout_s,
             allow_revert_data=allow_revert_data,
+            allow_error_data=allow_error_data,
         )
 
     async def get_block_number(self, *, timeout_s: Optional[float] = None) -> int:
@@ -444,6 +447,7 @@ class RPCPool:
         *,
         timeout_s: Optional[float] = None,
         allow_revert_data: bool = False,
+        allow_error_data: bool = False,
     ) -> Any:
         banned: Set[int] = set()
         attempts = 0
@@ -464,7 +468,13 @@ class RPCPool:
                 # Per-endpoint concurrency guard + latency tracking
                 async with self._sems[idx]:
                     t0 = time.perf_counter()
-                    res = await c.call(method, params, timeout_s=timeout_s, allow_revert_data=allow_revert_data)
+                    res = await c.call(
+                        method,
+                        params,
+                        timeout_s=timeout_s,
+                        allow_revert_data=allow_revert_data,
+                        allow_error_data=allow_error_data,
+                    )
                     dt_ms = (time.perf_counter() - t0) * 1000.0
                 # EWMA update
                 self._lat_ewma_ms[idx] = (1.0 - self._ewma_alpha) * self._lat_ewma_ms[idx] + self._ewma_alpha * float(dt_ms)
@@ -500,12 +510,14 @@ class RPCPool:
         *,
         timeout_s: Optional[float] = None,
         allow_revert_data: bool = False,
+        allow_error_data: bool = False,
     ) -> str:
         return await self.call(
             "eth_call",
             [{"to": to, "data": data}, block],
             timeout_s=timeout_s,
             allow_revert_data=allow_revert_data,
+            allow_error_data=allow_error_data,
         )
 
     async def get_block_number(self, *, timeout_s: Optional[float] = None) -> int:

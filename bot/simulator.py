@@ -5,12 +5,14 @@ from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from typing import Any, Dict, Optional
 
 from bot import config
-from eth_abi import decode as abi_decode
+from bot import preflight
 
 
 @dataclass(frozen=True)
 class SimResult:
     backend: str
+    sim_ok: bool
+    sim_revert_reason: Optional[str]
     gross_raw: int
     net_raw: int
     net_after_buffers_raw: int
@@ -45,20 +47,30 @@ def _scale_amount(token_addr: str, amount_units: object) -> int:
         return 0
 
 
-def _choose_backend(backends: Optional[list[str]]) -> str:
+def _normalize_backends(backends: Optional[list[str]]) -> list[str]:
     if not backends:
-        return "quote"
+        return ["quote"]
     norm = [str(b).strip().lower() for b in backends if str(b).strip()]
-    if "quote" in norm:
-        return "quote"
-    return "quote_fallback"
+    if not norm:
+        return ["quote"]
+    if "quote" not in norm:
+        norm.append("quote")
+    return norm
 
 
-def simulate_from_payload(payload: Dict[str, Any], settings: Any, *, backend: str = "quote") -> SimResult:
+def simulate_from_payload(
+    payload: Dict[str, Any],
+    settings: Any,
+    *,
+    backend: str = "quote",
+    sim_ok: bool = True,
+    sim_revert_reason: Optional[str] = None,
+    force_no_hit: bool = False,
+) -> SimResult:
     amount_in = int(payload.get("amount_in", 0) or 0)
     amount_out = int(payload.get("amount_out", 0) or 0)
     gas_units = int(payload.get("gas_units", 0) or 0)
-    gas_cost_in = int(payload.get("gas_cost_in", 0) or 0)
+    gas_cost_in = int(payload.get("gas_cost_in", payload.get("gas_cost", 0) or 0) or 0)
 
     gross_raw = int(amount_out) - int(amount_in)
     net_raw = int(gross_raw) - int(gas_cost_in)
@@ -82,12 +94,16 @@ def simulate_from_payload(payload: Dict[str, Any], settings: Any, *, backend: st
         classification = "gross_hit"
     if net_after_buffers_raw > 0:
         if net_after_buffers_raw >= int(min_profit_abs_raw) and net_after_buffers_pct >= float(min_profit_pct):
-            classification = "net_hit"
+            classification = "valid_hit"
         else:
             classification = "gross_hit"
+    if force_no_hit or not sim_ok:
+        classification = "no_hit"
 
     return SimResult(
         backend=str(backend),
+        sim_ok=bool(sim_ok),
+        sim_revert_reason=sim_revert_reason,
         gross_raw=int(gross_raw),
         net_raw=int(net_raw),
         net_after_buffers_raw=int(net_after_buffers_raw),
@@ -108,8 +124,8 @@ def simulate_candidate(
     *,
     backends: Optional[list[str]] = None,
 ) -> SimResult:
-    backend = _choose_backend(backends)
-    return simulate_from_payload(payload, settings, backend=backend)
+    backends_norm = _normalize_backends(backends)
+    return simulate_from_payload(payload, settings, backend=backends_norm[0])
 
 
 async def simulate_candidate_async(
@@ -121,26 +137,75 @@ async def simulate_candidate_async(
     block_ctx: Optional[Any] = None,
     arb_call: Optional[bytes] = None,
 ) -> SimResult:
-    backend = _choose_backend(backends)
-    if backend in ("trace", "state_override", "anvil") and rpc and block_ctx and arb_call:
-        addr = getattr(config, "ARB_EXECUTOR_ADDRESS", "")
-        if addr:
-            try:
-                res = await rpc.call(
-                    "eth_call",
-                    [
-                        {"to": str(addr), "data": "0x" + arb_call.hex()},
-                        str(getattr(block_ctx, "block_tag", "latest")),
-                    ],
-                    timeout_s=2.0,
+    backends_norm = _normalize_backends(backends)
+    last_error: Optional[str] = None
+    for backend in backends_norm:
+        if backend in ("eth_call", "state_override", "trace", "anvil"):
+            if not (rpc and block_ctx and arb_call):
+                last_error = "missing_rpc_or_calldata"
+                return simulate_from_payload(
+                    payload,
+                    settings,
+                    backend="quote_fallback",
+                    sim_ok=False,
+                    sim_revert_reason=last_error,
+                    force_no_hit=True,
                 )
-                if res and res != "0x":
-                    raw = bytes.fromhex(res[2:] if res.startswith("0x") else res)
-                    decoded = abi_decode(["uint256"], raw)
-                    profit_raw = int(decoded[0])
-                    payload_override = dict(payload)
-                    payload_override["amount_out"] = int(payload.get("amount_in", 0)) + profit_raw
-                    return simulate_from_payload(payload_override, settings, backend=backend)
-            except Exception:
-                pass
-    return simulate_from_payload(payload, settings, backend="quote")
+            addr = getattr(config, "ARB_EXECUTOR_ADDRESS", "")
+            if not addr:
+                last_error = "missing_executor_address"
+                return simulate_from_payload(
+                    payload,
+                    settings,
+                    backend="quote_fallback",
+                    sim_ok=False,
+                    sim_revert_reason=last_error,
+                    force_no_hit=True,
+                )
+            from_addr = getattr(config, "ARB_EXECUTOR_OWNER", "") or getattr(config, "SIM_FROM_ADDRESS", "")
+            try:
+                sim_ok, profit_raw, reason = await preflight.run_eth_call(
+                    rpc,
+                    block_tag=str(getattr(block_ctx, "block_tag", "latest")),
+                    from_addr=str(from_addr) if from_addr else None,
+                    to_addr=str(addr),
+                    data=arb_call,
+                    timeout_s=2.5,
+                )
+                if not sim_ok:
+                    return simulate_from_payload(
+                        payload,
+                        settings,
+                        backend=backend,
+                        sim_ok=False,
+                        sim_revert_reason=reason,
+                        force_no_hit=True,
+                    )
+                payload_override = dict(payload)
+                if profit_raw is not None:
+                    payload_override["amount_out"] = int(payload.get("amount_in", 0)) + int(profit_raw)
+                return simulate_from_payload(payload_override, settings, backend=backend, sim_ok=True)
+            except Exception as exc:
+                last_error = str(exc)[:180]
+                return simulate_from_payload(
+                    payload,
+                    settings,
+                    backend=backend,
+                    sim_ok=False,
+                    sim_revert_reason=last_error,
+                    force_no_hit=True,
+                )
+
+        if backend == "quote":
+            if last_error:
+                return simulate_from_payload(
+                    payload,
+                    settings,
+                    backend="quote_fallback",
+                    sim_ok=False,
+                    sim_revert_reason=last_error,
+                    force_no_hit=True,
+                )
+            return simulate_from_payload(payload, settings, backend="quote", sim_ok=True)
+
+    return simulate_from_payload(payload, settings, backend="quote", sim_ok=True)

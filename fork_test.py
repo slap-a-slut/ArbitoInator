@@ -13,12 +13,15 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 
-from bot import scanner, strategies, executor, config
+from bot import scanner, strategies, config
+from infra.rpc import RPCPool
 from bot.simulator import simulate_candidate_async
-from bot.arb_builder import build_execute_call_from_payload
+from bot import preflight
 from bot.block_context import BlockContext
 from bot.routes import Hop
 from bot.diagnostic import DiagnosticSnapshotter, build_diagnostic_snapshot
+from bot.assistant_pack import write_assistant_pack
+from execution.tx_pipeline import build_tx_ready
 from ui_notify import ui_push
 from mempool.engine import MempoolEngine
 from mempool.types import Trigger
@@ -27,7 +30,7 @@ from mempool.types import Trigger
 # RPC + scanner are initialized in main() after reading UI config
 PS = None  # type: ignore[assignment]
 
-SIM_FROM_ADDRESS = "0x0000000000000000000000000000000000000000"
+SIM_FROM_ADDRESS = config.SIM_FROM_ADDRESS
 MEMPOOL_BLOCK_CTX: Optional[BlockContext] = None
 
 
@@ -138,8 +141,10 @@ class Settings:
     trigger_edge_top_m_per_dex: int = 2
     trigger_base_fallback_enabled: bool = True
     trigger_allow_two_hop_fallback: bool = True
+    trigger_cross_dex_fallback: bool = True
     trigger_connectors: Tuple[str, ...] = ()
     trigger_max_candidates_raw: int = 80
+    trigger_prepare_budget_ms: int = 250
     probe_amount: float = 1.0
 
     # Mode
@@ -188,6 +193,12 @@ class Settings:
     v2_min_reserve_ratio: float = 20.0
     v2_max_price_impact_bps: float = 300.0
 
+    # Execution simulation
+    sim_backend: str = "quote"  # quote | eth_call | state_override
+    arb_executor_address: str = ""
+    arb_executor_owner: str = ""
+    execution_mode: str = "off"  # off | dryrun
+
     # Reporting / base currency (UI should stay consistent)
     # Profits, spent, ROI are computed and displayed in this token.
     report_currency: str = "USDC"  # USDC|USDT
@@ -198,8 +209,13 @@ class Settings:
     mempool_max_inflight_tx: int = 200
     mempool_fetch_tx_concurrency: int = 20
     mempool_filter_to: Tuple[str, ...] = ()
+    mempool_watch_mode: str = "strict"
+    mempool_watched_router_sets: str = "core"
     mempool_min_value_usd: float = 25.0
     mempool_usd_per_eth: float = 2000.0
+    mempool_allow_unknown_tokens: bool = True
+    mempool_raw_min_enabled: bool = False
+    mempool_strict_unknown_tokens: bool = False
     mempool_dedup_ttl_s: int = 120
     mempool_trigger_scan_budget_s: float = 1.5
     mempool_trigger_max_queue: int = 50
@@ -252,6 +268,52 @@ def _load_settings() -> Settings:
             s.dexes = tuple(x.strip().lower() for x in dx.replace("\n", ",").split(",") if x.strip())
     except Exception:
         pass
+    try:
+        wm = raw.get("mempool_watch_mode", s.mempool_watch_mode)
+        s.mempool_watch_mode = str(wm).strip().lower()
+    except Exception:
+        pass
+    try:
+        ws = raw.get("mempool_watched_router_sets", s.mempool_watched_router_sets)
+        s.mempool_watched_router_sets = str(ws).strip().lower()
+    except Exception:
+        pass
+    try:
+        val = raw.get("mempool_allow_unknown_tokens", s.mempool_allow_unknown_tokens)
+        if isinstance(val, str):
+            s.mempool_allow_unknown_tokens = val.strip().lower() in ("1", "true", "yes", "on")
+        else:
+            s.mempool_allow_unknown_tokens = bool(val)
+    except Exception:
+        pass
+    try:
+        val = raw.get("mempool_raw_min_enabled", s.mempool_raw_min_enabled)
+        if isinstance(val, str):
+            s.mempool_raw_min_enabled = val.strip().lower() in ("1", "true", "yes", "on")
+        else:
+            s.mempool_raw_min_enabled = bool(val)
+    except Exception:
+        pass
+    try:
+        sb = raw.get("sim_backend", s.sim_backend)
+        s.sim_backend = str(sb).strip().lower()
+    except Exception:
+        pass
+    try:
+        em = raw.get("execution_mode", s.execution_mode)
+        s.execution_mode = str(em).strip().lower()
+    except Exception:
+        pass
+    try:
+        addr = raw.get("arb_executor_address", s.arb_executor_address)
+        s.arb_executor_address = str(addr).strip()
+    except Exception:
+        pass
+    try:
+        addr = raw.get("arb_executor_owner", s.arb_executor_owner)
+        s.arb_executor_owner = str(addr).strip()
+    except Exception:
+        pass
 
     try:
         emd = raw.get("enable_multidex", s.enable_multidex)
@@ -299,6 +361,14 @@ def _load_settings() -> Settings:
             s.trigger_allow_two_hop_fallback = val.strip().lower() in ("1", "true", "yes", "on")
         else:
             s.trigger_allow_two_hop_fallback = bool(val)
+    except Exception:
+        pass
+    try:
+        val = raw.get("trigger_cross_dex_fallback", s.trigger_cross_dex_fallback)
+        if isinstance(val, str):
+            s.trigger_cross_dex_fallback = val.strip().lower() in ("1", "true", "yes", "on")
+        else:
+            s.trigger_cross_dex_fallback = bool(val)
     except Exception:
         pass
     try:
@@ -725,14 +795,53 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
             "best_net": 0.0,
             "best_route_summary": None,
             "outcome": "no_context",
+            "candidates_raw": None,
+            "candidates_after_prepare": None,
+            "candidates_after_universe": None,
+            "candidates_after_base_filter": None,
+            "candidates_after_hops_filter": None,
+            "candidates_after_cross_dex_filter": None,
+            "candidates_after_viability_filter": None,
+            "candidates_after_caps": None,
+            "candidates_scheduled": 0,
+            "zero_candidates_reason": "rpc_unavailable",
+            "zero_candidates_detail": "no_context",
+            "zero_candidates_stage": "schedule",
+            "zero_schedule_reason": "rpc_unavailable",
+            "zero_schedule_detail": "no_context",
+            "base_used": None,
+            "base_fallback_used": False,
+            "hops_attempted": [],
+            "hop_fallback_used": False,
+            "connectors_added": [],
+            "cross_dex_fallback_used": False,
+            "prepare_truncated": False,
+            "prepare_time_ms": 0.0,
+            "schedule_guard_triggered": False,
+            "budget_remaining_ms_at_schedule": None,
         }
     block_ctx = MEMPOOL_BLOCK_CTX
+    loop = asyncio.get_running_loop()
+    prepare_start_t = loop.time()
+    prepare_budget_ms = int(
+        getattr(s, "trigger_prepare_budget_ms", getattr(config, "TRIGGER_PREPARE_BUDGET_MS", 250))
+    )
+    if prepare_budget_ms < 0:
+        prepare_budget_ms = 0
+    prepare_deadline = prepare_start_t + (float(prepare_budget_ms) / 1000.0)
+    scan_deadline = prepare_start_t + (float(prepare_budget_ms) / 1000.0) + float(budget_s)
+
+    def _elapsed_prepare_ms() -> float:
+        return max(0.0, (loop.time() - prepare_start_t) * 1000.0)
     require_three_hops = bool(getattr(s, "trigger_require_three_hops", getattr(config, "TRIGGER_REQUIRE_THREE_HOPS", True)))
     allow_two_hop_fallback = bool(
         getattr(s, "trigger_allow_two_hop_fallback", getattr(config, "TRIGGER_ALLOW_TWO_HOP_FALLBACK", True))
     )
     base_fallback_enabled = bool(
         getattr(s, "trigger_base_fallback_enabled", getattr(config, "TRIGGER_BASE_FALLBACK_ENABLED", True))
+    )
+    cross_dex_fallback = bool(
+        getattr(s, "trigger_cross_dex_fallback", getattr(config, "TRIGGER_CROSS_DEX_FALLBACK", True))
     )
     max_hops = int(getattr(s, "max_hops", 3))
     trigger_max_candidates_raw = int(
@@ -771,6 +880,9 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
     hops_attempted: List[int] = []
     routes: List[Tuple[str, ...]] = []
     candidates_raw: Optional[int] = None
+    candidates_after_universe: Optional[int] = None
+    prepare_truncated = False
+    prepare_time_ms: Optional[float] = None
 
     rc = str(getattr(s, "report_currency", "USDC") or "USDC").upper()
     base_candidates = _resolve_base_candidates(rc, fallback_enabled=base_fallback_enabled)
@@ -784,6 +896,8 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
             "best_route_summary": None,
             "outcome": "no_base",
             "candidates_raw": None,
+            "candidates_after_prepare": None,
+            "candidates_after_universe": None,
             "candidates_after_base_filter": None,
             "candidates_after_hops_filter": None,
             "candidates_after_cross_dex_filter": None,
@@ -793,11 +907,18 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
             "zero_candidates_reason": "no_base_currency_in_universe",
             "zero_candidates_detail": "no_base_candidates",
             "zero_candidates_stage": "base",
+            "zero_schedule_reason": "no_base_currency_in_universe",
+            "zero_schedule_detail": "no_base_candidates",
             "base_used": None,
             "base_fallback_used": False,
             "hops_attempted": [],
             "hop_fallback_used": False,
             "connectors_added": connectors_added,
+            "cross_dex_fallback_used": False,
+            "prepare_truncated": False,
+            "prepare_time_ms": float(_elapsed_prepare_ms()),
+            "schedule_guard_triggered": False,
+            "budget_remaining_ms_at_schedule": None,
         }
 
     for idx, (base_sym, base_addr) in enumerate(base_candidates):
@@ -855,6 +976,9 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
             hop_fallback_used = hop_fallback_used_local
             hops_attempted = hops_attempted_local
             break
+        if loop.time() >= prepare_deadline:
+            prepare_truncated = True
+            break
 
     if candidates_raw is None:
         candidates_raw = 0
@@ -870,6 +994,8 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
             "best_route_summary": None,
             "outcome": "no_routes",
             "candidates_raw": int(candidates_raw),
+            "candidates_after_prepare": 0,
+            "candidates_after_universe": 0,
             "candidates_after_base_filter": 0,
             "candidates_after_hops_filter": 0,
             "candidates_after_cross_dex_filter": 0,
@@ -879,117 +1005,166 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
             "zero_candidates_reason": "no_cycles_generated",
             "zero_candidates_detail": detail,
             "zero_candidates_stage": "hops",
+            "zero_schedule_reason": "no_candidates",
+            "zero_schedule_detail": detail,
             "base_used": base_used,
             "base_fallback_used": base_fallback_used,
             "hops_attempted": hops_attempted,
             "hop_fallback_used": hop_fallback_used,
             "connectors_added": connectors_added,
+            "cross_dex_fallback_used": False,
+            "prepare_truncated": bool(prepare_truncated),
+            "prepare_time_ms": float(_elapsed_prepare_ms()),
+            "schedule_guard_triggered": False,
+            "budget_remaining_ms_at_schedule": None,
         }
 
     candidates_after_base_filter = len(routes)
     candidates_after_hops_filter = len(routes)
+    candidates_after_universe = len(routes)
 
     capped_by_trigger = False
     if trigger_max_candidates_raw > 0 and len(routes) > int(trigger_max_candidates_raw):
         routes = routes[: int(trigger_max_candidates_raw)]
         capped_by_trigger = True
 
-    loop = asyncio.get_running_loop()
-    deadline = loop.time() + float(budget_s)
+    prepare_time_ms = max(0.0, (loop.time() - prepare_start_t) * 1000.0)
+    if loop.time() >= prepare_deadline:
+        prepare_truncated = True
+
     timeout_s = max(0.2, min(float(s.rpc_timeout_stage1_s), float(budget_s)))
 
     base_addr = config.TOKENS.get(str(base_used or rc).upper(), config.TOKENS["USDC"])
     amount_in = _scale_amount(base_addr, s.stage1_amount)
-    candidates = [{"route": route, "amount_in": int(amount_in)} for route in routes]
+    candidates = [
+        {"route": route, "amount_in": int(amount_in), "trigger_tx_hash": str(trigger.tx_hash)}
+        for route in routes
+    ]
+    candidates_after_prepare = len(candidates)
 
     prefer_cross_dex = bool(getattr(s, "trigger_prefer_cross_dex", getattr(config, "TRIGGER_PREFER_CROSS_DEX", True)))
     require_cross_dex = bool(getattr(s, "trigger_require_cross_dex", getattr(config, "TRIGGER_REQUIRE_CROSS_DEX", True)))
     cross_bonus = float(getattr(s, "trigger_cross_dex_bonus_bps", getattr(config, "TRIGGER_CROSS_DEX_BONUS_BPS", 0.0)))
     same_penalty = float(getattr(s, "trigger_same_dex_penalty_bps", getattr(config, "TRIGGER_SAME_DEX_PENALTY_BPS", 0.0)))
-    edge_top_m_per_dex = int(getattr(s, "trigger_edge_top_m_per_dex", getattr(config, "TRIGGER_EDGE_TOP_M_PER_DEX", 0)))
     if not getattr(PS, "dexes", None) or len(getattr(PS, "dexes", [])) < 2:
         require_cross_dex = False
         prefer_cross_dex = False
-
-    use_beam = bool(getattr(s, "enable_multidex", False)) or prefer_cross_dex or require_cross_dex
-    if use_beam:
-        expand_stats: Dict[str, Any] = {}
-        beam_candidates = await _expand_multidex_candidates(
-            routes,
-            amount_in=int(amount_in),
-            block_ctx=block_ctx,
-            fee_tiers=list(s.stage1_fee_tiers) if s.stage1_fee_tiers else None,
-            timeout_s=timeout_s,
-            deadline_s=deadline,
-            settings=s,
-            max_total=int(getattr(s, "max_total_expanded", 0)) or None,
-            max_per_route=int(getattr(s, "max_expanded_per_candidate", 0)) or None,
-            stats=expand_stats,
-            edge_top_m_per_dex=edge_top_m_per_dex if edge_top_m_per_dex > 0 else None,
-            prefer_cross_dex=prefer_cross_dex,
-            require_cross_dex=require_cross_dex,
-            cross_dex_bonus_bps=cross_bonus,
-            same_dex_penalty_bps=same_penalty,
-            skip_viability=True,
-            enforce_cross_dex=False,
-        )
-        if beam_candidates:
-            candidates = beam_candidates
 
     if trigger_max_candidates_raw > 0 and len(candidates) > int(trigger_max_candidates_raw):
         candidates = candidates[: int(trigger_max_candidates_raw)]
         capped_by_trigger = True
     candidates_after_caps = len(candidates)
-
-    def _candidate_cross_dex_count(c: Dict[str, Any]) -> int:
-        dex_mix = c.get("dex_mix")
-        if isinstance(dex_mix, dict):
-            return len([k for k, v in dex_mix.items() if v])
-        hops = c.get("hops") or []
-        try:
-            dexes = [str(h.dex_id) for h in hops]
-            return len(set(dexes))
-        except Exception:
-            return 0
-
-    candidates_after_cross_dex_filter: Optional[int] = None
-    if require_cross_dex:
-        if candidates and (candidates[0].get("dex_mix") is not None or candidates[0].get("hops") is not None):
-            before = len(candidates)
-            candidates = [c for c in candidates if _candidate_cross_dex_count(c) >= 2]
-            candidates_after_cross_dex_filter = len(candidates)
-            if before > 0 and not candidates:
-                return {
-                    "scheduled": 0,
-                    "finished": 0,
-                    "timeouts": 0,
-                    "best_gross": 0.0,
-                    "best_net": 0.0,
-                    "best_route_summary": None,
-                    "outcome": "filtered_cross_dex",
-                    "candidates_raw": int(candidates_raw),
-                    "candidates_after_base_filter": int(candidates_after_base_filter),
-                    "candidates_after_hops_filter": int(candidates_after_hops_filter),
-                    "candidates_after_cross_dex_filter": 0,
-                    "candidates_after_viability_filter": None,
-                    "candidates_after_caps": int(candidates_after_caps),
-                    "candidates_scheduled": 0,
-                    "zero_candidates_reason": "filtered_by_cross_dex",
-                    "zero_candidates_detail": "require_cross_dex",
-                    "zero_candidates_stage": "cross_dex",
-                    "base_used": base_used,
-                    "base_fallback_used": base_fallback_used,
-                    "hops_attempted": hops_attempted,
-                    "hop_fallback_used": hop_fallback_used,
-                    "connectors_added": connectors_added,
-                }
+    if candidates_after_caps == 0:
+        return {
+            "scheduled": 0,
+            "finished": 0,
+            "timeouts": 0,
+            "best_gross": 0.0,
+            "best_net": 0.0,
+            "best_route_summary": None,
+            "outcome": "no_routes",
+            "candidates_raw": int(candidates_raw),
+            "candidates_after_prepare": int(candidates_after_prepare),
+            "candidates_after_universe": int(candidates_after_universe or 0),
+            "candidates_after_base_filter": int(candidates_after_base_filter),
+            "candidates_after_hops_filter": int(candidates_after_hops_filter),
+            "candidates_after_cross_dex_filter": 0,
+            "candidates_after_viability_filter": None,
+            "candidates_after_caps": 0,
+            "candidates_scheduled": 0,
+            "zero_candidates_reason": "filtered_by_caps",
+            "zero_candidates_detail": "max_candidates_cap",
+            "zero_candidates_stage": "caps",
+            "zero_schedule_reason": "filtered_by_caps",
+            "zero_schedule_detail": "max_candidates_cap",
+            "base_used": base_used,
+            "base_fallback_used": base_fallback_used,
+            "hops_attempted": hops_attempted,
+            "hop_fallback_used": hop_fallback_used,
+            "connectors_added": connectors_added,
+            "cross_dex_fallback_used": False,
+            "prepare_truncated": bool(prepare_truncated),
+            "prepare_time_ms": float(prepare_time_ms) if prepare_time_ms is not None else None,
+            "schedule_guard_triggered": False,
+            "budget_remaining_ms_at_schedule": None,
+        }
+    remaining_budget_ms_at_schedule = int(max(0.0, (scan_deadline - loop.time()) * 1000.0))
+    min_first_task_ms = int(float(getattr(s, "min_first_task_s", 0.08)) * 1000.0)
+    if not candidates:
+        return {
+            "scheduled": 0,
+            "finished": 0,
+            "timeouts": 0,
+            "best_gross": 0.0,
+            "best_net": 0.0,
+            "best_route_summary": None,
+            "outcome": "no_routes",
+            "candidates_raw": int(candidates_raw),
+            "candidates_after_prepare": int(candidates_after_prepare),
+            "candidates_after_universe": int(candidates_after_universe or 0),
+            "candidates_after_base_filter": int(candidates_after_base_filter),
+            "candidates_after_hops_filter": int(candidates_after_hops_filter),
+            "candidates_after_cross_dex_filter": 0,
+            "candidates_after_viability_filter": None,
+            "candidates_after_caps": int(candidates_after_caps),
+            "candidates_scheduled": 0,
+            "zero_candidates_reason": "no_candidates",
+            "zero_candidates_detail": "empty_candidates",
+            "zero_candidates_stage": "prepare",
+            "zero_schedule_reason": "no_candidates",
+            "zero_schedule_detail": "empty_candidates",
+            "base_used": base_used,
+            "base_fallback_used": base_fallback_used,
+            "hops_attempted": hops_attempted,
+            "hop_fallback_used": hop_fallback_used,
+            "connectors_added": connectors_added,
+            "cross_dex_fallback_used": False,
+            "prepare_truncated": bool(prepare_truncated),
+            "prepare_time_ms": float(prepare_time_ms) if prepare_time_ms is not None else None,
+            "schedule_guard_triggered": False,
+            "budget_remaining_ms_at_schedule": remaining_budget_ms_at_schedule,
+        }
+    if remaining_budget_ms_at_schedule < min_first_task_ms:
+        return {
+            "scheduled": 0,
+            "finished": 0,
+            "timeouts": 0,
+            "best_gross": 0.0,
+            "best_net": 0.0,
+            "best_route_summary": None,
+            "outcome": "no_budget",
+            "candidates_raw": int(candidates_raw),
+            "candidates_after_prepare": int(candidates_after_prepare),
+            "candidates_after_universe": int(candidates_after_universe or 0),
+            "candidates_after_base_filter": int(candidates_after_base_filter),
+            "candidates_after_hops_filter": int(candidates_after_hops_filter),
+            "candidates_after_cross_dex_filter": int(candidates_after_caps),
+            "candidates_after_viability_filter": None,
+            "candidates_after_caps": int(candidates_after_caps),
+            "candidates_scheduled": 0,
+            "zero_candidates_reason": "remaining_budget_too_low",
+            "zero_candidates_detail": "min_first_task_ms",
+            "zero_candidates_stage": "schedule",
+            "zero_schedule_reason": "remaining_budget_too_low",
+            "zero_schedule_detail": "min_first_task_ms",
+            "base_used": base_used,
+            "base_fallback_used": base_fallback_used,
+            "hops_attempted": hops_attempted,
+            "hop_fallback_used": hop_fallback_used,
+            "connectors_added": connectors_added,
+            "cross_dex_fallback_used": False,
+            "prepare_truncated": bool(prepare_truncated),
+            "prepare_time_ms": float(prepare_time_ms) if prepare_time_ms is not None else None,
+            "schedule_guard_triggered": True,
+            "budget_remaining_ms_at_schedule": remaining_budget_ms_at_schedule,
+        }
 
     payloads, _, scan_stats = await _scan_candidates(
         candidates,
         block_ctx,
         fee_tiers=list(s.stage1_fee_tiers) if s.stage1_fee_tiers else None,
         timeout_s=timeout_s,
-        deadline_s=deadline,
+        deadline_s=scan_deadline,
         keep_all=True,
     )
     payloads = [p for p in payloads if p and p.get("profit_raw", -1) != -1]
@@ -1000,6 +1175,33 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
     candidates_after_viability_filter: Optional[int] = None
     if scheduled > 0:
         candidates_after_viability_filter = max(0, scheduled - invalid)
+
+    def _payload_dexes(p: Dict[str, Any]) -> List[str]:
+        dex_path = p.get("dex_path") or p.get("route_dex") or []
+        out: List[str] = []
+        for d in dex_path:
+            if not d:
+                continue
+            dex = str(d).split(":")[0]
+            if dex:
+                out.append(dex)
+        return out
+
+    def _payload_dex_mix(p: Dict[str, Any]) -> Optional[Dict[str, int]]:
+        mix = p.get("dex_mix")
+        if isinstance(mix, dict):
+            return {str(k): int(v) for k, v in mix.items() if v}
+        dexes = _payload_dexes(p)
+        if not dexes:
+            return None
+        out: Dict[str, int] = {}
+        for d in dexes:
+            out[str(d)] = int(out.get(str(d), 0)) + 1
+        return out or None
+
+    def _distinct_dex_count(p: Dict[str, Any]) -> int:
+        dexes = _payload_dexes(p)
+        return len(set(dexes)) if dexes else 0
 
     def _map_viability_rejects(rejects: Dict[str, int]) -> Dict[str, int]:
         out = {
@@ -1031,19 +1233,45 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
         return {k: v for k, v in out.items() if v}
 
     viability_rejects_by_reason = _map_viability_rejects(scan_stats.get("rejects_by_reason", {}))
+    candidates_after_cross_dex_filter: Optional[int] = None
+    cross_dex_fallback_used = False
+    payloads_before_cross = list(payloads)
+    if require_cross_dex:
+        filtered_payloads = [p for p in payloads if _distinct_dex_count(p) >= 2]
+        candidates_after_cross_dex_filter = len(filtered_payloads)
+        if payloads and not filtered_payloads:
+            if cross_dex_fallback:
+                cross_dex_fallback_used = True
+                payloads = payloads_before_cross
+            else:
+                payloads = []
+        else:
+            payloads = filtered_payloads
+    else:
+        candidates_after_cross_dex_filter = len(payloads)
+
     zero_candidates_reason = None
     zero_candidates_detail = None
     zero_candidates_stage = None
+    zero_schedule_reason = None
+    zero_schedule_detail = None
+    schedule_guard_triggered = bool(scan_stats.get("schedule_guard_blocked"))
     if scheduled == 0:
         reason_if_zero = scan_stats.get("reason_if_zero_scheduled")
-        if reason_if_zero in ("stage1_deadline_exhausted_pre_scan", "schedule_guard_triggered"):
-            zero_candidates_reason = "time_budget_exhausted_pre_schedule"
-            zero_candidates_detail = str(reason_if_zero)
-            zero_candidates_stage = "schedule"
+        if reason_if_zero == "no_candidates":
+            zero_schedule_reason = "no_candidates"
+        elif reason_if_zero == "schedule_guard_triggered":
+            zero_schedule_reason = "schedule_guard_blocked"
+        elif reason_if_zero == "stage1_deadline_exhausted_pre_scan":
+            zero_schedule_reason = "deadline_exhausted"
         elif reason_if_zero:
-            zero_candidates_reason = "time_budget_exhausted_pre_schedule"
-            zero_candidates_detail = str(reason_if_zero)
-            zero_candidates_stage = "schedule"
+            zero_schedule_reason = "schedule_guard_blocked" if "guard" in str(reason_if_zero) else "deadline_exhausted"
+        else:
+            zero_schedule_reason = "unknown"
+        zero_schedule_detail = str(reason_if_zero) if reason_if_zero else None
+        zero_candidates_reason = zero_schedule_reason
+        zero_candidates_detail = zero_schedule_detail
+        zero_candidates_stage = "schedule"
     elif candidates_after_viability_filter == 0:
         if viability_rejects_by_reason.get("rpc_error") or viability_rejects_by_reason.get("timeout"):
             zero_candidates_reason = "rpc_unavailable"
@@ -1053,6 +1281,10 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
             zero_candidates_reason = "filtered_by_viability"
             zero_candidates_detail = "no_valid_payloads"
             zero_candidates_stage = "viability"
+    elif require_cross_dex and not payloads and not cross_dex_fallback:
+        zero_candidates_reason = "filtered_by_cross_dex"
+        zero_candidates_detail = "require_cross_dex"
+        zero_candidates_stage = "cross_dex"
 
     best_gross = 0.0
     best_net = 0.0
@@ -1062,25 +1294,53 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
     best_reason = None
     best_classification = "no_hit"
     best_backend = "quote"
+    sim_ok: Optional[bool] = None
+    sim_revert_reason: Optional[str] = None
     arb_calldata_len = None
     arb_calldata_prefix = None
     arb_call = None
+    best_candidate_id: Optional[str] = None
+    best_route_tokens: Optional[List[str]] = None
+    best_hops_payload: Optional[List[Dict[str, Any]]] = None
+    best_hop_amounts: Optional[List[Dict[str, Any]]] = None
+    best_amount_in: Optional[int] = None
+    dryrun_status: Optional[str] = None
     if payloads:
         dec = _decimals_by_token(base_addr)
-        ranked = sorted(payloads, key=lambda p: int(p.get("profit_gross_raw", 0)), reverse=True)
+        def _score_payload(p: Dict[str, Any]) -> float:
+            gross = int(p.get("profit_gross_raw", 0) or 0)
+            score = float(gross)
+            distinct = _distinct_dex_count(p)
+            if prefer_cross_dex and distinct >= 2 and cross_bonus:
+                score *= 1.0 + (float(cross_bonus) / 10_000.0)
+            elif distinct <= 1 and same_penalty:
+                score *= max(0.0, 1.0 - (float(same_penalty) / 10_000.0))
+            return score
+        ranked = sorted(payloads, key=_score_payload, reverse=True)
         best = ranked[0]
+        best_candidate_id = best.get("candidate_id")
         best_route = _route_pretty(tuple(best.get("route")), best.get("route_dex"), best.get("route_fee_bps"), best.get("route_fee_tier"), best.get("dex_path"))
+        best_route_tokens = list(best.get("route") or [])
+        best_hops_payload = list(best.get("hops") or []) if isinstance(best.get("hops"), list) else None
+        best_hop_amounts = list(best.get("hop_amounts") or []) if isinstance(best.get("hop_amounts"), list) else None
+        try:
+            best_amount_in = int(best.get("amount_in", 0) or 0)
+        except Exception:
+            best_amount_in = None
         if getattr(config, "ARB_EXECUTOR_ADDRESS", ""):
             try:
-                arb_call = build_execute_call_from_payload(best, min_profit=1, to_addr=SIM_FROM_ADDRESS)
+                sim_to_addr = getattr(config, "ARB_EXECUTOR_OWNER", "") or getattr(config, "SIM_FROM_ADDRESS", SIM_FROM_ADDRESS)
+                arb_call = preflight.build_arb_calldata(best, s, to_addr=sim_to_addr)
                 arb_calldata_len = int(len(arb_call))
                 arb_calldata_prefix = "0x" + arb_call.hex()[:16]
             except Exception:
                 arb_call = None
+        sim_backend = str(getattr(s, "sim_backend", "") or "").strip().lower()
+        backend_list = [sim_backend] if sim_backend else list(getattr(config, "EXEC_SIM_BACKENDS", ["quote"]))
         sim = await simulate_candidate_async(
             best,
             s,
-            backends=list(getattr(config, "EXEC_SIM_BACKENDS", ["quote"])),
+            backends=backend_list,
             rpc=PS.rpc,
             block_ctx=block_ctx,
             arb_call=arb_call,
@@ -1090,12 +1350,26 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
         best_net = float(int(sim.net_after_buffers_raw)) / float(10 ** dec)
         best_classification = sim.classification
         best_backend = sim.backend
-        best_dex_mix = best.get("dex_mix")
-        best_hops = best.get("hops_count")
+        sim_ok = sim.sim_ok
+        sim_revert_reason = sim.sim_revert_reason
+        best_dex_mix = _payload_dex_mix(best)
+        best_hops = best.get("hops_count") or (len(best.get("route", ())) - 1 if best.get("route") else None)
         best_reason = best.get("reason_selected")
+        if best_reason is None:
+            distinct = _distinct_dex_count(best)
+            if prefer_cross_dex and distinct >= 2 and cross_bonus:
+                best_reason = "cross_dex_bonus"
+            elif distinct <= 1 and same_penalty:
+                best_reason = "same_dex_penalty"
+        if str(getattr(s, "execution_mode", "off")).lower() == "dryrun":
+            try:
+                dryrun_entry = await build_tx_ready(best, s, rpc=PS.rpc, block_ctx=block_ctx)
+                dryrun_status = dryrun_entry.get("status") if isinstance(dryrun_entry, dict) else None
+            except Exception:
+                dryrun_status = "error"
 
     outcome = "no_hit"
-    if best_classification == "net_hit":
+    if best_classification in ("net_hit", "valid_hit"):
         outcome = "net_hit"
     elif best_classification == "gross_hit":
         outcome = "gross_hit"
@@ -1107,24 +1381,36 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
         "best_gross": float(best_gross),
         "best_net": float(best_net),
         "best_route_summary": best_route,
+        "best_route_tokens": best_route_tokens,
+        "best_hops": best_hops_payload,
+        "best_hop_amounts": best_hop_amounts,
+        "best_amount_in": best_amount_in,
+        "candidate_id": best_candidate_id,
         "dex_mix": best_dex_mix,
         "hops": best_hops,
         "reason_selected": best_reason,
         "classification": best_classification,
         "backend": best_backend,
+        "sim_ok": sim_ok,
+        "sim_revert_reason": sim_revert_reason,
         "arb_calldata_len": arb_calldata_len,
         "arb_calldata_prefix": arb_calldata_prefix,
+        "dryrun_status": dryrun_status,
         "outcome": outcome,
         "candidates_raw": int(candidates_raw),
+        "candidates_after_prepare": int(candidates_after_prepare),
+        "candidates_after_universe": int(candidates_after_universe or 0),
         "candidates_after_base_filter": int(candidates_after_base_filter),
         "candidates_after_hops_filter": int(candidates_after_hops_filter),
-        "candidates_after_cross_dex_filter": candidates_after_cross_dex_filter if candidates_after_cross_dex_filter is not None else (len(candidates) if not require_cross_dex else None),
+        "candidates_after_cross_dex_filter": candidates_after_cross_dex_filter,
         "candidates_after_viability_filter": candidates_after_viability_filter,
         "candidates_after_caps": int(candidates_after_caps),
         "candidates_scheduled": int(scan_stats.get("scheduled", 0)),
         "zero_candidates_reason": zero_candidates_reason,
         "zero_candidates_detail": zero_candidates_detail,
         "zero_candidates_stage": zero_candidates_stage,
+        "zero_schedule_reason": zero_schedule_reason,
+        "zero_schedule_detail": zero_schedule_detail,
         "base_used": base_used,
         "base_fallback_used": bool(base_fallback_used),
         "hops_attempted": list(hops_attempted),
@@ -1132,9 +1418,14 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
         "connectors_added": connectors_added,
         "schedule_guard_remaining_ms": scan_stats.get("schedule_guard_remaining_ms"),
         "schedule_guard_blocked": scan_stats.get("schedule_guard_blocked"),
+        "schedule_guard_triggered": bool(schedule_guard_triggered),
         "schedule_guard_reason": scan_stats.get("schedule_guard_reason"),
+        "budget_remaining_ms_at_schedule": scan_stats.get("budget_remaining_ms_at_schedule"),
         "viability_rejects_by_reason": viability_rejects_by_reason,
         "capped_by_trigger_max_candidates_raw": bool(capped_by_trigger),
+        "cross_dex_fallback_used": bool(cross_dex_fallback_used),
+        "prepare_truncated": bool(prepare_truncated),
+        "prepare_time_ms": float(prepare_time_ms) if prepare_time_ms is not None else None,
     }
 
 
@@ -1637,6 +1928,8 @@ async def _scan_candidates(
     if scheduled == 0 and not reason_if_zero_scheduled:
         if loop.time() >= deadline_s:
             reason_if_zero_scheduled = "stage1_deadline_exhausted_pre_scan"
+        else:
+            reason_if_zero_scheduled = "schedule_unknown_zero"
 
     schedule_ms = (loop.time() - schedule_start_t) * 1000.0
 
@@ -1676,6 +1969,7 @@ async def _scan_candidates(
         "scan_schedule_ms": float(max(0.0, schedule_ms)),
         "scan_await_ms": float(max(0.0, await_ms if "await_ms" in locals() else 0.0)),
         "stage1_remaining_ms_before_scheduling": int(remaining_before_scheduling_ms),
+        "budget_remaining_ms_at_schedule": int(remaining_before_scheduling_ms),
         "schedule_at_least_one": bool(schedule_at_least_one),
         "schedule_guard_remaining_ms": schedule_guard_remaining_ms,
         "schedule_guard_blocked": bool(schedule_guard_blocked),
@@ -2082,7 +2376,6 @@ async def _optimize_amount_for_route(
 
 
 async def simulate(payload: Dict[str, Any], block_number: int) -> None:
-    tx = executor.prepare_transaction(payload, SIM_FROM_ADDRESS)
     # Provide structured fields for the web UI (spent, ROI, route),
     # so the table/stats never show "—" or "∞" because of parsing issues.
     try:
@@ -2224,6 +2517,101 @@ def log(iteration: int, payloads: List[Dict[str, Any]], block_number: int) -> No
         )
 
 
+def _read_jsonl_tail(path: Path, *, limit: int) -> List[Dict[str, Any]]:
+    if limit <= 0 or not path.exists():
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return []
+    out: List[Dict[str, Any]] = []
+    for line in lines[-limit:]:
+        try:
+            obj = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(obj, dict):
+            out.append(obj)
+    return out
+
+
+async def replay_preflight(limit: int = 20) -> None:
+    s = _load_settings()
+    addr = str(getattr(s, "arb_executor_address", "") or "").strip()
+    owner = str(getattr(s, "arb_executor_owner", "") or "").strip()
+    if addr:
+        config.ARB_EXECUTOR_ADDRESS = addr
+    if owner:
+        config.ARB_EXECUTOR_OWNER = owner
+        config.SIM_FROM_ADDRESS = owner
+    if not addr:
+        raise SystemExit("arb_executor_address not set in bot_config.json")
+
+    rpc_urls = list(s.rpc_urls) if getattr(s, "rpc_urls", None) else []
+    if not rpc_urls:
+        raw = os.getenv("RPC_URLS")
+        if raw:
+            rpc_urls = [x.strip() for x in raw.split(",") if x.strip()]
+    if not rpc_urls:
+        rpc_urls = [os.getenv("RPC_URL", config.RPC_URL)]
+
+    rpc = RPCPool(rpc_urls, default_timeout_s=float(s.rpc_timeout_s))
+
+    entries = _read_jsonl_tail(LOG_DIR / "trigger_scans.jsonl", limit=limit)
+    ok_count = 0
+    revert_count = 0
+    errors: Dict[str, int] = {}
+
+    try:
+        for entry in entries:
+            hops = entry.get("best_hops")
+            hop_amounts = entry.get("best_hop_amounts")
+            route = entry.get("best_route_tokens")
+            if not (hops and hop_amounts and route):
+                continue
+            payload = {
+                "route": route,
+                "hops": hops,
+                "hop_amounts": hop_amounts,
+                "amount_in": entry.get("best_amount_in"),
+                "candidate_id": entry.get("candidate_id"),
+            }
+            pre_block = entry.get("pre_block")
+            block_tag = hex(int(pre_block)) if isinstance(pre_block, int) else "latest"
+            try:
+                calldata = preflight.build_arb_calldata(payload, s, to_addr=owner or config.SIM_FROM_ADDRESS)
+                sim_ok, _, reason = await preflight.run_eth_call(
+                    rpc,
+                    block_tag=str(block_tag),
+                    from_addr=str(owner or config.SIM_FROM_ADDRESS),
+                    to_addr=str(addr),
+                    data=calldata,
+                    timeout_s=3.0,
+                )
+            except Exception as exc:
+                sim_ok = False
+                reason = f"error:{str(exc)[:120]}"
+
+            if sim_ok:
+                ok_count += 1
+            else:
+                revert_count += 1
+                key = str(reason or "revert")
+                errors[key] = int(errors.get(key, 0)) + 1
+    finally:
+        try:
+            await rpc.close()
+        except Exception:
+            pass
+
+    top_errors = sorted(errors.items(), key=lambda x: x[1], reverse=True)[:5]
+    print(json.dumps({
+        "entries_checked": len(entries),
+        "ok_count": ok_count,
+        "revert_count": revert_count,
+        "top_revert_reasons": [{"reason": k, "count": v} for k, v in top_errors],
+    }, indent=2))
+
 async def main() -> None:
     iteration = 0
     print("🚀 Fork simulation started...")
@@ -2232,6 +2620,21 @@ async def main() -> None:
     # Init RPC endpoints (multi-RPC failover supported)
     global PS
     s0 = _load_settings()
+    try:
+        config.MEMPOOL_ALLOW_UNKNOWN_TOKENS = bool(getattr(s0, "mempool_allow_unknown_tokens", config.MEMPOOL_ALLOW_UNKNOWN_TOKENS))
+        config.MEMPOOL_RAW_MIN_ENABLED = bool(getattr(s0, "mempool_raw_min_enabled", config.MEMPOOL_RAW_MIN_ENABLED))
+        config.MEMPOOL_STRICT_UNKNOWN_TOKENS = bool(
+            getattr(s0, "mempool_strict_unknown_tokens", config.MEMPOOL_STRICT_UNKNOWN_TOKENS)
+        )
+        addr = str(getattr(s0, "arb_executor_address", "") or "").strip()
+        if addr:
+            config.ARB_EXECUTOR_ADDRESS = addr
+        owner = str(getattr(s0, "arb_executor_owner", "") or "").strip()
+        if owner:
+            config.ARB_EXECUTOR_OWNER = owner
+            config.SIM_FROM_ADDRESS = owner
+    except Exception:
+        pass
     rpc_urls = list(s0.rpc_urls) if getattr(s0, "rpc_urls", None) else []
     if not rpc_urls:
         # env RPC_URLS / config fallback
@@ -2276,19 +2679,23 @@ async def main() -> None:
     if mempool_on:
         ws_urls = list(getattr(s0, "mempool_ws_urls", ())) or list(getattr(config, "MEMPOOL_WS_URLS", []))
         filter_to = list(getattr(s0, "mempool_filter_to", ())) or list(getattr(config, "MEMPOOL_FILTER_TO", []))
+        watch_mode = getattr(s0, "mempool_watch_mode", getattr(config, "MEMPOOL_WATCH_MODE", "strict"))
+        watched_router_set = getattr(s0, "mempool_watched_router_sets", getattr(config, "MEMPOOL_WATCHED_ROUTER_SETS", "core"))
         mempool_engine = MempoolEngine(
             rpc=PS.rpc,
             ws_urls=ws_urls,
             filter_to=filter_to,
-            univ2_routers=[config.UNISWAP_V2_ROUTER, config.SUSHISWAP_ROUTER],
-            univ3_routers=[config.UNISWAP_V3_SWAP_ROUTER, config.UNISWAP_V3_SWAP_ROUTER02],
-            universal_routers=[config.UNISWAP_UNIVERSAL_ROUTER],
+            watch_mode=str(watch_mode),
+            watched_router_set=str(watched_router_set),
             min_value_usd=float(getattr(s0, "mempool_min_value_usd", config.MEMPOOL_MIN_VALUE_USD)),
             usd_per_eth=float(getattr(s0, "mempool_usd_per_eth", config.MEMPOOL_USD_PER_ETH)),
             max_inflight=int(getattr(s0, "mempool_max_inflight_tx", config.MEMPOOL_MAX_INFLIGHT_TX)),
             fetch_concurrency=int(getattr(s0, "mempool_fetch_tx_concurrency", config.MEMPOOL_FETCH_TX_CONCURRENCY)),
             dedup_ttl_s=int(getattr(s0, "mempool_dedup_ttl_s", config.MEMPOOL_DEDUP_TTL_S)),
             trigger_budget_s=float(getattr(s0, "mempool_trigger_scan_budget_s", config.MEMPOOL_TRIGGER_SCAN_BUDGET_S)),
+            trigger_prepare_budget_ms=int(
+                getattr(s0, "trigger_prepare_budget_ms", getattr(config, "TRIGGER_PREPARE_BUDGET_MS", 250))
+            ),
             trigger_queue_max=int(getattr(s0, "mempool_trigger_max_queue", config.MEMPOOL_TRIGGER_MAX_QUEUE)),
             trigger_concurrency=int(getattr(s0, "mempool_trigger_max_concurrent", config.MEMPOOL_TRIGGER_MAX_CONCURRENT)),
             trigger_ttl_s=int(getattr(s0, "mempool_trigger_ttl_s", config.MEMPOOL_TRIGGER_TTL_S)),
@@ -2332,6 +2739,18 @@ async def main() -> None:
             try:
                 config.V2_MIN_RESERVE_RATIO = float(s.v2_min_reserve_ratio)
                 config.V2_MAX_PRICE_IMPACT_BPS = float(s.v2_max_price_impact_bps)
+            except Exception:
+                pass
+            try:
+                config.MEMPOOL_ALLOW_UNKNOWN_TOKENS = bool(getattr(s, "mempool_allow_unknown_tokens", config.MEMPOOL_ALLOW_UNKNOWN_TOKENS))
+                config.MEMPOOL_RAW_MIN_ENABLED = bool(getattr(s, "mempool_raw_min_enabled", config.MEMPOOL_RAW_MIN_ENABLED))
+                addr = str(getattr(s, "arb_executor_address", "") or "").strip()
+                if addr:
+                    config.ARB_EXECUTOR_ADDRESS = addr
+                owner = str(getattr(s, "arb_executor_owner", "") or "").strip()
+                if owner:
+                    config.ARB_EXECUTOR_OWNER = owner
+                    config.SIM_FROM_ADDRESS = owner
             except Exception:
                 pass
 
@@ -2990,6 +3409,11 @@ async def main() -> None:
         if snapshotter:
             snapshotter.write_snapshot(reason="shutdown")
             await snapshotter.stop()
+        try:
+            cfg_path = Path(os.getenv("BOT_CONFIG", "bot_config.json"))
+            write_assistant_pack(log_dir=LOG_DIR, config_path=cfg_path)
+        except Exception:
+            pass
         _write_session_summary(
             started_at=session_started_at,
             updated_at=datetime.utcnow(),
@@ -3033,6 +3457,20 @@ if __name__ == "__main__":
                 update_reason="manual",
             )
             print(json.dumps(snap))
+        elif "--preflight-replay" in sys.argv:
+            limit = 20
+            for idx, arg in enumerate(sys.argv):
+                if arg.startswith("--preflight-replay="):
+                    try:
+                        limit = int(arg.split("=", 1)[1])
+                    except Exception:
+                        limit = 20
+                if arg in ("--limit", "--replay-limit") and idx + 1 < len(sys.argv):
+                    try:
+                        limit = int(sys.argv[idx + 1])
+                    except Exception:
+                        limit = 20
+            asyncio.run(replay_preflight(limit))
         else:
             asyncio.run(main())
     except KeyboardInterrupt:

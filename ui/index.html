@@ -98,6 +98,20 @@
       font-family: "IBM Plex Mono", "SF Mono", "Menlo", "Monaco", "Consolas", monospace;
     }
 
+    .readonlyList{
+      font-family: "IBM Plex Mono", "SF Mono", "Menlo", "Monaco", "Consolas", monospace;
+      font-size: 11px;
+      line-height: 1.4;
+      color: rgba(255,255,255,0.85);
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 8px;
+      max-height: 90px;
+      overflow: auto;
+      white-space: pre;
+    }
+
     .pill{
       display:flex;
       align-items:center;
@@ -724,6 +738,7 @@
         <button id="stopBtn" class="btn danger" disabled>stop</button>
         <button id="applyCfgBtnTop" class="btn primary">apply & restart</button>
         <button id="copyDebugBtn" class="btn">Copy debug summary</button>
+        <button id="copyPackBtn" class="btn">Copy Assistant Pack</button>
       </div>
     </header>
 
@@ -1021,14 +1036,49 @@ wss://rpc2" style="width:100%; resize:vertical;"></textarea>
               <small>Public WS endpoints for pending tx stream (one per line or comma-separated).</small>
             </div>
             <div class="field">
+              <label for="cfgMempoolWatchPreset">Mempool watch preset</label>
+              <select id="cfgMempoolWatchPreset">
+                <option value="core">core (Uni + Sushi)</option>
+                <option value="extended">extended (core + universal + aggregators)</option>
+              </select>
+              <small>Defines which router contracts are watched.</small>
+            </div>
+            <div class="field">
+              <label for="cfgMempoolWatchMode">Watch mode</label>
+              <select id="cfgMempoolWatchMode">
+                <option value="strict">strict (router OR known selector)</option>
+                <option value="routers_only">routers only</option>
+              </select>
+              <small>strict keeps selector pre-check for non-router txs.</small>
+            </div>
+            <div class="field">
               <label for="cfgMempoolMinUsd">Mempool min value (USD)</label>
               <input id="cfgMempoolMinUsd" type="number" step="1" min="0" />
               <small>ignore tiny swaps (stables/WETH heuristic)</small>
             </div>
             <div class="field">
+              <label class="checkRow">
+                <input id="cfgMempoolAllowUnknown" type="checkbox" />
+                <span>Allow unknown-token triggers</span>
+              </label>
+              <small>Allow triggers when USD value is unknown (testing).</small>
+            </div>
+            <div class="field">
+              <label class="checkRow">
+                <input id="cfgMempoolRawMinEnabled" type="checkbox" />
+                <span>Enable raw min thresholds</span>
+              </label>
+              <small>Apply per-token raw minimums after USD check.</small>
+            </div>
+            <div class="field">
               <label for="cfgMempoolBudget">Trigger scan budget (s)</label>
               <input id="cfgMempoolBudget" type="number" step="0.1" min="0.5" />
               <small>short pre-block scan per trigger</small>
+            </div>
+            <div class="field" style="grid-column: 1 / -1;">
+              <label>Watched routers (read-only)</label>
+              <div class="readonlyList" id="cfgMempoolWatchedRouters">—</div>
+              <small>Derived from the active watch preset and/or runtime status.</small>
             </div>
             <div class="field" style="grid-column: 1 / -1;">
               <label>Trigger bias (mempool)</label>
@@ -1040,6 +1090,10 @@ wss://rpc2" style="width:100%; resize:vertical;"></textarea>
                 <label class="checkRow">
                   <input id="cfgTriggerRequireCrossDex" type="checkbox" />
                   <span>Require cross-DEX routes (mempool)</span>
+                </label>
+                <label class="checkRow">
+                  <input id="cfgTriggerCrossDexFallback" type="checkbox" />
+                  <span>Fallback to same-DEX if none</span>
                 </label>
                 <span class="warnBadge" id="requireCrossDexWarn">May result in scheduled=0 on public RPC</span>
                 <label class="checkRow">
@@ -1166,6 +1220,33 @@ wss://rpc2" style="width:100%; resize:vertical;"></textarea>
                 <label for="cfgFixedGas">Fixed gas units</label>
                 <input id="cfgFixedGas" type="number" step="1000" min="0" placeholder="0" />
                 <small>override gas units (0 = auto)</small>
+              </div>
+              <div class="field">
+                <label for="cfgSimBackend">Simulation backend</label>
+                <select id="cfgSimBackend">
+                  <option value="quote">quote</option>
+                  <option value="eth_call">eth_call</option>
+                  <option value="state_override">state_override</option>
+                </select>
+                <small>eth_call uses executor calldata (dry-run).</small>
+              </div>
+              <div class="field">
+                <label for="cfgExecMode">Execution mode</label>
+                <select id="cfgExecMode">
+                  <option value="off">off</option>
+                  <option value="dryrun">dryrun</option>
+                </select>
+                <small>dryrun builds tx + eth_call; no broadcast.</small>
+              </div>
+              <div class="field">
+                <label for="cfgArbExecutorAddr">Executor address</label>
+                <input id="cfgArbExecutorAddr" class="mono" placeholder="0x..." />
+                <small>Contract address for eth_call simulation.</small>
+              </div>
+              <div class="field">
+                <label for="cfgArbExecutorOwner">Executor owner (from)</label>
+                <input id="cfgArbExecutorOwner" class="mono" placeholder="0x..." />
+                <small>Used as eth_call sender for onlyOwner.</small>
               </div>
             </div>
           </details>
@@ -1300,6 +1381,23 @@ https://rpc2
   const mempoolSwaps = [];
   const mempoolTriggerScans = [];
   let mempoolStatus = null;
+  const WATCH_PRESET_NAMES = {
+    core: [
+      'Uniswap V2 Router02',
+      'SushiSwap Router',
+      'Uniswap V3 SwapRouter',
+      'Uniswap V3 SwapRouter02',
+    ],
+    extended: [
+      'Uniswap V2 Router02',
+      'SushiSwap Router',
+      'Uniswap V3 SwapRouter',
+      'Uniswap V3 SwapRouter02',
+      'Uniswap Universal Router',
+      '1inch Aggregation Router v5',
+      '0x Exchange Proxy',
+    ],
+  };
   let selectedTriggerDetail = null;
   let triggerZeroStreak = 0;
   let lastRpcStatsAt = 0;
@@ -1310,6 +1408,7 @@ https://rpc2
   const cfgEnableMultidex = document.getElementById('cfgEnableMultidex');
   const cfgTriggerPreferCrossDex = document.getElementById('cfgTriggerPreferCrossDex');
   const cfgTriggerRequireCrossDex = document.getElementById('cfgTriggerRequireCrossDex');
+  const cfgTriggerCrossDexFallback = document.getElementById('cfgTriggerCrossDexFallback');
   const cfgTriggerRequire3Hops = document.getElementById('cfgTriggerRequire3Hops');
   const cfgTriggerBaseFallback = document.getElementById('cfgTriggerBaseFallback');
   const cfgTriggerAllowTwoHop = document.getElementById('cfgTriggerAllowTwoHop');
@@ -1342,12 +1441,21 @@ https://rpc2
   const cfgDebugFunnel = document.getElementById('cfgDebugFunnel');
   const cfgGasOff = document.getElementById('cfgGasOff');
   const cfgFixedGas = document.getElementById('cfgFixedGas');
+  const cfgSimBackend = document.getElementById('cfgSimBackend');
+  const cfgExecMode = document.getElementById('cfgExecMode');
+  const cfgArbExecutorAddr = document.getElementById('cfgArbExecutorAddr');
+  const cfgArbExecutorOwner = document.getElementById('cfgArbExecutorOwner');
   const cfgMempoolWs = document.getElementById('cfgMempoolWs');
+  const cfgMempoolWatchPreset = document.getElementById('cfgMempoolWatchPreset');
+  const cfgMempoolWatchMode = document.getElementById('cfgMempoolWatchMode');
   const cfgMempoolMinUsd = document.getElementById('cfgMempoolMinUsd');
+  const cfgMempoolAllowUnknown = document.getElementById('cfgMempoolAllowUnknown');
+  const cfgMempoolRawMinEnabled = document.getElementById('cfgMempoolRawMinEnabled');
   const cfgMempoolInflight = document.getElementById('cfgMempoolInflight');
   const cfgMempoolFetchConc = document.getElementById('cfgMempoolFetchConc');
   const cfgMempoolDedup = document.getElementById('cfgMempoolDedup');
   const cfgMempoolBudget = document.getElementById('cfgMempoolBudget');
+  const cfgMempoolWatchedRouters = document.getElementById('cfgMempoolWatchedRouters');
   const cfgPreset = document.getElementById('cfgPreset');
   const cfgPresetDesc = document.getElementById('cfgPresetDesc');
   const applyPresetBtn = document.getElementById('applyPresetBtn');
@@ -1378,6 +1486,7 @@ https://rpc2
   const warnPersistentHit = document.getElementById('warnPersistentHit');
   const warnRequireCrossDex = document.getElementById('warnRequireCrossDex');
   const copyDebugBtn = document.getElementById('copyDebugBtn');
+  const copyPackBtn = document.getElementById('copyPackBtn');
 
   // -----------------------------
   // Formatting helpers (avoid scientific notation in UI)
@@ -1478,6 +1587,25 @@ https://rpc2
     setPillVisible(warnRequireCrossDex, requireOn);
   }
 
+  function getWatchedRouterNames(){
+    const runtime = mempoolStatus && Array.isArray(mempoolStatus.mempool_watched_router_names)
+      ? mempoolStatus.mempool_watched_router_names
+      : null;
+    if (runtime && runtime.length) return runtime;
+    const preset = cfgMempoolWatchPreset ? String(cfgMempoolWatchPreset.value || '').toLowerCase() : 'core';
+    return WATCH_PRESET_NAMES[preset] || WATCH_PRESET_NAMES.core;
+  }
+
+  function renderWatchedRouters(){
+    if (!cfgMempoolWatchedRouters) return;
+    const names = getWatchedRouterNames();
+    if (!names || !names.length) {
+      cfgMempoolWatchedRouters.textContent = '—';
+      return;
+    }
+    cfgMempoolWatchedRouters.textContent = names.join('\n');
+  }
+
   function renderMempoolStatus(){
     if (!mpWs || !mpRate || !mpFetch || !mpTriggers) return;
     const st = mempoolStatus || {};
@@ -1525,6 +1653,7 @@ https://rpc2
       lastBlockEl.textContent = String(st.current_block);
     }
     updateWarnings();
+    renderWatchedRouters();
   }
 
   function renderMempoolSwaps(){
@@ -2723,6 +2852,7 @@ https://rpc2
       enable_multidex: !!cfgEnableMultidex?.checked,
       trigger_prefer_cross_dex: !!cfgTriggerPreferCrossDex?.checked,
       trigger_require_cross_dex: !!cfgTriggerRequireCrossDex?.checked,
+      trigger_cross_dex_fallback: !!cfgTriggerCrossDexFallback?.checked,
       trigger_require_three_hops: !!cfgTriggerRequire3Hops?.checked,
       trigger_base_fallback_enabled: !!cfgTriggerBaseFallback?.checked,
       trigger_allow_two_hop_fallback: !!cfgTriggerAllowTwoHop?.checked,
@@ -2759,10 +2889,18 @@ https://rpc2
       debug_funnel: !!cfgDebugFunnel?.checked,
       gas_off: !!cfgGasOff?.checked,
       fixed_gas_units: Number(cfgFixedGas?.value || 0),
+      sim_backend: String(cfgSimBackend?.value || 'quote').trim(),
+      execution_mode: String(cfgExecMode?.value || 'off').trim(),
+      arb_executor_address: String(cfgArbExecutorAddr?.value || '').trim(),
+      arb_executor_owner: String(cfgArbExecutorOwner?.value || '').trim(),
 
       mempool_enabled: String(cfgScanSource?.value || 'block') !== 'block',
       mempool_ws_urls: String(cfgMempoolWs?.value || '').trim(),
+      mempool_watch_mode: String(cfgMempoolWatchMode?.value || 'strict').trim(),
+      mempool_watched_router_sets: String(cfgMempoolWatchPreset?.value || 'core').trim(),
       mempool_min_value_usd: Number(cfgMempoolMinUsd?.value || 25),
+      mempool_allow_unknown_tokens: !!cfgMempoolAllowUnknown?.checked,
+      mempool_raw_min_enabled: !!cfgMempoolRawMinEnabled?.checked,
       mempool_max_inflight_tx: parseInt(cfgMempoolInflight?.value || '200', 10),
       mempool_fetch_tx_concurrency: parseInt(cfgMempoolFetchConc?.value || '20', 10),
       mempool_dedup_ttl_s: parseInt(cfgMempoolDedup?.value || '120', 10),
@@ -2782,6 +2920,7 @@ https://rpc2
     if (cfgEnableMultidex) cfgEnableMultidex.checked = !!cfg.enable_multidex;
     if (cfgTriggerPreferCrossDex) cfgTriggerPreferCrossDex.checked = !!cfg.trigger_prefer_cross_dex;
     if (cfgTriggerRequireCrossDex) cfgTriggerRequireCrossDex.checked = !!cfg.trigger_require_cross_dex;
+    if (cfgTriggerCrossDexFallback) cfgTriggerCrossDexFallback.checked = !!cfg.trigger_cross_dex_fallback;
     if (cfgTriggerRequire3Hops) cfgTriggerRequire3Hops.checked = !!cfg.trigger_require_three_hops;
     if (cfgTriggerBaseFallback) cfgTriggerBaseFallback.checked = !!cfg.trigger_base_fallback_enabled;
     if (cfgTriggerAllowTwoHop) cfgTriggerAllowTwoHop.checked = !!cfg.trigger_allow_two_hop_fallback;
@@ -2825,20 +2964,35 @@ https://rpc2
     if (cfgDebugFunnel) cfgDebugFunnel.checked = !!cfg.debug_funnel;
     if (cfgGasOff) cfgGasOff.checked = !!cfg.gas_off;
     if (cfgFixedGas) cfgFixedGas.value = String(cfg.fixed_gas_units ?? 0);
+    if (cfgSimBackend) cfgSimBackend.value = String(cfg.sim_backend || 'quote');
+    if (cfgExecMode) cfgExecMode.value = String(cfg.execution_mode || 'off');
+    if (cfgArbExecutorAddr) cfgArbExecutorAddr.value = String(cfg.arb_executor_address || '');
+    if (cfgArbExecutorOwner) cfgArbExecutorOwner.value = String(cfg.arb_executor_owner || '');
     if (cfgMempoolWs) {
       const ws = cfg.mempool_ws_urls;
       cfgMempoolWs.value = Array.isArray(ws) ? ws.join('\n') : String(ws || '');
     }
     if (cfgMempoolMinUsd) cfgMempoolMinUsd.value = String(cfg.mempool_min_value_usd ?? 25);
+    if (cfgMempoolAllowUnknown) cfgMempoolAllowUnknown.checked = !!cfg.mempool_allow_unknown_tokens;
+    if (cfgMempoolRawMinEnabled) cfgMempoolRawMinEnabled.checked = !!cfg.mempool_raw_min_enabled;
     if (cfgMempoolInflight) cfgMempoolInflight.value = String(cfg.mempool_max_inflight_tx ?? 200);
     if (cfgMempoolFetchConc) cfgMempoolFetchConc.value = String(cfg.mempool_fetch_tx_concurrency ?? 20);
     if (cfgMempoolDedup) cfgMempoolDedup.value = String(cfg.mempool_dedup_ttl_s ?? 120);
     if (cfgMempoolBudget) cfgMempoolBudget.value = String(cfg.mempool_trigger_scan_budget_s ?? 1.5);
+    if (cfgMempoolWatchPreset) {
+      const preset = String(cfg.mempool_watched_router_sets || 'core').toLowerCase();
+      cfgMempoolWatchPreset.value = (preset === 'extended') ? 'extended' : 'core';
+    }
+    if (cfgMempoolWatchMode) {
+      const mode = String(cfg.mempool_watch_mode || 'strict').toLowerCase();
+      cfgMempoolWatchMode.value = (mode === 'routers_only') ? 'routers_only' : 'strict';
+    }
     updateHeaderBadges();
     updateCrossDexGuard();
     updateStats();
     drawChart();
     rebuildProfitTable();
+    renderWatchedRouters();
     schedulePersist();
   }
 
@@ -2927,6 +3081,9 @@ https://rpc2
   if (cfgScanSource) {
     cfgScanSource.addEventListener('change', updateHeaderBadges);
   }
+  if (cfgMempoolWatchPreset) {
+    cfgMempoolWatchPreset.addEventListener('change', renderWatchedRouters);
+  }
   if (cfgTriggerRequireCrossDex) {
     cfgTriggerRequireCrossDex.addEventListener('change', updateCrossDexGuard);
   }
@@ -2961,6 +3118,23 @@ https://rpc2
       try {
         await navigator.clipboard.writeText(text);
         setNotice('status', 'Debug summary copied');
+      } catch {
+        setNotice('warn', 'Copy failed');
+      }
+    });
+  }
+  if (copyPackBtn) {
+    copyPackBtn.addEventListener('click', async () => {
+      try {
+        const resp = await fetch('/api/assistant_pack');
+        const data = await resp.json();
+        if (!data || !data.ok || !data.pack) {
+          setNotice('warn', 'Assistant pack unavailable');
+          return;
+        }
+        const text = JSON.stringify(data.pack, null, 2);
+        await navigator.clipboard.writeText(text);
+        setNotice('status', 'Assistant pack copied');
       } catch {
         setNotice('warn', 'Copy failed');
       }

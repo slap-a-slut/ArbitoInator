@@ -9,13 +9,27 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Deque, Dict, List, Optional
 
 from mempool.confirm import check_tx_receipt
-from mempool.decoders.registry import build_decoders, build_router_registry, decode_pending_tx, is_known_selector
+from mempool.decoders.registry import build_decoders, decode_pending_tx, is_known_selector
 from mempool.listener import MempoolListener
+from mempool.routers import build_router_registry, list_router_names
 from mempool.triggers import build_trigger
 from mempool.types import DecodedSwap, PendingTx, Trigger
 
 
 ScanFn = Callable[[Trigger, float], Awaitable[Dict[str, Any]]]
+
+# Unified reason codes
+REASON_NOT_WATCHED_TO = "not_watched_to"
+REASON_IGNORED_SELECTOR = "ignored_selector"
+REASON_DECODE_FAILED = "decode_failed"
+REASON_TRIGGER_BELOW_USD = "trigger_below_threshold_usd"
+REASON_TRIGGER_UNKNOWN_VALUE = "trigger_unknown_value"
+REASON_TRIGGER_BELOW_RAW = "trigger_below_raw_threshold"
+REASON_TRIGGER_MISSING_AMOUNT = "trigger_missing_amount"
+REASON_TRIGGER_UNKNOWN_TOKENS = "trigger_unknown_tokens"
+REASON_TRIGGER_QUEUE_FULL = "trigger_queue_full"
+REASON_TRIGGER_ENQUEUE_FAILED = "trigger_enqueue_failed"
+REASON_TRIGGER_TTL_EXPIRED = "trigger_ttl_expired"
 
 
 @dataclass
@@ -35,15 +49,15 @@ class MempoolEngine:
         rpc,
         ws_urls: List[str],
         filter_to: List[str],
-        univ2_routers: List[str],
-        univ3_routers: List[str],
-        universal_routers: List[str],
+        watch_mode: str,
+        watched_router_set: str,
         min_value_usd: float,
         usd_per_eth: float,
         max_inflight: int,
         fetch_concurrency: int,
         dedup_ttl_s: int,
         trigger_budget_s: float,
+        trigger_prepare_budget_ms: int,
         trigger_queue_max: int,
         trigger_concurrency: int,
         trigger_ttl_s: int,
@@ -58,6 +72,7 @@ class MempoolEngine:
         self.min_value_usd = float(min_value_usd)
         self.usd_per_eth = float(usd_per_eth)
         self.trigger_budget_s = float(trigger_budget_s)
+        self.trigger_prepare_budget_ms = int(trigger_prepare_budget_ms)
         self.trigger_queue_max = int(trigger_queue_max)
         self.trigger_concurrency = int(max(1, trigger_concurrency))
         self.trigger_ttl_s = int(trigger_ttl_s)
@@ -65,12 +80,17 @@ class MempoolEngine:
         self.post_scan_budget_s = float(post_scan_budget_s)
         self.ui_push = ui_push
 
-        router_registry = build_router_registry(
-            univ2_routers=univ2_routers,
-            univ3_routers=univ3_routers,
-            universal_routers=universal_routers,
+        self.watch_mode = str(watch_mode or "strict").strip().lower()
+        if self.watch_mode not in ("strict", "routers_only"):
+            self.watch_mode = "strict"
+        self.router_set = str(watched_router_set or "core").strip().lower() or "core"
+        self.router_registry = build_router_registry(
+            router_set=self.router_set,
+            extra_addresses=list(self.filter_to),
         )
-        self.decoders = build_decoders(router_registry)
+        self._watched_router_names = list_router_names(self.router_registry)
+        self.decoders = build_decoders(self.router_registry)
+        self.decoders_any = build_decoders({})
 
         self.log_dir = log_dir
         self.mempool_log = log_dir / "mempool.jsonl"
@@ -113,6 +133,20 @@ class MempoolEngine:
         self._trigger_scans_finished = 0
         self._trigger_scans_timeouts = 0
         self._trigger_scans_zero_candidates = 0
+        self._trigger_prepare_truncated = 0
+        self._trigger_schedule_guard_hits = 0
+        self._trigger_zero_schedule_reasons: Dict[str, int] = {}
+        self._mempool_seen_total = 0
+        self._mempool_watched_total = 0
+        self._mempool_decoded_total = 0
+        self._mempool_ignored_not_watched = 0
+        self._mempool_ignored_selector = 0
+        self._mempool_decode_failed = 0
+        self._ignored_to_counts: Dict[str, int] = {}
+        self._decoded_by_router: Dict[str, int] = {}
+        self._ignored_by_reason: Dict[str, int] = {}
+        self._trigger_drop_reasons: Dict[str, int] = {}
+        self._decoded_ts: Deque[int] = deque(maxlen=2000)
 
     async def start(self, scan_fn: ScanFn) -> None:
         if self._running:
@@ -176,6 +210,29 @@ class MempoolEngine:
         payload["trigger_scans_finished"] = int(self._trigger_scans_finished)
         payload["trigger_scans_timeouts"] = int(self._trigger_scans_timeouts)
         payload["trigger_scans_zero_candidates"] = int(self._trigger_scans_zero_candidates)
+        payload["trigger_prepare_budget_ms"] = int(self.trigger_prepare_budget_ms)
+        payload["trigger_prepare_truncated_count"] = int(self._trigger_prepare_truncated)
+        payload["trigger_schedule_guard_hits"] = int(self._trigger_schedule_guard_hits)
+        payload["trigger_zero_schedule_reasons"] = dict(self._trigger_zero_schedule_reasons)
+        payload["mempool_seen_total"] = int(self._mempool_seen_total)
+        payload["mempool_watched_total"] = int(self._mempool_watched_total)
+        payload["mempool_decoded_total"] = int(self._mempool_decoded_total)
+        payload["mempool_ignored_not_watched"] = int(self._mempool_ignored_not_watched)
+        payload["mempool_ignored_selector"] = int(self._mempool_ignored_selector)
+        payload["mempool_decode_failed"] = int(self._mempool_decode_failed)
+        payload["mempool_watch_mode"] = self.watch_mode
+        payload["mempool_watched_router_set"] = self.router_set
+        payload["mempool_watched_router_names"] = list(self._watched_router_names)
+        payload["mempool_top_ignored_to"] = self._top_counts(self._ignored_to_counts)
+        payload["mempool_top_watched_routers"] = self._top_counts(self._decoded_by_router)
+        payload["mempool_ignored_by_reason"] = dict(self._ignored_by_reason)
+        payload["trigger_dropped_by_reason"] = dict(self._trigger_drop_reasons)
+        payload["trigger_dropped_total"] = int(sum(self._trigger_drop_reasons.values())) if self._trigger_drop_reasons else 0
+        now_ms = int(time.time() * 1000)
+        cutoff = now_ms - 60_000
+        while self._decoded_ts and self._decoded_ts[0] < cutoff:
+            self._decoded_ts.popleft()
+        payload["decoded_swaps_last_minute"] = int(len(self._decoded_ts))
         if self._post_validations_total > 0:
             ratio = float(self._persistent_hits) / float(self._post_validations_total)
         else:
@@ -192,13 +249,60 @@ class MempoolEngine:
 
     async def _on_pending_tx(self, tx: PendingTx) -> None:
         to_addr = (tx.to_addr or "").lower()
-        if self.filter_to and to_addr not in self.filter_to and not is_known_selector(tx.input):
-            await self._log_mempool(tx, status="ignored", reason="not_watched")
-            return
+        self._mempool_seen_total += 1
+        router_info = self.router_registry.get(to_addr)
+        router_name = router_info.name if router_info else None
+        router_type = router_info.dex_type if router_info else None
+        watched = bool(router_info)
+        selector_match = is_known_selector(tx.input)
 
-        decoded, reason = decode_pending_tx(self.decoders, tx)
+        if self.watch_mode == "routers_only":
+            if not watched:
+                self._mempool_ignored_not_watched += 1
+                self._note_ignored(to_addr)
+                self._bump_reason(self._ignored_by_reason, REASON_NOT_WATCHED_TO)
+                await self._log_mempool(
+                    tx,
+                    status="ignored",
+                    reason=REASON_NOT_WATCHED_TO,
+                    watched=False,
+                    router_name=None,
+                    router_type=None,
+                    ignore_stage="to_not_watched",
+                )
+                return
+        else:
+            if not watched and not selector_match:
+                self._mempool_ignored_selector += 1
+                self._note_ignored(to_addr)
+                self._bump_reason(self._ignored_by_reason, REASON_IGNORED_SELECTOR)
+                await self._log_mempool(
+                    tx,
+                    status="ignored",
+                    reason=REASON_IGNORED_SELECTOR,
+                    watched=False,
+                    router_name=None,
+                    router_type=None,
+                    ignore_stage="selector_not_swap",
+                )
+                return
+
+        if watched:
+            self._mempool_watched_total += 1
+        decoders = self.decoders if watched else self.decoders_any
+        decoded, reason = decode_pending_tx(decoders, tx)
         if not decoded:
-            await self._log_mempool(tx, status="failed", reason=reason or "decode_failed")
+            self._mempool_decode_failed += 1
+            self._bump_reason(self._ignored_by_reason, REASON_DECODE_FAILED)
+            await self._log_mempool(
+                tx,
+                status="failed",
+                reason=REASON_DECODE_FAILED,
+                watched=watched,
+                router_name=router_name,
+                router_type=router_type,
+                ignore_stage="decode_failed",
+            )
             return
 
         trigger, reason = build_trigger(
@@ -209,28 +313,80 @@ class MempoolEngine:
         )
         summary = self._decoded_summary(decoded)
         self._decoded_swaps_total += 1
+        self._decoded_ts.append(int(time.time() * 1000))
+        self._mempool_decoded_total += 1
+        if router_name:
+            self._decoded_by_router[router_name] = self._decoded_by_router.get(router_name, 0) + 1
         self._recent_swaps.append(summary)
         self._write_json(self.recent_path, list(self._recent_swaps))
         if self.ui_push:
             await self.ui_push({"type": "mempool_swap", **summary})
         if not trigger:
-            await self._log_mempool(tx, status="ignored", reason=reason or "trigger_filtered", decoded_summary=summary)
+            mapped = self._map_trigger_reason_code(reason)
+            self._bump_reason(self._trigger_drop_reasons, mapped)
+            await self._log_mempool(
+                tx,
+                status="ignored",
+                reason=mapped,
+                decoded_summary=summary,
+                watched=watched,
+                router_name=router_name,
+                router_type=router_type,
+                ignore_stage=self._map_trigger_ignore_stage(mapped),
+                trigger_value_usd=None,
+                trigger_unknown_value=None,
+            )
             return
 
         if self._queue.full():
             self._triggers_dropped_queue += 1
-            await self._log_mempool(tx, status="ignored", reason="trigger_queue_full", decoded_summary=summary)
+            self._bump_reason(self._trigger_drop_reasons, REASON_TRIGGER_QUEUE_FULL)
+            await self._log_mempool(
+                tx,
+                status="ignored",
+                reason=REASON_TRIGGER_QUEUE_FULL,
+                decoded_summary=summary,
+                watched=watched,
+                router_name=router_name,
+                router_type=router_type,
+                ignore_stage="queue_full",
+                trigger_value_usd=trigger.usd_value,
+                trigger_unknown_value=trigger.unknown_value,
+            )
             return
 
         try:
             self._queue.put_nowait(trigger)
         except Exception:
             self._triggers_dropped_queue += 1
-            await self._log_mempool(tx, status="ignored", reason="trigger_enqueue_failed", decoded_summary=summary)
+            self._bump_reason(self._trigger_drop_reasons, REASON_TRIGGER_ENQUEUE_FAILED)
+            await self._log_mempool(
+                tx,
+                status="ignored",
+                reason=REASON_TRIGGER_ENQUEUE_FAILED,
+                decoded_summary=summary,
+                watched=watched,
+                router_name=router_name,
+                router_type=router_type,
+                ignore_stage="queue_error",
+                trigger_value_usd=trigger.usd_value,
+                trigger_unknown_value=trigger.unknown_value,
+            )
             return
 
         self._triggers_seen += 1
-        await self._log_mempool(tx, status="decoded", reason=None, decoded_summary=summary)
+        await self._log_mempool(
+            tx,
+            status="decoded",
+            reason=None,
+            decoded_summary=summary,
+            watched=watched,
+            router_name=router_name,
+            router_type=router_type,
+            ignore_stage=None,
+            trigger_value_usd=trigger.usd_value,
+            trigger_unknown_value=trigger.unknown_value,
+        )
 
     async def _trigger_worker(self) -> None:
         while self._running:
@@ -243,6 +399,7 @@ class MempoolEngine:
             now_ms = int(time.time() * 1000)
             if now_ms - trigger.created_at_ms > int(self.trigger_ttl_s * 1000):
                 self._triggers_dropped_ttl += 1
+                self._bump_reason(self._trigger_drop_reasons, REASON_TRIGGER_TTL_EXPIRED)
                 continue
             if not self._scan_fn:
                 continue
@@ -299,6 +456,14 @@ class MempoolEngine:
             self._trigger_scans_timeouts += timeouts
             if scheduled == 0 and finished == 0:
                 self._trigger_scans_zero_candidates += 1
+            if pre.get("prepare_truncated"):
+                self._trigger_prepare_truncated += 1
+            if pre.get("schedule_guard_triggered"):
+                self._trigger_schedule_guard_hits += 1
+            zero_reason = pre.get("zero_schedule_reason") or pre.get("zero_candidates_reason")
+            if zero_reason:
+                key = str(zero_reason)
+                self._trigger_zero_schedule_reasons[key] = int(self._trigger_zero_schedule_reasons.get(key, 0)) + 1
         trigger_amount_in = None
         if record.trigger.amount_in is not None:
             try:
@@ -335,6 +500,8 @@ class MempoolEngine:
             "finished": finished,
             "timeouts": timeouts,
             "candidates_raw": pre.get("candidates_raw"),
+            "candidates_after_prepare": pre.get("candidates_after_prepare"),
+            "candidates_after_universe": pre.get("candidates_after_universe"),
             "candidates_after_base_filter": pre.get("candidates_after_base_filter"),
             "candidates_after_hops_filter": pre.get("candidates_after_hops_filter"),
             "candidates_after_cross_dex_filter": pre.get("candidates_after_cross_dex_filter"),
@@ -344,22 +511,37 @@ class MempoolEngine:
             "zero_candidates_reason": pre.get("zero_candidates_reason"),
             "zero_candidates_detail": pre.get("zero_candidates_detail"),
             "zero_candidates_stage": pre.get("zero_candidates_stage"),
+            "zero_schedule_reason": pre.get("zero_schedule_reason"),
+            "zero_schedule_detail": pre.get("zero_schedule_detail"),
             "base_used": pre.get("base_used"),
             "base_fallback_used": pre.get("base_fallback_used"),
             "hops_attempted": pre.get("hops_attempted"),
             "hop_fallback_used": pre.get("hop_fallback_used"),
             "connectors_added": pre.get("connectors_added"),
+            "cross_dex_fallback_used": pre.get("cross_dex_fallback_used"),
+            "prepare_truncated": pre.get("prepare_truncated"),
+            "prepare_time_ms": pre.get("prepare_time_ms"),
             "schedule_guard_remaining_ms": pre.get("schedule_guard_remaining_ms"),
             "schedule_guard_blocked": pre.get("schedule_guard_blocked"),
+            "schedule_guard_triggered": pre.get("schedule_guard_triggered"),
             "schedule_guard_reason": pre.get("schedule_guard_reason"),
+            "budget_remaining_ms_at_schedule": pre.get("budget_remaining_ms_at_schedule"),
             "viability_rejects_by_reason": pre.get("viability_rejects_by_reason"),
             "capped_by_trigger_max_candidates_raw": pre.get("capped_by_trigger_max_candidates_raw"),
             "best_gross": float(pre.get("best_gross", 0.0)),
             "best_net": float(pre.get("best_net", 0.0)),
             "best_route": pre.get("best_route_summary"),
+            "best_route_tokens": pre.get("best_route_tokens"),
+            "best_hops": pre.get("best_hops"),
+            "best_hop_amounts": pre.get("best_hop_amounts"),
+            "best_amount_in": pre.get("best_amount_in"),
+            "candidate_id": pre.get("candidate_id"),
             "outcome": pre.get("outcome", "no_hit"),
             "classification": classification,
             "backend": pre.get("backend"),
+            "sim_backend_used": pre.get("backend"),
+            "sim_ok": pre.get("sim_ok"),
+            "sim_revert_reason": pre.get("sim_revert_reason"),
             "dex_mix": pre.get("dex_mix"),
             "hops": pre.get("hops"),
             "reason_selected": pre.get("reason_selected"),
@@ -391,6 +573,12 @@ class MempoolEngine:
         status: str,
         reason: Optional[str],
         decoded_summary: Optional[Dict[str, Any]] = None,
+        watched: Optional[bool] = None,
+        router_name: Optional[str] = None,
+        router_type: Optional[str] = None,
+        ignore_stage: Optional[str] = None,
+        trigger_value_usd: Optional[str] = None,
+        trigger_unknown_value: Optional[bool] = None,
     ) -> None:
         entry = {
             "ts": int(time.time() * 1000),
@@ -398,12 +586,58 @@ class MempoolEngine:
             "to": tx.to_addr,
             "status": status,
             "reason": reason,
+            "watched": watched,
+            "router_name": router_name,
+            "router_type": router_type,
+            "ignore_stage": ignore_stage,
             "decoded_summary": decoded_summary,
+            "trigger_value_usd": trigger_value_usd,
+            "trigger_unknown_value": trigger_unknown_value,
         }
         try:
             self.mempool_log.open("a", encoding="utf-8").write(json.dumps(entry) + "\n")
         except Exception:
             pass
+
+    @staticmethod
+    def _top_counts(counter: Dict[str, int], limit: int = 5) -> List[Dict[str, Any]]:
+        items = sorted(counter.items(), key=lambda x: x[1], reverse=True)
+        return [{"key": k, "count": int(v)} for k, v in items[:limit]]
+
+    def _note_ignored(self, to_addr: str) -> None:
+        if not to_addr:
+            return
+        self._ignored_to_counts[to_addr] = self._ignored_to_counts.get(to_addr, 0) + 1
+
+    @staticmethod
+    def _map_trigger_reason_code(reason: Optional[str]) -> str:
+        if not reason:
+            return "trigger_filtered"
+        if reason == "below_usd_threshold":
+            return REASON_TRIGGER_BELOW_USD
+        if reason == "unknown_value_strict":
+            return REASON_TRIGGER_UNKNOWN_VALUE
+        if reason == "below_raw_threshold":
+            return REASON_TRIGGER_BELOW_RAW
+        if reason == "missing_amount_in":
+            return REASON_TRIGGER_MISSING_AMOUNT
+        if reason == "unknown_tokens":
+            return REASON_TRIGGER_UNKNOWN_TOKENS
+        return "trigger_filtered"
+
+    @staticmethod
+    def _map_trigger_ignore_stage(reason_code: str) -> str:
+        if reason_code in (REASON_TRIGGER_BELOW_USD, REASON_TRIGGER_BELOW_RAW, REASON_TRIGGER_MISSING_AMOUNT):
+            return "tiny_swap"
+        if reason_code in (REASON_TRIGGER_UNKNOWN_VALUE, REASON_TRIGGER_UNKNOWN_TOKENS):
+            return "trigger_filtered"
+        return "trigger_filtered"
+
+    @staticmethod
+    def _bump_reason(counter: Dict[str, int], reason: str) -> None:
+        if not reason:
+            return
+        counter[reason] = int(counter.get(reason, 0)) + 1
 
     def _write_json(self, path: Path, payload: Any) -> None:
         try:

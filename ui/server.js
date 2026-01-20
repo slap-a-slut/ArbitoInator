@@ -19,6 +19,7 @@ const mempoolRecentPath = path.join(projectRoot, 'logs', 'mempool_recent.json');
 const mempoolTriggersPath = path.join(projectRoot, 'logs', 'mempool_triggers.json');
 const mempoolLogPath = path.join(projectRoot, 'logs', 'mempool.jsonl');
 const triggerLogPath = path.join(projectRoot, 'logs', 'trigger_scans.jsonl');
+const assistantPackPath = path.join(projectRoot, 'logs', 'assistant_pack.json');
 const UI_STATE_MAX_BYTES = 512 * 1024;
 
 const DEFAULT_CONFIG = {
@@ -60,8 +61,10 @@ const DEFAULT_CONFIG = {
   trigger_require_three_hops: true,
   trigger_base_fallback_enabled: true,
   trigger_allow_two_hop_fallback: true,
+  trigger_cross_dex_fallback: true,
   trigger_connectors: ['WETH', 'USDC', 'USDT', 'DAI'],
   trigger_max_candidates_raw: 80,
+  trigger_prepare_budget_ms: 250,
   trigger_cross_dex_bonus_bps: 5,
   trigger_same_dex_penalty_bps: 5,
   trigger_edge_top_m_per_dex: 2,
@@ -95,6 +98,10 @@ const DEFAULT_CONFIG = {
   debug_funnel: false,
   gas_off: false,
   fixed_gas_units: 0,
+  sim_backend: 'quote',
+  execution_mode: 'off',
+  arb_executor_address: '',
+  arb_executor_owner: '',
 
   // mempool (optional)
   mempool_enabled: false,
@@ -105,7 +112,12 @@ const DEFAULT_CONFIG = {
   mempool_max_inflight_tx: 200,
   mempool_fetch_tx_concurrency: 20,
   mempool_filter_to: [],
+  mempool_watch_mode: 'strict',
+  mempool_watched_router_sets: 'core',
   mempool_min_value_usd: 25,
+  mempool_allow_unknown_tokens: true,
+  mempool_strict_unknown_tokens: false,
+  mempool_raw_min_enabled: false,
   mempool_usd_per_eth: 2000,
   mempool_dedup_ttl_s: 120,
   mempool_trigger_scan_budget_s: 1.5,
@@ -140,6 +152,11 @@ const PRESET_ALIASES = {
 };
 
 const KNOWN_SETTING_KEYS = new Set(Object.keys(DEFAULT_CONFIG));
+
+function resolvePython() {
+  const venvPython = path.join(projectRoot, 'venv', 'bin', 'python');
+  return process.env.PYTHON || (fs.existsSync(venvPython) ? venvPython : 'python3');
+}
 
 function _asNumberArray(value) {
   if (Array.isArray(value)) {
@@ -353,6 +370,16 @@ function writeConfig(cfg) {
     safe.report_currency = 'USDC';
   }
 
+  // Normalize mempool watch mode/preset
+  const watchMode = String(safe.mempool_watch_mode || 'strict').trim().toLowerCase();
+  safe.mempool_watch_mode = (watchMode === 'routers_only') ? 'routers_only' : 'strict';
+  const watchPreset = String(safe.mempool_watched_router_sets || 'core').trim().toLowerCase();
+  safe.mempool_watched_router_sets = (watchPreset === 'extended') ? 'extended' : 'core';
+  const simBackend = String(safe.sim_backend || 'quote').trim().toLowerCase();
+  safe.sim_backend = (simBackend === 'eth_call' || simBackend === 'state_override') ? simBackend : 'quote';
+  const execMode = String(safe.execution_mode || 'off').trim().toLowerCase();
+  safe.execution_mode = (execMode === 'dryrun') ? 'dryrun' : 'off';
+
   // Normalize debug flags + profile
   const normBool = (v) => {
     if (typeof v === 'boolean') return v;
@@ -370,7 +397,11 @@ function writeConfig(cfg) {
   safe.trigger_require_three_hops = normBool(safe.trigger_require_three_hops);
   safe.trigger_base_fallback_enabled = normBool(safe.trigger_base_fallback_enabled);
   safe.trigger_allow_two_hop_fallback = normBool(safe.trigger_allow_two_hop_fallback);
+  safe.trigger_cross_dex_fallback = normBool(safe.trigger_cross_dex_fallback);
   safe.mempool_enabled = normBool(safe.mempool_enabled);
+  safe.mempool_allow_unknown_tokens = normBool(safe.mempool_allow_unknown_tokens);
+  safe.mempool_strict_unknown_tokens = normBool(safe.mempool_strict_unknown_tokens);
+  safe.mempool_raw_min_enabled = normBool(safe.mempool_raw_min_enabled);
 
   if (typeof safe.sim_profile === 'string') {
     const sp = safe.sim_profile.trim().toLowerCase();
@@ -411,6 +442,11 @@ function writeConfig(cfg) {
   } catch {
     safe.trigger_max_candidates_raw = 80;
   }
+  try {
+    safe.trigger_prepare_budget_ms = Math.max(50, Math.min(2000, parseInt(safe.trigger_prepare_budget_ms || 250, 10)));
+  } catch {
+    safe.trigger_prepare_budget_ms = 250;
+  }
   if (typeof safe.trigger_connectors === 'string') {
     safe.trigger_connectors = safe.trigger_connectors
       .replace(/\n/g, ',')
@@ -445,6 +481,22 @@ function writeConfig(cfg) {
 
   fs.writeFileSync(configPath, JSON.stringify(safe, null, 2));
   return safe;
+}
+
+function buildAssistantPack() {
+  const python = resolvePython();
+  const out = spawnSync(python, ['-m', 'bot.assistant_pack', '--write'], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+  });
+  if (out.status !== 0) {
+    return { ok: false, error: String(out.stderr || out.stdout || 'assistant_pack failed') };
+  }
+  const pack = readJsonSafe(assistantPackPath);
+  if (!pack) {
+    return { ok: false, error: 'assistant_pack not found' };
+  }
+  return { ok: true, pack };
 }
 
 function readUiState() {
@@ -514,7 +566,7 @@ function startBot() {
   resetMempoolArtifacts();
 
   const script = path.join(projectRoot, 'fork_test.py');
-  const python = process.env.PYTHON || 'python3';
+  const python = resolvePython();
 
   // Ensure Python dependencies exist (so we don't crash on ModuleNotFoundError: web3)
   // This keeps the project "works out of the box" when the bot is launched from the UI.
@@ -522,6 +574,15 @@ function startBot() {
   try {
     const check = spawnSync(python, ['-c', 'import web3'], { cwd: projectRoot });
     if (check.status !== 0) {
+      if (python === 'python3') {
+        broadcast({
+          type: 'status',
+          time: nowTime(),
+          block: null,
+          text: 'Missing Python deps. Use the project venv or set PYTHON to a venv path.',
+        });
+        return { ok: false, error: 'missing python deps (use venv)' };
+      }
       broadcast({ type: 'status', time: nowTime(), block: null, text: 'Installing Python dependencies (pip install -r requirements.txt)...' });
       const install = spawnSync(python, ['-m', 'pip', 'install', '-r', reqFile], {
         cwd: projectRoot,
@@ -549,6 +610,7 @@ function startBot() {
     // Keep both env vars for backwards compatibility.
     env: {
       ...process.env,
+      PYTHON: python,
       BOT_CONFIG: configPath,
       ARBITOINATOR_CONFIG: configPath,
       // Multi-RPC failover list for Python
@@ -699,6 +761,13 @@ const server = http.createServer((req, res) => {
     const triggers = readJsonSafe(mempoolTriggersPath) || [];
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, triggers }));
+    return;
+  }
+
+  if (req.method === 'GET' && urlPath === '/api/assistant_pack') {
+    const out = buildAssistantPack();
+    res.writeHead(out.ok ? 200 : 500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(out));
     return;
   }
 

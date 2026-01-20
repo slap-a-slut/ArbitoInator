@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from bot.simulator import simulate_candidate
 
 
-def test_simulator_classification_net_hit() -> None:
+def test_simulator_classification_valid_hit() -> None:
     settings = SimpleNamespace(slippage_bps=0.0, mev_buffer_bps=0.0, min_profit_abs=0.01, min_profit_pct=0.0)
     payload = {
         "route": ["0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", "0x0000000000000000000000000000000000000001"],
@@ -12,7 +12,7 @@ def test_simulator_classification_net_hit() -> None:
         "gas_cost_in": 10_000,
     }
     res = simulate_candidate(payload, settings, backends=["quote"])
-    assert res.classification == "net_hit"
+    assert res.classification == "valid_hit"
 
 
 def test_simulator_classification_gross_hit() -> None:

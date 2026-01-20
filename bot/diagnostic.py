@@ -133,9 +133,9 @@ def _rolling_trigger_stats(entries: List[Dict[str, Any]], now_ms: int, window_s:
     best_nets: List[float] = []
     for e in window_entries:
         cls = str(e.get("classification") or e.get("outcome") or "").strip()
-        if cls in ("gross_hit", "net_hit", "VALID_HIT", "PERSISTENT_HIT"):
+        if cls in ("gross_hit", "net_hit", "valid_hit", "VALID_HIT", "PERSISTENT_HIT"):
             gross_hits += 1
-        if cls in ("net_hit", "VALID_HIT", "PERSISTENT_HIT"):
+        if cls in ("net_hit", "valid_hit", "VALID_HIT", "PERSISTENT_HIT"):
             net_hits += 1
         if cls == "VALID_HIT":
             valid_hits += 1
@@ -170,10 +170,41 @@ def _rolling_trigger_stats(entries: List[Dict[str, Any]], now_ms: int, window_s:
     }
 
 
+def _aggregate_tx_ready(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+    total = 0
+    ready = 0
+    reverted = 0
+    skipped = 0
+    drop_reasons: Dict[str, int] = {}
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        total += 1
+        status = str(e.get("status") or "").lower()
+        if status == "ready":
+            ready += 1
+        elif status == "reverted":
+            reverted += 1
+        else:
+            skipped += 1
+        reason = e.get("drop_reason")
+        if reason:
+            key = str(reason)
+            drop_reasons[key] = int(drop_reasons.get(key, 0)) + 1
+    return {
+        "tx_ready_total": int(total),
+        "tx_ready_ready": int(ready),
+        "tx_ready_reverted": int(reverted),
+        "tx_ready_skipped": int(skipped),
+        "tx_drop_reasons": drop_reasons,
+    }
+
+
 def _summarize_last_trigger(entry: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if not entry or not isinstance(entry, dict):
         return None
     return {
+        "candidate_id": entry.get("candidate_id"),
         "tx_hash": entry.get("tx_hash"),
         "trigger_amount_in": _format_amount(entry.get("trigger_amount_in")),
         "token_universe": entry.get("token_universe"),
@@ -232,30 +263,8 @@ def build_diagnostic_snapshot(
 
     mempool_log = _read_jsonl_tail(log_dir / "mempool.jsonl")
     trigger_log = _read_jsonl_tail(log_dir / "trigger_scans.jsonl")
-
-    decoded_last_minute = None
-    if mempool_log:
-        cutoff = now_ms - 60_000
-        decoded_last_minute = sum(
-            1 for e in mempool_log
-            if isinstance(e, dict) and e.get("status") == "decoded" and _safe_int(e.get("ts")) is not None and _safe_int(e.get("ts")) >= cutoff
-        )
-
-    drop_reasons: Dict[str, int] = {}
-    if mempool_log:
-        cutoff = now_ms - int(window_s) * 1000
-        for e in mempool_log:
-            if not isinstance(e, dict):
-                continue
-            ts = _safe_int(e.get("ts"))
-            if ts is None or ts < cutoff:
-                continue
-            if e.get("status") != "ignored":
-                continue
-            reason = str(e.get("reason") or "").strip()
-            if not reason:
-                continue
-            drop_reasons[reason] = drop_reasons.get(reason, 0) + 1
+    tx_ready_log = _read_jsonl_tail(log_dir / "tx_ready.jsonl")
+    tx_stats = _aggregate_tx_ready(tx_ready_log)
 
     rpc_ok = None
     rpc_err = None
@@ -277,26 +286,44 @@ def build_diagnostic_snapshot(
     total_dropped = None
     dropped_queue = _safe_int(mempool_status.get("total_triggers_dropped_queue")) if isinstance(mempool_status, dict) else None
     dropped_ttl = _safe_int(mempool_status.get("total_triggers_dropped_ttl")) if isinstance(mempool_status, dict) else None
-    if dropped_queue is not None or dropped_ttl is not None:
+    dropped_trigger = _safe_int(mempool_status.get("trigger_dropped_total")) if isinstance(mempool_status, dict) else None
+    if dropped_trigger is not None:
+        total_dropped = int(dropped_trigger)
+    elif dropped_queue is not None or dropped_ttl is not None:
         total_dropped = int((dropped_queue or 0) + (dropped_ttl or 0))
 
     pipeline = {
         "decoded_swaps_total": _safe_int(mempool_status.get("decoded_swaps_total")) if isinstance(mempool_status, dict) else None,
-        "decoded_swaps_last_minute": decoded_last_minute,
+        "decoded_swaps_last_minute": _safe_int(mempool_status.get("decoded_swaps_last_minute")) if isinstance(mempool_status, dict) else None,
         "triggers_seen": _safe_int(mempool_status.get("total_triggers_seen")) if isinstance(mempool_status, dict) else None,
         "triggers_queued": _safe_int(mempool_status.get("triggers_queued")) if isinstance(mempool_status, dict) else None,
+        "mempool_seen_total": _safe_int(mempool_status.get("mempool_seen_total")) if isinstance(mempool_status, dict) else None,
+        "mempool_watched_total": _safe_int(mempool_status.get("mempool_watched_total")) if isinstance(mempool_status, dict) else None,
+        "mempool_decoded_total": _safe_int(mempool_status.get("mempool_decoded_total")) if isinstance(mempool_status, dict) else None,
+        "mempool_ignored_not_watched": _safe_int(mempool_status.get("mempool_ignored_not_watched")) if isinstance(mempool_status, dict) else None,
+        "mempool_ignored_selector": _safe_int(mempool_status.get("mempool_ignored_selector")) if isinstance(mempool_status, dict) else None,
+        "mempool_decode_failed": _safe_int(mempool_status.get("mempool_decode_failed")) if isinstance(mempool_status, dict) else None,
+        "mempool_top_ignored_to": mempool_status.get("mempool_top_ignored_to") if isinstance(mempool_status, dict) else None,
+        "mempool_top_watched_routers": mempool_status.get("mempool_top_watched_routers") if isinstance(mempool_status, dict) else None,
+        "mempool_ignored_by_reason": mempool_status.get("mempool_ignored_by_reason") if isinstance(mempool_status, dict) else None,
+        "trigger_dropped_by_reason": mempool_status.get("trigger_dropped_by_reason") if isinstance(mempool_status, dict) else None,
         "triggers_dropped": {
             "total": total_dropped,
-            "by_reason": drop_reasons,
+            "by_reason": mempool_status.get("trigger_dropped_by_reason") if isinstance(mempool_status, dict) else {},
             "window_s": int(window_s),
         },
         "trigger_scans_scheduled": _safe_int(mempool_status.get("trigger_scans_scheduled")) if isinstance(mempool_status, dict) else None,
         "trigger_scans_finished": _safe_int(mempool_status.get("trigger_scans_finished")) if isinstance(mempool_status, dict) else None,
         "trigger_scans_timeouts": _safe_int(mempool_status.get("trigger_scans_timeouts")) if isinstance(mempool_status, dict) else None,
         "trigger_scans_zero_candidates": _safe_int(mempool_status.get("trigger_scans_zero_candidates")) if isinstance(mempool_status, dict) else None,
+        "trigger_prepare_budget_ms": _safe_int(mempool_status.get("trigger_prepare_budget_ms")) if isinstance(mempool_status, dict) else None,
+        "trigger_prepare_truncated_count": _safe_int(mempool_status.get("trigger_prepare_truncated_count")) if isinstance(mempool_status, dict) else None,
+        "trigger_schedule_guard_hits": _safe_int(mempool_status.get("trigger_schedule_guard_hits")) if isinstance(mempool_status, dict) else None,
+        "trigger_zero_schedule_reasons": mempool_status.get("trigger_zero_schedule_reasons") if isinstance(mempool_status, dict) else None,
         "last_zero_candidates_reason": last_trigger_entry.get("zero_candidates_reason") if isinstance(last_trigger_entry, dict) else None,
         "last_zero_candidates_stage": last_trigger_entry.get("zero_candidates_stage") if isinstance(last_trigger_entry, dict) else None,
     }
+    pipeline.update(tx_stats)
 
     rolling = _rolling_trigger_stats(trigger_log, now_ms, int(window_s))
 
@@ -315,12 +342,15 @@ def build_diagnostic_snapshot(
             "mempool_min_value_usd": _format_amount(getattr(settings, "mempool_min_value_usd", None)),
             "mempool_trigger_scan_budget_s": _safe_float(getattr(settings, "mempool_trigger_scan_budget_s", None)),
             "mempool_fetch_tx_concurrency": _safe_int(getattr(settings, "mempool_fetch_tx_concurrency", None)),
+            "trigger_prepare_budget_ms": _safe_int(getattr(settings, "trigger_prepare_budget_ms", None)),
         },
         "simulation": {
             "slippage_bps": _safe_float(getattr(settings, "slippage_bps", None)),
             "mev_buffer_bps": _safe_float(getattr(settings, "mev_buffer_bps", None)),
             "min_profit_abs": _format_amount(getattr(settings, "min_profit_abs", None)),
             "min_profit_pct": _safe_float(getattr(settings, "min_profit_pct", None)),
+            "sim_backend": str(getattr(settings, "sim_backend", "") or ""),
+            "execution_mode": str(getattr(settings, "execution_mode", "") or ""),
         },
         "rpc": {
             "concurrency": _safe_int(getattr(settings, "concurrency", None)),
