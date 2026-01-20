@@ -191,6 +191,8 @@ def _summarize_last_trigger(entry: Optional[Dict[str, Any]]) -> Optional[Dict[st
         "post_block": _safe_int(entry.get("post_block")),
         "post_best_net": _format_amount(entry.get("post_best_net")),
         "post_delta_net": _format_amount(entry.get("post_delta_net")),
+        "zero_candidates_reason": entry.get("zero_candidates_reason"),
+        "zero_candidates_stage": entry.get("zero_candidates_stage"),
     }
 
 
@@ -225,7 +227,8 @@ def build_diagnostic_snapshot(
 
     mempool_status = _read_json(log_dir / "mempool_status.json") or {}
     mempool_triggers = _read_json(log_dir / "mempool_triggers.json") or []
-    last_trigger = _summarize_last_trigger(mempool_triggers[-1] if mempool_triggers else None)
+    last_trigger_entry = mempool_triggers[-1] if mempool_triggers else None
+    last_trigger = _summarize_last_trigger(last_trigger_entry)
 
     mempool_log = _read_jsonl_tail(log_dir / "mempool.jsonl")
     trigger_log = _read_jsonl_tail(log_dir / "trigger_scans.jsonl")
@@ -291,6 +294,8 @@ def build_diagnostic_snapshot(
         "trigger_scans_finished": _safe_int(mempool_status.get("trigger_scans_finished")) if isinstance(mempool_status, dict) else None,
         "trigger_scans_timeouts": _safe_int(mempool_status.get("trigger_scans_timeouts")) if isinstance(mempool_status, dict) else None,
         "trigger_scans_zero_candidates": _safe_int(mempool_status.get("trigger_scans_zero_candidates")) if isinstance(mempool_status, dict) else None,
+        "last_zero_candidates_reason": last_trigger_entry.get("zero_candidates_reason") if isinstance(last_trigger_entry, dict) else None,
+        "last_zero_candidates_stage": last_trigger_entry.get("zero_candidates_stage") if isinstance(last_trigger_entry, dict) else None,
     }
 
     rolling = _rolling_trigger_stats(trigger_log, now_ms, int(window_s))

@@ -58,6 +58,10 @@ const DEFAULT_CONFIG = {
   trigger_prefer_cross_dex: true,
   trigger_require_cross_dex: false,
   trigger_require_three_hops: true,
+  trigger_base_fallback_enabled: true,
+  trigger_allow_two_hop_fallback: true,
+  trigger_connectors: ['WETH', 'USDC', 'USDT', 'DAI'],
+  trigger_max_candidates_raw: 80,
   trigger_cross_dex_bonus_bps: 5,
   trigger_same_dex_penalty_bps: 5,
   trigger_edge_top_m_per_dex: 2,
@@ -364,6 +368,8 @@ function writeConfig(cfg) {
   safe.trigger_prefer_cross_dex = normBool(safe.trigger_prefer_cross_dex);
   safe.trigger_require_cross_dex = normBool(safe.trigger_require_cross_dex);
   safe.trigger_require_three_hops = normBool(safe.trigger_require_three_hops);
+  safe.trigger_base_fallback_enabled = normBool(safe.trigger_base_fallback_enabled);
+  safe.trigger_allow_two_hop_fallback = normBool(safe.trigger_allow_two_hop_fallback);
   safe.mempool_enabled = normBool(safe.mempool_enabled);
 
   if (typeof safe.sim_profile === 'string') {
@@ -399,6 +405,18 @@ function writeConfig(cfg) {
     safe.trigger_edge_top_m_per_dex = Math.max(1, Math.min(5, parseInt(safe.trigger_edge_top_m_per_dex || 2, 10)));
   } catch {
     safe.trigger_edge_top_m_per_dex = 2;
+  }
+  try {
+    safe.trigger_max_candidates_raw = Math.max(10, Math.min(300, parseInt(safe.trigger_max_candidates_raw || 80, 10)));
+  } catch {
+    safe.trigger_max_candidates_raw = 80;
+  }
+  if (typeof safe.trigger_connectors === 'string') {
+    safe.trigger_connectors = safe.trigger_connectors
+      .replace(/\n/g, ',')
+      .split(',')
+      .map((x) => String(x).trim())
+      .filter((x) => x.length > 0);
   }
   try {
     const src = String(safe.scan_source || 'block').trim().toLowerCase();

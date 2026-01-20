@@ -1049,6 +1049,20 @@ wss://rpc2" style="width:100%; resize:vertical;"></textarea>
               </div>
               <small>Hard filter keeps only routes using >=2 distinct DEXes.</small>
             </div>
+            <div class="field">
+              <label class="checkRow">
+                <input id="cfgTriggerBaseFallback" type="checkbox" />
+                <span>Base fallback (USDC/USDT/DAI)</span>
+              </label>
+              <small>Use fallback base if primary produces no cycles.</small>
+            </div>
+            <div class="field">
+              <label class="checkRow">
+                <input id="cfgTriggerAllowTwoHop" type="checkbox" />
+                <span>Allow 2-hop fallback</span>
+              </label>
+              <small>Try 2-hop when 3-hop yields zero candidates.</small>
+            </div>
           </div>
 
           <details class="advancedToggle" data-advanced="mempool">
@@ -1068,6 +1082,16 @@ wss://rpc2" style="width:100%; resize:vertical;"></textarea>
                 <label for="cfgMempoolDedup">Mempool dedup TTL (s)</label>
                 <input id="cfgMempoolDedup" type="number" step="1" min="30" />
                 <small>avoid duplicate hashes</small>
+              </div>
+              <div class="field">
+                <label for="cfgTriggerConnectors">Trigger connectors</label>
+                <input id="cfgTriggerConnectors" class="mono" placeholder="WETH,USDC,USDT,DAI" />
+                <small>extra tokens included in trigger universe</small>
+              </div>
+              <div class="field">
+                <label for="cfgTriggerMaxCandidatesRaw">Trigger max candidates (raw)</label>
+                <input id="cfgTriggerMaxCandidatesRaw" type="number" step="1" min="10" />
+                <small>caps route skeletons before quoting</small>
               </div>
             </div>
           </details>
@@ -1287,6 +1311,10 @@ https://rpc2
   const cfgTriggerPreferCrossDex = document.getElementById('cfgTriggerPreferCrossDex');
   const cfgTriggerRequireCrossDex = document.getElementById('cfgTriggerRequireCrossDex');
   const cfgTriggerRequire3Hops = document.getElementById('cfgTriggerRequire3Hops');
+  const cfgTriggerBaseFallback = document.getElementById('cfgTriggerBaseFallback');
+  const cfgTriggerAllowTwoHop = document.getElementById('cfgTriggerAllowTwoHop');
+  const cfgTriggerConnectors = document.getElementById('cfgTriggerConnectors');
+  const cfgTriggerMaxCandidatesRaw = document.getElementById('cfgTriggerMaxCandidatesRaw');
   const cfgMaxHops = document.getElementById('cfgMaxHops');
   const cfgBeamK = document.getElementById('cfgBeamK');
   const cfgEdgeTopM = document.getElementById('cfgEdgeTopM');
@@ -2696,6 +2724,10 @@ https://rpc2
       trigger_prefer_cross_dex: !!cfgTriggerPreferCrossDex?.checked,
       trigger_require_cross_dex: !!cfgTriggerRequireCrossDex?.checked,
       trigger_require_three_hops: !!cfgTriggerRequire3Hops?.checked,
+      trigger_base_fallback_enabled: !!cfgTriggerBaseFallback?.checked,
+      trigger_allow_two_hop_fallback: !!cfgTriggerAllowTwoHop?.checked,
+      trigger_connectors: String(cfgTriggerConnectors?.value || '').trim(),
+      trigger_max_candidates_raw: parseInt(cfgTriggerMaxCandidatesRaw?.value || '80', 10),
       max_hops: parseInt(cfgMaxHops?.value || '3', 10),
       beam_k: parseInt(cfgBeamK?.value || '20', 10),
       edge_top_m: parseInt(cfgEdgeTopM?.value || '2', 10),
@@ -2751,6 +2783,10 @@ https://rpc2
     if (cfgTriggerPreferCrossDex) cfgTriggerPreferCrossDex.checked = !!cfg.trigger_prefer_cross_dex;
     if (cfgTriggerRequireCrossDex) cfgTriggerRequireCrossDex.checked = !!cfg.trigger_require_cross_dex;
     if (cfgTriggerRequire3Hops) cfgTriggerRequire3Hops.checked = !!cfg.trigger_require_three_hops;
+    if (cfgTriggerBaseFallback) cfgTriggerBaseFallback.checked = !!cfg.trigger_base_fallback_enabled;
+    if (cfgTriggerAllowTwoHop) cfgTriggerAllowTwoHop.checked = !!cfg.trigger_allow_two_hop_fallback;
+    if (cfgTriggerConnectors) cfgTriggerConnectors.value = formatCsvList(cfg.trigger_connectors) || String(cfg.trigger_connectors || '');
+    if (cfgTriggerMaxCandidatesRaw) cfgTriggerMaxCandidatesRaw.value = String(cfg.trigger_max_candidates_raw ?? 80);
     if (cfgMaxHops) cfgMaxHops.value = String(cfg.max_hops ?? 3);
     if (cfgBeamK) cfgBeamK.value = String(cfg.beam_k ?? 20);
     if (cfgEdgeTopM) cfgEdgeTopM.value = String(cfg.edge_top_m ?? 2);

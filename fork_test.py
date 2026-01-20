@@ -136,6 +136,10 @@ class Settings:
     trigger_cross_dex_bonus_bps: float = 5.0
     trigger_same_dex_penalty_bps: float = 5.0
     trigger_edge_top_m_per_dex: int = 2
+    trigger_base_fallback_enabled: bool = True
+    trigger_allow_two_hop_fallback: bool = True
+    trigger_connectors: Tuple[str, ...] = ()
+    trigger_max_candidates_raw: int = 80
     probe_amount: float = 1.0
 
     # Mode
@@ -279,6 +283,35 @@ def _load_settings() -> Settings:
             s.trigger_require_three_hops = val.strip().lower() in ("1", "true", "yes", "on")
         else:
             s.trigger_require_three_hops = bool(val)
+    except Exception:
+        pass
+    try:
+        val = raw.get("trigger_base_fallback_enabled", s.trigger_base_fallback_enabled)
+        if isinstance(val, str):
+            s.trigger_base_fallback_enabled = val.strip().lower() in ("1", "true", "yes", "on")
+        else:
+            s.trigger_base_fallback_enabled = bool(val)
+    except Exception:
+        pass
+    try:
+        val = raw.get("trigger_allow_two_hop_fallback", s.trigger_allow_two_hop_fallback)
+        if isinstance(val, str):
+            s.trigger_allow_two_hop_fallback = val.strip().lower() in ("1", "true", "yes", "on")
+        else:
+            s.trigger_allow_two_hop_fallback = bool(val)
+    except Exception:
+        pass
+    try:
+        raw_connectors = raw.get("trigger_connectors")
+        if isinstance(raw_connectors, (list, tuple)):
+            s.trigger_connectors = tuple(str(x).strip() for x in raw_connectors if str(x).strip())
+        elif isinstance(raw_connectors, str):
+            parts = [p.strip() for p in raw_connectors.replace("\n", ",").split(",") if p.strip()]
+            s.trigger_connectors = tuple(parts)
+    except Exception:
+        pass
+    try:
+        s.trigger_max_candidates_raw = int(raw.get("trigger_max_candidates_raw", s.trigger_max_candidates_raw))
     except Exception:
         pass
     try:
@@ -554,17 +587,28 @@ def _build_trigger_routes(
     max_hops: int,
     token_universe: Optional[List[str]] = None,
     require_three_hops: bool = False,
+    base_token: Optional[str] = None,
+    connectors: Optional[List[str]] = None,
 ) -> List[Tuple[str, ...]]:
-    s = _load_settings()
-    rc = str(getattr(s, "report_currency", "USDC") or "USDC").upper()
-    base_addr = config.TOKENS.get(rc, config.TOKENS["USDC"])
+    if base_token:
+        try:
+            base_addr = config.token_address(str(base_token))
+        except Exception:
+            base_addr = str(base_token)
+    else:
+        s = _load_settings()
+        rc = str(getattr(s, "report_currency", "USDC") or "USDC").upper()
+        base_addr = config.TOKENS.get(rc, config.TOKENS["USDC"])
+    if not base_addr:
+        return []
     base_norm = str(base_addr).lower()
-    connectors = list(getattr(config, "MEMPOOL_TRIGGER_CONNECTORS", [])) or [
-        config.TOKENS.get("WETH"),
-        config.TOKENS.get("USDC"),
-        config.TOKENS.get("USDT"),
-        config.TOKENS.get("DAI"),
-    ]
+    if connectors is None:
+        connectors = list(getattr(config, "MEMPOOL_TRIGGER_CONNECTORS", [])) or [
+            config.TOKENS.get("WETH"),
+            config.TOKENS.get("USDC"),
+            config.TOKENS.get("USDT"),
+            config.TOKENS.get("DAI"),
+        ]
     token_source = token_universe or tokens_involved
     tokens: List[str] = []
     seen: set[str] = set()
@@ -625,6 +669,51 @@ def _build_trigger_routes(
     return uniq
 
 
+def _normalize_token_list(tokens: List[str]) -> List[str]:
+    out: List[str] = []
+    seen: set[str] = set()
+    for t in tokens:
+        if not t:
+            continue
+        try:
+            addr = config.token_address(str(t))
+        except Exception:
+            addr = str(t)
+        addr = str(addr).lower()
+        if not addr or addr in seen:
+            continue
+        seen.add(addr)
+        out.append(addr)
+    return out
+
+
+def _resolve_base_candidates(primary_symbol: str, *, fallback_enabled: bool) -> List[Tuple[str, str]]:
+    candidates: List[Tuple[str, str]] = []
+    if primary_symbol:
+        try:
+            addr = config.token_address(primary_symbol)
+        except Exception:
+            addr = primary_symbol
+        if addr:
+            candidates.append((primary_symbol, str(addr).lower()))
+    if fallback_enabled:
+        for t in list(getattr(config, "MEMPOOL_TRIGGER_BASE_FALLBACK", [])):
+            if not t:
+                continue
+            try:
+                addr = config.token_address(str(t))
+            except Exception:
+                addr = str(t)
+            if not addr:
+                continue
+            addr = str(addr).lower()
+            sym = config.token_symbol(addr)
+            if any(addr == existing[1] for existing in candidates):
+                continue
+            candidates.append((sym, addr))
+    return candidates
+
+
 async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
     s = _load_settings()
     if not PS or MEMPOOL_BLOCK_CTX is None:
@@ -639,13 +728,139 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
         }
     block_ctx = MEMPOOL_BLOCK_CTX
     require_three_hops = bool(getattr(s, "trigger_require_three_hops", getattr(config, "TRIGGER_REQUIRE_THREE_HOPS", True)))
-    routes = _build_trigger_routes(
-        trigger.tokens_involved,
-        max_hops=int(getattr(s, "max_hops", 3)),
-        token_universe=trigger.token_universe,
-        require_three_hops=require_three_hops,
+    allow_two_hop_fallback = bool(
+        getattr(s, "trigger_allow_two_hop_fallback", getattr(config, "TRIGGER_ALLOW_TWO_HOP_FALLBACK", True))
     )
+    base_fallback_enabled = bool(
+        getattr(s, "trigger_base_fallback_enabled", getattr(config, "TRIGGER_BASE_FALLBACK_ENABLED", True))
+    )
+    max_hops = int(getattr(s, "max_hops", 3))
+    trigger_max_candidates_raw = int(
+        getattr(s, "trigger_max_candidates_raw", getattr(config, "TRIGGER_MAX_CANDIDATES_RAW", 80))
+    )
+
+    raw_tokens = trigger.token_universe or trigger.tokens_involved or []
+    tokens_norm = _normalize_token_list(list(raw_tokens))
+    connectors_cfg = list(getattr(s, "trigger_connectors", ()) or []) or list(
+        getattr(config, "MEMPOOL_TRIGGER_CONNECTORS", [])
+    )
+    connectors_norm = _normalize_token_list(connectors_cfg)
+    extras_norm = _normalize_token_list(list(getattr(config, "MEMPOOL_TRIGGER_EXTRA_TOKENS", [])))
+
+    weth_addr = config.TOKENS.get("WETH")
+    usdt_addr = config.TOKENS.get("USDT")
+    if weth_addr and usdt_addr:
+        weth_norm = str(config.token_address(weth_addr)).lower()
+        usdt_norm = str(config.token_address(usdt_addr)).lower()
+        if weth_norm in set(tokens_norm + connectors_norm) and usdt_norm not in connectors_norm:
+            connectors_norm.append(usdt_norm)
+
+    token_universe: List[str] = []
+    for t in tokens_norm + connectors_norm + extras_norm:
+        if t and t not in token_universe:
+            token_universe.append(t)
+
+    connectors_added: List[str] = []
+    for t in connectors_norm + extras_norm:
+        if t and t not in tokens_norm and t not in connectors_added:
+            connectors_added.append(t)
+
+    base_used: Optional[str] = None
+    base_fallback_used = False
+    hop_fallback_used = False
+    hops_attempted: List[int] = []
+    routes: List[Tuple[str, ...]] = []
+    candidates_raw: Optional[int] = None
+
+    rc = str(getattr(s, "report_currency", "USDC") or "USDC").upper()
+    base_candidates = _resolve_base_candidates(rc, fallback_enabled=base_fallback_enabled)
+    if not base_candidates:
+        return {
+            "scheduled": 0,
+            "finished": 0,
+            "timeouts": 0,
+            "best_gross": 0.0,
+            "best_net": 0.0,
+            "best_route_summary": None,
+            "outcome": "no_base",
+            "candidates_raw": None,
+            "candidates_after_base_filter": None,
+            "candidates_after_hops_filter": None,
+            "candidates_after_cross_dex_filter": None,
+            "candidates_after_viability_filter": None,
+            "candidates_after_caps": None,
+            "candidates_scheduled": 0,
+            "zero_candidates_reason": "no_base_currency_in_universe",
+            "zero_candidates_detail": "no_base_candidates",
+            "zero_candidates_stage": "base",
+            "base_used": None,
+            "base_fallback_used": False,
+            "hops_attempted": [],
+            "hop_fallback_used": False,
+            "connectors_added": connectors_added,
+        }
+
+    for idx, (base_sym, base_addr) in enumerate(base_candidates):
+        base_sym = str(base_sym or "").upper()
+        base_addr = str(base_addr or "").lower()
+        if not base_addr:
+            continue
+
+        routes_primary: List[Tuple[str, ...]] = []
+        hops_attempted_local: List[int] = []
+        want_three = max_hops >= 3
+        if want_three:
+            hops_attempted_local.append(3)
+            routes_primary = _build_trigger_routes(
+                trigger.tokens_involved,
+                max_hops=3,
+                token_universe=token_universe,
+                require_three_hops=True,
+                base_token=base_addr,
+                connectors=connectors_norm,
+            )
+            if candidates_raw is None and idx == 0:
+                candidates_raw = len(routes_primary)
+        elif max_hops >= 2:
+            hops_attempted_local.append(2)
+            routes_primary = _build_trigger_routes(
+                trigger.tokens_involved,
+                max_hops=2,
+                token_universe=token_universe,
+                require_three_hops=False,
+                base_token=base_addr,
+                connectors=connectors_norm,
+            )
+            if candidates_raw is None and idx == 0:
+                candidates_raw = len(routes_primary)
+
+        routes_use = list(routes_primary)
+        hop_fallback_used_local = False
+        if not routes_use and allow_two_hop_fallback and want_three and max_hops >= 2:
+            routes_use = _build_trigger_routes(
+                trigger.tokens_involved,
+                max_hops=2,
+                token_universe=token_universe,
+                require_three_hops=False,
+                base_token=base_addr,
+                connectors=connectors_norm,
+            )
+            hop_fallback_used_local = True
+            hops_attempted_local.append(2)
+
+        if routes_use:
+            routes = routes_use
+            base_used = base_sym or config.token_symbol(base_addr)
+            base_fallback_used = idx > 0
+            hop_fallback_used = hop_fallback_used_local
+            hops_attempted = hops_attempted_local
+            break
+
+    if candidates_raw is None:
+        candidates_raw = 0
+
     if not routes:
+        detail = "no_tokens" if not token_universe else "no_routes_for_base"
         return {
             "scheduled": 0,
             "finished": 0,
@@ -654,13 +869,36 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
             "best_net": 0.0,
             "best_route_summary": None,
             "outcome": "no_routes",
+            "candidates_raw": int(candidates_raw),
+            "candidates_after_base_filter": 0,
+            "candidates_after_hops_filter": 0,
+            "candidates_after_cross_dex_filter": 0,
+            "candidates_after_viability_filter": None,
+            "candidates_after_caps": 0,
+            "candidates_scheduled": 0,
+            "zero_candidates_reason": "no_cycles_generated",
+            "zero_candidates_detail": detail,
+            "zero_candidates_stage": "hops",
+            "base_used": base_used,
+            "base_fallback_used": base_fallback_used,
+            "hops_attempted": hops_attempted,
+            "hop_fallback_used": hop_fallback_used,
+            "connectors_added": connectors_added,
         }
+
+    candidates_after_base_filter = len(routes)
+    candidates_after_hops_filter = len(routes)
+
+    capped_by_trigger = False
+    if trigger_max_candidates_raw > 0 and len(routes) > int(trigger_max_candidates_raw):
+        routes = routes[: int(trigger_max_candidates_raw)]
+        capped_by_trigger = True
+
     loop = asyncio.get_running_loop()
     deadline = loop.time() + float(budget_s)
     timeout_s = max(0.2, min(float(s.rpc_timeout_stage1_s), float(budget_s)))
 
-    rc = str(getattr(s, "report_currency", "USDC") or "USDC").upper()
-    base_addr = config.TOKENS.get(rc, config.TOKENS["USDC"])
+    base_addr = config.TOKENS.get(str(base_used or rc).upper(), config.TOKENS["USDC"])
     amount_in = _scale_amount(base_addr, s.stage1_amount)
     candidates = [{"route": route, "amount_in": int(amount_in)} for route in routes]
 
@@ -676,7 +914,7 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
     use_beam = bool(getattr(s, "enable_multidex", False)) or prefer_cross_dex or require_cross_dex
     if use_beam:
         expand_stats: Dict[str, Any] = {}
-        candidates = await _expand_multidex_candidates(
+        beam_candidates = await _expand_multidex_candidates(
             routes,
             amount_in=int(amount_in),
             block_ctx=block_ctx,
@@ -692,7 +930,59 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
             require_cross_dex=require_cross_dex,
             cross_dex_bonus_bps=cross_bonus,
             same_dex_penalty_bps=same_penalty,
+            skip_viability=True,
+            enforce_cross_dex=False,
         )
+        if beam_candidates:
+            candidates = beam_candidates
+
+    if trigger_max_candidates_raw > 0 and len(candidates) > int(trigger_max_candidates_raw):
+        candidates = candidates[: int(trigger_max_candidates_raw)]
+        capped_by_trigger = True
+    candidates_after_caps = len(candidates)
+
+    def _candidate_cross_dex_count(c: Dict[str, Any]) -> int:
+        dex_mix = c.get("dex_mix")
+        if isinstance(dex_mix, dict):
+            return len([k for k, v in dex_mix.items() if v])
+        hops = c.get("hops") or []
+        try:
+            dexes = [str(h.dex_id) for h in hops]
+            return len(set(dexes))
+        except Exception:
+            return 0
+
+    candidates_after_cross_dex_filter: Optional[int] = None
+    if require_cross_dex:
+        if candidates and (candidates[0].get("dex_mix") is not None or candidates[0].get("hops") is not None):
+            before = len(candidates)
+            candidates = [c for c in candidates if _candidate_cross_dex_count(c) >= 2]
+            candidates_after_cross_dex_filter = len(candidates)
+            if before > 0 and not candidates:
+                return {
+                    "scheduled": 0,
+                    "finished": 0,
+                    "timeouts": 0,
+                    "best_gross": 0.0,
+                    "best_net": 0.0,
+                    "best_route_summary": None,
+                    "outcome": "filtered_cross_dex",
+                    "candidates_raw": int(candidates_raw),
+                    "candidates_after_base_filter": int(candidates_after_base_filter),
+                    "candidates_after_hops_filter": int(candidates_after_hops_filter),
+                    "candidates_after_cross_dex_filter": 0,
+                    "candidates_after_viability_filter": None,
+                    "candidates_after_caps": int(candidates_after_caps),
+                    "candidates_scheduled": 0,
+                    "zero_candidates_reason": "filtered_by_cross_dex",
+                    "zero_candidates_detail": "require_cross_dex",
+                    "zero_candidates_stage": "cross_dex",
+                    "base_used": base_used,
+                    "base_fallback_used": base_fallback_used,
+                    "hops_attempted": hops_attempted,
+                    "hop_fallback_used": hop_fallback_used,
+                    "connectors_added": connectors_added,
+                }
 
     payloads, _, scan_stats = await _scan_candidates(
         candidates,
@@ -704,6 +994,65 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
     )
     payloads = [p for p in payloads if p and p.get("profit_raw", -1) != -1]
     payloads = [_apply_safety(p, s) for p in payloads]
+
+    scheduled = int(scan_stats.get("scheduled", 0))
+    invalid = int(scan_stats.get("invalid", 0))
+    candidates_after_viability_filter: Optional[int] = None
+    if scheduled > 0:
+        candidates_after_viability_filter = max(0, scheduled - invalid)
+
+    def _map_viability_rejects(rejects: Dict[str, int]) -> Dict[str, int]:
+        out = {
+            "pool_missing": 0,
+            "rpc_error": 0,
+            "timeout": 0,
+            "nonsensical_price": 0,
+            "high_price_impact": 0,
+        }
+        for reason, count in (rejects or {}).items():
+            if count is None:
+                continue
+            r = str(reason or "").lower()
+            n = int(count)
+            if not n:
+                continue
+            if "nonsensical" in r or "overflow_like" in r:
+                out["nonsensical_price"] += n
+            elif "timeout" in r:
+                out["timeout"] += n
+            elif "rpc_error" in r or "http_" in r:
+                out["rpc_error"] += n
+            elif "impact" in r:
+                out["high_price_impact"] += n
+            elif "quote_fail" in r or "quote_error" in r:
+                out["pool_missing"] += n
+            else:
+                out["rpc_error"] += n
+        return {k: v for k, v in out.items() if v}
+
+    viability_rejects_by_reason = _map_viability_rejects(scan_stats.get("rejects_by_reason", {}))
+    zero_candidates_reason = None
+    zero_candidates_detail = None
+    zero_candidates_stage = None
+    if scheduled == 0:
+        reason_if_zero = scan_stats.get("reason_if_zero_scheduled")
+        if reason_if_zero in ("stage1_deadline_exhausted_pre_scan", "schedule_guard_triggered"):
+            zero_candidates_reason = "time_budget_exhausted_pre_schedule"
+            zero_candidates_detail = str(reason_if_zero)
+            zero_candidates_stage = "schedule"
+        elif reason_if_zero:
+            zero_candidates_reason = "time_budget_exhausted_pre_schedule"
+            zero_candidates_detail = str(reason_if_zero)
+            zero_candidates_stage = "schedule"
+    elif candidates_after_viability_filter == 0:
+        if viability_rejects_by_reason.get("rpc_error") or viability_rejects_by_reason.get("timeout"):
+            zero_candidates_reason = "rpc_unavailable"
+            zero_candidates_detail = "rpc_errors_or_timeouts"
+            zero_candidates_stage = "viability"
+        else:
+            zero_candidates_reason = "filtered_by_viability"
+            zero_candidates_detail = "no_valid_payloads"
+            zero_candidates_stage = "viability"
 
     best_gross = 0.0
     best_net = 0.0
@@ -766,6 +1115,26 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
         "arb_calldata_len": arb_calldata_len,
         "arb_calldata_prefix": arb_calldata_prefix,
         "outcome": outcome,
+        "candidates_raw": int(candidates_raw),
+        "candidates_after_base_filter": int(candidates_after_base_filter),
+        "candidates_after_hops_filter": int(candidates_after_hops_filter),
+        "candidates_after_cross_dex_filter": candidates_after_cross_dex_filter if candidates_after_cross_dex_filter is not None else (len(candidates) if not require_cross_dex else None),
+        "candidates_after_viability_filter": candidates_after_viability_filter,
+        "candidates_after_caps": int(candidates_after_caps),
+        "candidates_scheduled": int(scan_stats.get("scheduled", 0)),
+        "zero_candidates_reason": zero_candidates_reason,
+        "zero_candidates_detail": zero_candidates_detail,
+        "zero_candidates_stage": zero_candidates_stage,
+        "base_used": base_used,
+        "base_fallback_used": bool(base_fallback_used),
+        "hops_attempted": list(hops_attempted),
+        "hop_fallback_used": bool(hop_fallback_used),
+        "connectors_added": connectors_added,
+        "schedule_guard_remaining_ms": scan_stats.get("schedule_guard_remaining_ms"),
+        "schedule_guard_blocked": scan_stats.get("schedule_guard_blocked"),
+        "schedule_guard_reason": scan_stats.get("schedule_guard_reason"),
+        "viability_rejects_by_reason": viability_rejects_by_reason,
+        "capped_by_trigger_max_candidates_raw": bool(capped_by_trigger),
     }
 
 
@@ -937,6 +1306,7 @@ async def _beam_candidates_for_route(
     same_dex_penalty_bps: float = 0.0,
     deadline_s: Optional[float] = None,
     stats: Optional[Dict[str, Any]] = None,
+    enforce_cross_dex: bool = True,
 ) -> List[Dict[str, Any]]:
     loop = asyncio.get_running_loop()
     t0 = loop.time()
@@ -1016,7 +1386,7 @@ async def _beam_candidates_for_route(
         if not states:
             return []
 
-    if require_cross_dex:
+    if require_cross_dex and enforce_cross_dex:
         states = [st for st in states if len(set(st.get("dexes") or [])) >= 2]
         if not states:
             return []
@@ -1054,6 +1424,8 @@ async def _expand_multidex_candidates(
     require_cross_dex: bool = False,
     cross_dex_bonus_bps: float = 0.0,
     same_dex_penalty_bps: float = 0.0,
+    skip_viability: bool = False,
+    enforce_cross_dex: bool = True,
 ) -> List[Dict[str, Any]]:
     loop = asyncio.get_running_loop()
     expand_t0 = loop.time()
@@ -1064,22 +1436,29 @@ async def _expand_multidex_candidates(
         stats.setdefault("beam_candidates_total", 0)
         stats.setdefault("capped_by_max_total_expanded", False)
         stats.setdefault("capped_by_max_expanded_per_candidate", False)
+        stats.setdefault("routes_total", 0)
+        stats.setdefault("routes_with_candidates", 0)
+        stats.setdefault("routes_without_candidates", 0)
+        stats.setdefault("routes_errors", 0)
 
     async def one(route: Tuple[str, ...]) -> List[Dict[str, Any]]:
         async with sem:
             if loop.time() >= deadline_s:
                 return []
             try:
-                ok = await _route_viable(
-                    route,
-                    block_ctx=block_ctx,
-                    fee_tiers=fee_tiers,
-                    timeout_s=timeout_s,
-                    probe_units=float(settings.probe_amount),
-                    viability_cache=viability_cache,
-                )
-                if not ok:
-                    return []
+                if not skip_viability:
+                    ok = await _route_viable(
+                        route,
+                        block_ctx=block_ctx,
+                        fee_tiers=fee_tiers,
+                        timeout_s=timeout_s,
+                        probe_units=float(settings.probe_amount),
+                        viability_cache=viability_cache,
+                    )
+                    if not ok:
+                        if stats is not None:
+                            stats["routes_without_candidates"] = int(stats.get("routes_without_candidates", 0)) + 1
+                        return []
                 out = await _beam_candidates_for_route(
                     route,
                     amount_in=int(amount_in),
@@ -1096,7 +1475,13 @@ async def _expand_multidex_candidates(
                     same_dex_penalty_bps=same_dex_penalty_bps,
                     deadline_s=deadline_s,
                     stats=stats,
+                    enforce_cross_dex=enforce_cross_dex,
                 )
+                if stats is not None:
+                    if out:
+                        stats["routes_with_candidates"] = int(stats.get("routes_with_candidates", 0)) + 1
+                    else:
+                        stats["routes_without_candidates"] = int(stats.get("routes_without_candidates", 0)) + 1
                 if max_per_route is not None and max_per_route > 0 and len(out) > int(max_per_route):
                     if stats is not None:
                         stats["capped_by_max_expanded_per_candidate"] = True
@@ -1104,6 +1489,8 @@ async def _expand_multidex_candidates(
                     out = out[: int(max_per_route)]
                 return out
             except Exception:
+                if stats is not None:
+                    stats["routes_errors"] = int(stats.get("routes_errors", 0)) + 1
                 return []
 
     tasks: List[asyncio.Task] = []
@@ -1114,6 +1501,8 @@ async def _expand_multidex_candidates(
             if stats is not None:
                 stats["capped_by_max_total_expanded"] = True
             break
+        if stats is not None:
+            stats["routes_total"] = int(stats.get("routes_total", 0)) + 1
         tasks.append(asyncio.create_task(one(route)))
 
     try:
@@ -1175,6 +1564,9 @@ async def _scan_candidates(
     schedule_at_least_one = False
     schedule_start_t = loop.time()
     remaining_before_scheduling_ms = int(max(0.0, (deadline_s - schedule_start_t) * 1000.0))
+    schedule_guard_blocked = False
+    schedule_guard_reason: Optional[str] = None
+    schedule_guard_remaining_ms: Optional[int] = None
 
     async def one(c: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         nonlocal finished
@@ -1229,11 +1621,15 @@ async def _scan_candidates(
                 reason_if_zero_scheduled = "stage1_deadline_exhausted_pre_scan"
             break
         if remaining < schedule_guard_s:
+            schedule_guard_blocked = True
+            schedule_guard_remaining_ms = int(max(0.0, remaining * 1000.0))
             if not tasks and remaining >= min_first_task_s and best_candidate is not None:
                 tasks.append(asyncio.create_task(one(best_candidate)))
                 schedule_at_least_one = True
+                schedule_guard_reason = "schedule_at_least_one"
             if not tasks and not reason_if_zero_scheduled:
                 reason_if_zero_scheduled = "schedule_guard_triggered"
+                schedule_guard_reason = "schedule_guard_triggered"
             break
         tasks.append(asyncio.create_task(one(c)))
     scheduled = len(tasks)
@@ -1281,6 +1677,9 @@ async def _scan_candidates(
         "scan_await_ms": float(max(0.0, await_ms if "await_ms" in locals() else 0.0)),
         "stage1_remaining_ms_before_scheduling": int(remaining_before_scheduling_ms),
         "schedule_at_least_one": bool(schedule_at_least_one),
+        "schedule_guard_remaining_ms": schedule_guard_remaining_ms,
+        "schedule_guard_blocked": bool(schedule_guard_blocked),
+        "schedule_guard_reason": schedule_guard_reason,
     }
     if reason_if_zero_scheduled:
         stats["reason_if_zero_scheduled"] = str(reason_if_zero_scheduled)
