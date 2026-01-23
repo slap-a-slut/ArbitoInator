@@ -1,49 +1,20 @@
-# OS
-.DS_Store
-.AppleDouble
-.LSOverride
-Icon?
+# Node modules
+/node_modules
 
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-*.so
-*.egg-info/
-.venv/
-venv/
-ENV/
-env/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-.coverage.*
-coverage.xml
-htmlcov/
-.cache/
-*.log
+# Compilation output
+/dist
 
-# Node.js
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-dist/
-build/
+# pnpm deploy output
+/bundle
 
-# Local config / secrets
-.env
-.env.*
-*.pem
-*.key
-bot_config.json
+# Hardhat Build Artifacts
+/artifacts
 
-# Logs / runtime
-logs/
-*.jsonl
+# Hardhat compilation (v2) support directory
+/cache
 
-# Artifacts
-ui.zip
+# Typechain output
+/types
+
+# Hardhat coverage reports
+/coverage

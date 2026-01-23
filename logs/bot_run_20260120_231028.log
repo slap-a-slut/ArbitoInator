@@ -1,0 +1,57 @@
+/Users/mac/Documents/ArbitoInator/venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+🚀 Fork simulation started...
+[RPC] connected=True | block=24277096 | urls=4
+Block 24277097
+Block 24277098
+[SANITY] reason=nonsensical_price route=('0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', '0x4da7806a40132b594c6214523c8f9a9345036829', '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['univ3:500', 'univ2'] fee_tiers=[500, 0] amount_in=1000000 amount_out=1094801468541724769833120148 adapter=univ2_router rpc=https://ethereum-rpc.publicnode.com raw_len=128 raw_prefix=0x00000000000000000000000000000000
+Block 24277099
+Block 24277100
+Block 24277101
+[SANITY] reason=nonsensical_price route=('0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', '0x4da7806a40132b594c6214523c8f9a9345036829', '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['univ2', 'univ2'] fee_tiers=[0, 0] amount_in=1000000 amount_out=1037574917981414890602386997 adapter=univ2_router rpc=https://ethereum-rpc.publicnode.com raw_len=128 raw_prefix=0x00000000000000000000000000000000
+Block 24277102
+Block 24277103
+Block 24277104
+Block 24277105
+Block 24277106
+Block 24277107
+Block 24277108
+Block 24277109
+Block 24277110
+Block 24277111
+Block 24277112
+Block 24277113
+Block 24277114
+Block 24277115
+Block 24277116
+Block 24277117
+Block 24277118
+Block 24277119
+Block 24277120
+Block 24277121
+Block 24277122
+Block 24277123
+Block 24277124
+Block 24277125
+Block 24277126
+Block 24277127
+Block 24277128
+[SANITY] reason=nonsensical_price route=('0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', '0x4da7806a40132b594c6214523c8f9a9345036829', '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['univ2', 'univ2'] fee_tiers=[0, 0] amount_in=1000000 amount_out=1027294235477526323812023930 adapter=univ2_router rpc=https://ethereum-rpc.publicnode.com raw_len=128 raw_prefix=0x00000000000000000000000000000000
+Block 24277129
+Block 24277130
+Block 24277131
+Block 24277132
+Block 24277133
+Block 24277134
+Block 24277135
+Block 24277136
+Block 24277137
+Block 24277138
+Block 24277139
+Block 24277140
+Block 24277141
+Block 24277142
+Block 24277143
+Block 24277144
+Block 24277145
+Block 24277146

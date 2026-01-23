@@ -1,108 +1,87 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "./Interfaces.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-contract ArbitrageExecutor {
-    address public owner;
+import "./AccessController.sol";
+import "./Treasury.sol";
+import "./adapters/IDexAdapter.sol";
+import "./libs/StepCodec.sol";
 
-    constructor() {
-        owner = msg.sender;
+contract ArbExecutor is ReentrancyGuard {
+    using SafeERC20 for IERC20;
+
+    error NotExecutor();
+    error DeadlineExpired();
+    error AdapterNotAllowed();
+    error NoProfit();
+
+    event Executed(bytes32 indexed execHash, address indexed profitToken, uint256 profit, uint256 steps);
+    event AdapterAllowed(address indexed adapter, bool allowed);
+
+    AccessController public immutable access;
+    Treasury public immutable treasury ;
+
+    mapping(address => bool) public adapterAllowed;
+
+    constructor(address accessController, address treasury_) {
+        access = AccessController(accessController);
+        treasury = Treasury (payable(treasury_));
     }
 
-    modifier onlyOwner() {
-        require(msg.sender == owner, "not owner");
+    struct Execution {
+        address profitToken;   // в чём считаем профит (USDC/WETH)
+        uint256 minProfit;     // минимальный профит
+        uint256 deadline;      // дедлайн
+        bytes plan;            // abi.encode(StepCodec.Step[])
+    }
+
+    modifier onlyExecutor() {
+        if (!access.hasRole(access.EXECUTOR_ROLE(), msg.sender)) revert NotExecutor();
         _;
     }
 
-    struct SwapRoute {
-        address tokenIn;
-        address tokenOut;
-        uint256 amountIn;
-        uint256 amountOutMin;
-        bytes dexData; // encoded routing
+    function setAdapterAllowed(address adapter, bool allowed) external {
+        // админ = DEFAULT_ADMIN_ROLE в AccessController
+        require(access.hasRole(access.ADMIN_ROLE(), msg.sender), "NOT_ADMIN");
+        adapterAllowed[adapter] = allowed;
+        emit AdapterAllowed(adapter, allowed);
+    }
+
+    function execute(Execution calldata e) external nonReentrant onlyExecutor {
+        if (block.timestamp > e.deadline) revert DeadlineExpired();
+
+        uint256 beforeBal = IERC20(e.profitToken).balanceOf(address(this));
+
+        StepCodec.Step[] calldata steps = StepCodec.decodePlan(e.plan);
+
+        for (uint256 i = 0; i < steps.length; i++) {
+            if (!adapterAllowed[steps[i].adapter]) revert AdapterNotAllowed();
+            IDexAdapter(steps[i].adapter).swap(steps[i].data);
+        }
+
+        uint256 afterBal = IERC20(e.profitToken).balanceOf(address(this));
+        uint256 profit = afterBal > beforeBal ? (afterBal - beforeBal) : 0;
+
+        if (profit < e.minProfit) revert NoProfit();
+
+        // отправим профит в treasury (чисто, удобно)
+        if (profit > 0) {
+            IERC20(e.profitToken).safeTransfer(address(treasury), profit);
+        }
+
+        bytes32 execHash = keccak256(abi.encode(msg.sender, e.profitToken, e.minProfit, e.deadline, e.plan, beforeBal, afterBal));
+        emit Executed(execHash, e.profitToken, profit, steps.length);
+    }
+
+    // пополнение — просто transfer на адрес контракта,
+    // но можно оставить “спасалку” для админа
+    function rescueToken(address token, address to, uint256 amount) external {
+        require(access.hasRole(access.ADMIN_ROLE(), msg.sender), "NOT_ADMIN");
+        IERC20(token).safeTransfer(to, amount);
     }
 
     receive() external payable {}
-
-    function execute(
-        SwapRoute[] calldata routes,
-        uint256 minProfit,
-        address profitToken,
-        address to
-    ) external onlyOwner returns (uint256 profit) {
-
-        uint256 startBal = IERC20(profitToken).balanceOf(address(this));
-
-        for (uint256 i; i < routes.length; i++) {
-            _swap(routes[i]);
-        }
-
-        uint256 endBal = IERC20(profitToken).balanceOf(address(this));
-        profit = endBal - startBal;
-
-        require(profit >= minProfit, "not profitable");
-
-        IERC20(profitToken).transfer(to, profit);
-    }
-
-    // -------- INTERNAL SWAP ROUTING --------
-
-    function _swap(SwapRoute calldata route) internal {
-        (uint8 dex, bytes memory data) = abi.decode(route.dexData, (uint8, bytes));
-
-        if (dex == 1) {
-            _swapUniV2(route, data);
-        } else if (dex == 2) {
-            _swapUniV3(route, data);
-        } else {
-            revert("unknown dex");
-        }
-    }
-
-    function _swapUniV2(SwapRoute calldata route, bytes memory data) internal {
-        (address router, address[] memory path) = abi.decode(data, (address, address[]));
-
-        // approve
-        IERC20(route.tokenIn).approve(router, route.amountIn);
-
-        // execute
-        IUniswapV2Router(router).swapExactTokensForTokens(
-            route.amountIn,
-            route.amountOutMin > 0 ? route.amountOutMin : 1,
-            path,
-            address(this),
-            block.timestamp
-        );
-    }
-
-    function _swapUniV3(SwapRoute calldata route, bytes memory data) internal {
-        (address router, uint24 fee) = abi.decode(data, (address, uint24));
-
-        IERC20(route.tokenIn).approve(router, route.amountIn);
-
-        IUniswapV3Router(router).exactInputSingle(
-            IUniswapV3Router.ExactInputSingleParams({
-                tokenIn: route.tokenIn,
-                tokenOut: route.tokenOut,
-                fee: fee,
-                recipient: address(this),
-                deadline: block.timestamp,
-                amountIn: route.amountIn,
-                amountOutMinimum: route.amountOutMin > 0 ? route.amountOutMin : 1,
-                sqrtPriceLimitX96: 0   // no price limit
-            })
-        );
-    }
-
-    // -------- OWNER OPS --------
-
-    function withdrawToken(address token, uint256 amount) external onlyOwner {
-        IERC20(token).transfer(msg.sender, amount);
-    }
-
-    function withdrawETH(uint256 amount) external onlyOwner {
-        (bool sent,) = msg.sender.call{value: amount}("");
-        require(sent, "eth withdraw failed");
-    }
 }
