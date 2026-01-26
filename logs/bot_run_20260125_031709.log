@@ -1,0 +1,50 @@
+/Users/mac/Documents/ArbitoInator/venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+🚀 Fork simulation started...
+[RPC] connected=True | block=24306987 | urls=4
+Block 24306988
+Block 24306989
+Block 24306990
+Block 24306991
+[SANITY] reason=nonsensical_price route=('0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0xbc396689893d065f41bc2c6ecbee5e0085233447', '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['univ2', 'sushiswap'] fee_tiers=[0, 0] amount_in=1000000 amount_out=0 adapter=None rpc=None raw_len=None raw_prefix=None
+Block 24306992
+Block 24306993
+Block 24306994
+Block 24306995
+Block 24306996
+Traceback (most recent call last):
+  File "/Users/mac/Documents/ArbitoInator/bot/diagnostic.py", line 544, in _loop
+    await asyncio.sleep(float(self.interval_s))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/tasks.py", line 654, in sleep
+    return await future
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/mac/Documents/ArbitoInator/fork_test.py", line 3603, in main
+    await snapshotter.stop()
+  File "/Users/mac/Documents/ArbitoInator/bot/diagnostic.py", line 536, in stop
+    await self._task
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/mac/Documents/ArbitoInator/fork_test.py", line 3667, in <module>
+    asyncio.run(main())
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/runners.py", line 44, in run
+    return loop.run_until_complete(main)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/base_events.py", line 642, in run_until_complete
+    return future.result()
+asyncio.exceptions.CancelledError
+Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x108023220>
+Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x1080ec3a0>
+Unclosed connector
+connections: ['deque([(<aiohttp.client_proto.ResponseHandler object at 0x10818fd00>, 105.839606125), (<aiohttp.client_proto.ResponseHandler object at 0x108404040>, 105.846564958), (<aiohttp.client_proto.ResponseHandler object at 0x108404a00>, 105.941788416), (<aiohttp.client_proto.ResponseHandler object at 0x108136a60>, 106.039349041), (<aiohttp.client_proto.ResponseHandler object at 0x108233ca0>, 106.040038583), (<aiohttp.client_proto.ResponseHandler object at 0x108a2c4c0>, 106.235861875), (<aiohttp.client_proto.ResponseHandler object at 0x108b97940>, 106.266845833), (<aiohttp.client_proto.ResponseHandler object at 0x108133880>, 106.268289333), (<aiohttp.client_proto.ResponseHandler object at 0x1084a62e0>, 106.970244833), (<aiohttp.client_proto.ResponseHandler object at 0x108a2c7c0>, 107.088221333)])']
+connector: <aiohttp.connector.TCPConnector object at 0x1080ecd00>
+Unclosed connector
+connections: ['deque([(<aiohttp.client_proto.ResponseHandler object at 0x1089c12e0>, 103.134777958), (<aiohttp.client_proto.ResponseHandler object at 0x108189d00>, 103.249251666), (<aiohttp.client_proto.ResponseHandler object at 0x108a34ee0>, 103.390255708), (<aiohttp.client_proto.ResponseHandler object at 0x1083db220>, 103.469651625)])']
+connector: <aiohttp.connector.TCPConnector object at 0x108169400>

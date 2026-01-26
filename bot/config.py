@@ -3,6 +3,7 @@
 # Do not hardcode private keys in the repo. If/when you move to execution mode,
 # provide a key via env var (e.g. PRIVATE_KEY) and keep it out of git.
 
+import time
 from bot.chain_config import load_chain_config
 
 # Primary RPC (kept for backwards compatibility)
@@ -13,10 +14,13 @@ CHAIN_ID = 1
 # Priority order: primary -> secondary -> fallback -> fallback-only.
 RPC_URLS = [
     "https://ethereum-rpc.publicnode.com",
+    "https://eth.llamarpc.com",
+    "https://rpc.ankr.com/eth",
     "https://go.getblock.us",
     "https://eth.merkle.io",
     "https://rpc.flashbots.net",
 ]
+RPC_HTTP_URLS = list(RPC_URLS)
 
 # Priority weights: higher == more preferred (more share).
 # publicnode: 3, getblock: 2, merkle: 1, flashbots: 1 (fallback).
@@ -34,6 +38,17 @@ RPC_RETRY_COUNT = 1
 RPC_BACKOFF_BASE_S = 0.35
 RPC_RATE_LIMIT_BACKOFF_S = 0.35
 
+# RPC health tracking / auto-ban
+RPC_HEALTH_WINDOW = 50
+RPC_BAN_SECONDS = 60
+RPC_HEALTH_BAN_SECONDS = 60
+RPC_BAN_TIMEOUT_RATE = 0.2
+RPC_TIMEOUT_RATE_THRESHOLD = 0.2
+RPC_BAN_SUCCESS_RATE = 0.7
+RPC_BAN_LATENCY_P95_MS = 2500.0
+RPC_LATENCY_P95_MS_THRESHOLD = 2500.0
+RPC_OUT_OF_SYNC_BAN_SECONDS = 60
+
 # Circuit breaker: N consecutive errors -> open for cooldown.
 RPC_CB_THRESHOLD = 5
 RPC_CB_COOLDOWN_S = 30.0
@@ -41,11 +56,17 @@ RPC_CB_COOLDOWN_S = 30.0
 # Mempool settings (public WS monitoring, simulated only)
 MEMPOOL_ENABLED = False
 MEMPOOL_WS_URLS = [
-    "wss://ethereum-rpc.publicnode.com",
-    "wss://eth.merkle.io",
+    "wss://ethereum.publicnode.com",
+    "wss://eth.llamarpc.com/ws",
 ]
+RPC_WS_URLS = list(MEMPOOL_WS_URLS)
 MEMPOOL_MAX_INFLIGHT_TX = 200
 MEMPOOL_FETCH_TX_CONCURRENCY = 20
+TX_FETCH_PER_ENDPOINT_MAX_INFLIGHT = 4
+TX_FETCH_BATCH_ENABLED = True
+TX_FETCH_MAX_RETRIES = 3
+TX_FETCH_RETRY_BACKOFF_MS = [200, 500, 1000]
+TX_FETCH_BATCH_DISABLE_S = 300
 MEMPOOL_MIN_VALUE_USD = 25.0
 MEMPOOL_USD_PER_ETH = 2000.0
 MEMPOOL_DEDUP_TTL_S = 120
@@ -135,6 +156,9 @@ BEAM_MAX_DRAWDOWN = 0.35
 
 # Fast reverse lookup (address -> symbol). Lower-case for stable comparisons.
 TOKEN_BY_ADDR = {str(addr).lower(): sym for sym, addr in TOKENS.items() if addr}
+TOKEN_METADATA = {}  # addr -> {symbol, decimals, updated_at}
+TOKEN_METADATA_FAILED_AT = {}  # addr -> timestamp
+TOKEN_METADATA_RETRY_S = 600
 
 
 def _norm_token(token: str) -> str:
@@ -186,6 +210,38 @@ def token_decimals(token: str) -> int:
     if sym:
         return int(TOKEN_DECIMALS.get(sym, 18))
     return 18
+
+
+def is_known_token(token: str) -> bool:
+    addr = _norm_token(token).lower()
+    return bool(addr) and addr in TOKEN_BY_ADDR
+
+
+def register_token_metadata(addr: str, symbol: str, decimals: int) -> None:
+    a = str(addr or "").lower()
+    if not a:
+        return
+    sym = str(symbol or "").strip().upper() if symbol else ""
+    if not sym:
+        sym = token_symbol(a) or (a[:6] + "..." + a[-4:])
+    try:
+        dec = int(decimals)
+    except Exception:
+        dec = 18
+    TOKEN_METADATA[a] = {"symbol": sym, "decimals": dec, "updated_at": int(time.time())}
+    TOKEN_BY_ADDR[a] = sym
+    if sym not in TOKENS or not TOKENS.get(sym):
+        TOKENS[sym] = addr
+    TOKEN_DECIMALS[sym] = dec
+    TOKEN_DECIMALS[a] = dec
+    TOKEN_METADATA_FAILED_AT.pop(a, None)
+
+
+def mark_token_metadata_failed(addr: str) -> None:
+    a = str(addr or "").lower()
+    if not a:
+        return
+    TOKEN_METADATA_FAILED_AT[a] = int(time.time())
 
 # Uniswap V3 Quoter — mainnet
 UNISWAP_V3_QUOTER = "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6"
@@ -291,9 +347,10 @@ def _apply_chain_overrides() -> None:
     if not chain_cfg:
         return
 
-    global RPC_URLS, RPC_URL, CHAIN_ID
+    global RPC_URLS, RPC_URL, CHAIN_ID, RPC_HTTP_URLS
     if chain_cfg.rpc_urls:
         RPC_URLS = list(chain_cfg.rpc_urls)
+        RPC_HTTP_URLS = list(RPC_URLS)
         RPC_URL = RPC_URLS[0]
     if chain_cfg.chain_id is not None:
         CHAIN_ID = int(chain_cfg.chain_id)

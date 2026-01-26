@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 
 from bot import config
 from bot import preflight
+from infra.metrics import METRICS
 
 
 @dataclass(frozen=True)
@@ -139,29 +140,43 @@ async def simulate_candidate_async(
 ) -> SimResult:
     backends_norm = _normalize_backends(backends)
     last_error: Optional[str] = None
+
+    def _record_preflight(result: SimResult, attempted: bool) -> SimResult:
+        if not attempted:
+            return result
+        if result.sim_ok:
+            METRICS.inc("preflight_ok", 1)
+            if int(result.net_after_buffers_raw) <= 0:
+                METRICS.inc("preflight_slippage_fail", 1)
+                METRICS.inc_reason("drop_reason_counts", "slippage_fail", 1)
+        else:
+            METRICS.inc("preflight_revert", 1)
+            METRICS.inc_reason("drop_reason_counts", "preflight_revert", 1)
+        return result
+
     for backend in backends_norm:
         if backend in ("eth_call", "state_override", "trace", "anvil"):
             if not (rpc and block_ctx and arb_call):
                 last_error = "missing_rpc_or_calldata"
-                return simulate_from_payload(
+                return _record_preflight(simulate_from_payload(
                     payload,
                     settings,
                     backend="quote_fallback",
                     sim_ok=False,
                     sim_revert_reason=last_error,
                     force_no_hit=True,
-                )
+                ), attempted=False)
             addr = getattr(config, "ARB_EXECUTOR_ADDRESS", "")
             if not addr:
                 last_error = "missing_executor_address"
-                return simulate_from_payload(
+                return _record_preflight(simulate_from_payload(
                     payload,
                     settings,
                     backend="quote_fallback",
                     sim_ok=False,
                     sim_revert_reason=last_error,
                     force_no_hit=True,
-                )
+                ), attempted=False)
             from_addr = getattr(config, "ARB_EXECUTOR_OWNER", "") or getattr(config, "SIM_FROM_ADDRESS", "")
             try:
                 sim_ok, profit_raw, reason = await preflight.run_eth_call(
@@ -173,28 +188,28 @@ async def simulate_candidate_async(
                     timeout_s=2.5,
                 )
                 if not sim_ok:
-                    return simulate_from_payload(
+                    return _record_preflight(simulate_from_payload(
                         payload,
                         settings,
                         backend=backend,
                         sim_ok=False,
                         sim_revert_reason=reason,
                         force_no_hit=True,
-                    )
+                    ), attempted=True)
                 payload_override = dict(payload)
                 if profit_raw is not None:
                     payload_override["amount_out"] = int(payload.get("amount_in", 0)) + int(profit_raw)
-                return simulate_from_payload(payload_override, settings, backend=backend, sim_ok=True)
+                return _record_preflight(simulate_from_payload(payload_override, settings, backend=backend, sim_ok=True), attempted=True)
             except Exception as exc:
                 last_error = str(exc)[:180]
-                return simulate_from_payload(
+                return _record_preflight(simulate_from_payload(
                     payload,
                     settings,
                     backend=backend,
                     sim_ok=False,
                     sim_revert_reason=last_error,
                     force_no_hit=True,
-                )
+                ), attempted=True)
 
         if backend == "quote":
             if last_error:

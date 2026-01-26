@@ -7,14 +7,16 @@ import math
 import statistics
 import sys
 import time
+import random
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 
 from bot import scanner, strategies, config
-from infra.rpc import RPCPool
+from infra.rpc import RPCPool, set_pinned_http_endpoint, reset_pinned_http_endpoint
+from infra.metrics import METRICS
 from bot.simulator import simulate_candidate_async
 from bot import preflight
 from bot.block_context import BlockContext
@@ -56,7 +58,34 @@ def _env_flag(name: str) -> bool:
     return str(os.getenv(name, "")).strip().lower() in ("1", "true", "yes", "on")
 
 
-LOG_DIR = Path("logs")
+def _normalize_drop_reason(reason: Optional[str]) -> str:
+    if not reason:
+        return "internal_error"
+    r = str(reason).lower()
+    if "budget" in r or "deadline" in r or "guard" in r or "remaining_budget" in r:
+        return "time_budget_exhausted"
+    if "no_base" in r or "no_cycle" in r or "no_route" in r or "no_candidates" in r:
+        return "no_route"
+    if "illiquid" in r or "viability" in r:
+        return "illiquid"
+    if "unknown_token" in r or "unknown_tokens" in r:
+        return "unknown_token"
+    if "gas" in r:
+        return "gas_too_high"
+    if "rpc" in r or "timeout" in r or "rate" in r or "http_" in r:
+        return "quote_failed"
+    if "quote" in r:
+        return "quote_failed"
+    if "slippage" in r:
+        return "slippage_fail"
+    if "profit" in r or "threshold" in r:
+        return "min_profit_not_met"
+    if "revert" in r:
+        return "preflight_revert"
+    return "internal_error"
+
+
+LOG_DIR = Path(os.getenv("RUN_LOG_DIR", os.getenv("LOG_DIR", "logs")))
 LOG_DIR.mkdir(exist_ok=True)
 BLOCK_LOG = LOG_DIR / "blocks.jsonl"
 HIT_LOG = LOG_DIR / "hits.jsonl"
@@ -128,6 +157,9 @@ def _write_session_summary(
 class Settings:
     # RPC (list for failover)
     rpc_urls: Tuple[str, ...] = ()
+    rpc_http_endpoints: Tuple[Dict[str, Any], ...] = ()
+    rpc_ws_endpoints: Tuple[Dict[str, Any], ...] = ()
+    rpc_ws_pairing: Dict[str, str] = field(default_factory=dict)
     dexes: Tuple[str, ...] = ()
     enable_multidex: bool = False
     max_hops: int = 3
@@ -165,7 +197,7 @@ class Settings:
     prepare_budget_min_s: float = 2.0
     prepare_budget_max_s: float = 6.0
     expand_ratio_cap: float = 0.60
-    expand_budget_max_s: float = 2.0
+    expand_budget_max_s: float = 6.0
     min_scan_reserve_s: float = 0.6
     min_first_task_s: float = 0.08
     max_candidates_stage1: int = 200
@@ -173,6 +205,14 @@ class Settings:
     max_expanded_per_candidate: int = 6
     rpc_timeout_s: float = 3.0
     rpc_retry_count: int = 1
+    rpc_health_ban_seconds: int = 60
+    rpc_timeout_rate_threshold: float = 0.2
+    rpc_latency_p95_ms_threshold: float = 2500.0
+    out_of_sync_ban_seconds: int = 60
+    tx_fetch_batch_enabled: bool = True
+    tx_fetch_max_retries: int = 3
+    tx_fetch_retry_backoff_ms: Tuple[int, ...] = (200, 500, 1000)
+    tx_fetch_per_endpoint_max_inflight: int = 4
 
     # Fixed mode
     amount_presets: Tuple[float, ...] = (1.0, 5.0)
@@ -225,6 +265,77 @@ class Settings:
     mempool_post_scan_budget_s: float = 1.0
 
 
+_ENDPOINT_HINTS = (
+    ("publicnode", ["publicnode.com"]),
+    ("llama", ["llamarpc.com"]),
+    ("ankr", ["rpc.ankr.com"]),
+    ("flashbots_calls", ["flashbots.net"]),
+    ("getblock", ["getblock.us"]),
+    ("merkle", ["merkle.io"]),
+    ("0xrpc", ["0xrpc.io"]),
+)
+
+
+def _endpoint_id_from_url(url: str) -> str:
+    raw = str(url or "").strip().lower()
+    if "://" in raw:
+        raw = raw.split("://", 1)[1]
+    host = raw.split("/", 1)[0]
+    for name, needles in _ENDPOINT_HINTS:
+        if any(n in host for n in needles):
+            return name
+    if not host:
+        return "rpc"
+    return host.replace(":", "_")
+
+
+def _normalize_endpoint_list(raw: Any) -> List[Dict[str, str]]:
+    endpoints: List[Dict[str, str]] = []
+    if isinstance(raw, (list, tuple)):
+        for item in raw:
+            if isinstance(item, dict):
+                url = str(item.get("url") or "").strip()
+                if not url:
+                    continue
+                eid = str(item.get("id") or "").strip() or _endpoint_id_from_url(url)
+                endpoints.append({"id": eid, "url": url})
+            elif isinstance(item, str):
+                url = item.strip()
+                if url:
+                    endpoints.append({"id": _endpoint_id_from_url(url), "url": url})
+    return endpoints
+
+
+def _build_ws_http_pairing(ws_endpoints: List[Dict[str, str]], http_endpoints: List[Dict[str, str]]) -> Dict[str, str]:
+    pairing: Dict[str, str] = {}
+    http_by_id: Dict[str, str] = {}
+    http_by_host: Dict[str, str] = {}
+    for ep in http_endpoints:
+        if not isinstance(ep, dict):
+            continue
+        eid = str(ep.get("id") or "").strip()
+        url = str(ep.get("url") or "").strip()
+        if eid and url:
+            http_by_id[eid] = url
+        if url:
+            host = url.split("://", 1)[-1].split("/", 1)[0].lower()
+            http_by_host[host] = url
+    for ep in ws_endpoints:
+        if not isinstance(ep, dict):
+            continue
+        wid = str(ep.get("id") or "").strip()
+        wurl = str(ep.get("url") or "").strip()
+        if not wurl:
+            continue
+        if wid and wid in http_by_id:
+            pairing[wurl] = http_by_id[wid]
+            continue
+        host = wurl.split("://", 1)[-1].split("/", 1)[0].lower()
+        if host in http_by_host:
+            pairing[wurl] = http_by_host[host]
+    return pairing
+
+
 def _load_settings() -> Settings:
     path = os.getenv("BOT_CONFIG", "bot_config.json")
     if not os.path.exists(path):
@@ -243,15 +354,51 @@ def _load_settings() -> Settings:
             setattr(s, k, v)
         except Exception:
             pass
+    try:
+        http_eps = _normalize_endpoint_list(raw.get("rpc_http_endpoints"))
+        if http_eps:
+            s.rpc_http_endpoints = tuple(http_eps)
+            s.rpc_urls = tuple(ep.get("url") for ep in http_eps if ep.get("url"))
+    except Exception:
+        pass
+    try:
+        ws_eps = _normalize_endpoint_list(raw.get("rpc_ws_endpoints"))
+        if ws_eps:
+            s.rpc_ws_endpoints = tuple(ws_eps)
+            s.mempool_ws_urls = tuple(ep.get("url") for ep in ws_eps if ep.get("url"))
+    except Exception:
+        pass
+    try:
+        pairing = raw.get("rpc_ws_pairing")
+        if isinstance(pairing, dict):
+            s.rpc_ws_pairing = {str(k): str(v) for k, v in pairing.items() if k and v}
+    except Exception:
+        pass
     # normalize tuples
     try:
-        ru = raw.get("rpc_urls")
+        ru = raw.get("rpc_http_urls") if raw.get("rpc_http_urls") is not None else raw.get("rpc_urls")
         if isinstance(ru, (list, tuple)):
             s.rpc_urls = tuple(str(x).strip() for x in ru if str(x).strip())
         elif isinstance(ru, str):
             s.rpc_urls = tuple(x.strip() for x in ru.split(",") if x.strip())
     except Exception:
         pass
+    try:
+        ws_raw = raw.get("rpc_ws_urls")
+        if ws_raw is None:
+            ws_raw = raw.get("mempool_ws_urls")
+        if isinstance(ws_raw, (list, tuple)):
+            s.mempool_ws_urls = tuple(str(x).strip() for x in ws_raw if str(x).strip())
+        elif isinstance(ws_raw, str):
+            s.mempool_ws_urls = tuple(x.strip() for x in ws_raw.replace("\n", ",").split(",") if x.strip())
+    except Exception:
+        pass
+    if not s.rpc_http_endpoints and s.rpc_urls:
+        s.rpc_http_endpoints = tuple(_normalize_endpoint_list(list(s.rpc_urls)))
+    if not s.rpc_ws_endpoints and s.mempool_ws_urls:
+        s.rpc_ws_endpoints = tuple(_normalize_endpoint_list(list(s.mempool_ws_urls)))
+    if not s.rpc_ws_pairing:
+        s.rpc_ws_pairing = _build_ws_http_pairing(list(s.rpc_ws_endpoints), list(s.rpc_http_endpoints))
     try:
         s.amount_presets = tuple(float(x) for x in (raw.get("amount_presets") or s.amount_presets))
     except Exception:
@@ -292,6 +439,50 @@ def _load_settings() -> Settings:
             s.mempool_raw_min_enabled = val.strip().lower() in ("1", "true", "yes", "on")
         else:
             s.mempool_raw_min_enabled = bool(val)
+    except Exception:
+        pass
+    try:
+        val = raw.get("tx_fetch_batch_enabled", s.tx_fetch_batch_enabled)
+        if isinstance(val, str):
+            s.tx_fetch_batch_enabled = val.strip().lower() in ("1", "true", "yes", "on")
+        else:
+            s.tx_fetch_batch_enabled = bool(val)
+    except Exception:
+        pass
+    try:
+        s.tx_fetch_max_retries = int(raw.get("tx_fetch_max_retries", s.tx_fetch_max_retries))
+    except Exception:
+        pass
+    try:
+        backoff = raw.get("tx_fetch_retry_backoff_ms", s.tx_fetch_retry_backoff_ms)
+        if isinstance(backoff, (list, tuple)):
+            s.tx_fetch_retry_backoff_ms = tuple(int(x) for x in backoff if int(x) >= 0)
+        elif isinstance(backoff, str):
+            s.tx_fetch_retry_backoff_ms = tuple(
+                int(x) for x in backoff.replace("\n", ",").split(",") if x.strip().isdigit()
+            )
+    except Exception:
+        pass
+    try:
+        s.tx_fetch_per_endpoint_max_inflight = int(
+            raw.get("tx_fetch_per_endpoint_max_inflight", s.tx_fetch_per_endpoint_max_inflight)
+        )
+    except Exception:
+        pass
+    try:
+        s.rpc_health_ban_seconds = int(raw.get("rpc_health_ban_seconds", s.rpc_health_ban_seconds))
+    except Exception:
+        pass
+    try:
+        s.rpc_timeout_rate_threshold = float(raw.get("rpc_timeout_rate_threshold", s.rpc_timeout_rate_threshold))
+    except Exception:
+        pass
+    try:
+        s.rpc_latency_p95_ms_threshold = float(raw.get("rpc_latency_p95_ms_threshold", s.rpc_latency_p95_ms_threshold))
+    except Exception:
+        pass
+    try:
+        s.out_of_sync_ban_seconds = int(raw.get("out_of_sync_ban_seconds", s.out_of_sync_ban_seconds))
     except Exception:
         pass
     try:
@@ -787,7 +978,7 @@ def _resolve_base_candidates(primary_symbol: str, *, fallback_enabled: bool) -> 
 async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
     s = _load_settings()
     if not PS or MEMPOOL_BLOCK_CTX is None:
-        return {
+        result = {
             "scheduled": 0,
             "finished": 0,
             "timeouts": 0,
@@ -820,7 +1011,10 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
             "schedule_guard_triggered": False,
             "budget_remaining_ms_at_schedule": None,
         }
+        METRICS.inc_reason("drop_reason_counts", "rpc_unavailable", 1)
+        return result
     block_ctx = MEMPOOL_BLOCK_CTX
+    set_pinned_http_endpoint(getattr(block_ctx, "pinned_http_endpoint", None))
     loop = asyncio.get_running_loop()
     prepare_start_t = loop.time()
     prepare_budget_ms = int(
@@ -886,8 +1080,30 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
 
     rc = str(getattr(s, "report_currency", "USDC") or "USDC").upper()
     base_candidates = _resolve_base_candidates(rc, fallback_enabled=base_fallback_enabled)
+    def _finalize(res: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            cr = res.get("candidates_raw")
+            if cr is not None:
+                METRICS.inc("candidates_generated", int(cr))
+            probe = res.get("candidates_after_viability_filter")
+            if probe is None:
+                probe = res.get("candidates_after_caps")
+            if probe is not None:
+                METRICS.inc("candidates_after_probe", int(probe))
+            refined = res.get("candidates_after_cross_dex_filter")
+            if refined is None:
+                refined = res.get("candidates_after_caps")
+            if refined is not None:
+                METRICS.inc("candidates_after_refine", int(refined))
+            if int(res.get("scheduled", 0) or 0) == 0:
+                reason = res.get("zero_candidates_reason") or res.get("zero_schedule_reason")
+                METRICS.inc_reason("drop_reason_counts", _normalize_drop_reason(reason), 1)
+        except Exception:
+            pass
+        return res
+
     if not base_candidates:
-        return {
+        return _finalize({
             "scheduled": 0,
             "finished": 0,
             "timeouts": 0,
@@ -919,7 +1135,7 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
             "prepare_time_ms": float(_elapsed_prepare_ms()),
             "schedule_guard_triggered": False,
             "budget_remaining_ms_at_schedule": None,
-        }
+        })
 
     for idx, (base_sym, base_addr) in enumerate(base_candidates):
         base_sym = str(base_sym or "").upper()
@@ -985,7 +1201,7 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
 
     if not routes:
         detail = "no_tokens" if not token_universe else "no_routes_for_base"
-        return {
+        return _finalize({
             "scheduled": 0,
             "finished": 0,
             "timeouts": 0,
@@ -1017,7 +1233,7 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
             "prepare_time_ms": float(_elapsed_prepare_ms()),
             "schedule_guard_triggered": False,
             "budget_remaining_ms_at_schedule": None,
-        }
+        })
 
     candidates_after_base_filter = len(routes)
     candidates_after_hops_filter = len(routes)
@@ -1055,7 +1271,7 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
         capped_by_trigger = True
     candidates_after_caps = len(candidates)
     if candidates_after_caps == 0:
-        return {
+        return _finalize({
             "scheduled": 0,
             "finished": 0,
             "timeouts": 0,
@@ -1087,11 +1303,11 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
             "prepare_time_ms": float(prepare_time_ms) if prepare_time_ms is not None else None,
             "schedule_guard_triggered": False,
             "budget_remaining_ms_at_schedule": None,
-        }
+        })
     remaining_budget_ms_at_schedule = int(max(0.0, (scan_deadline - loop.time()) * 1000.0))
     min_first_task_ms = int(float(getattr(s, "min_first_task_s", 0.08)) * 1000.0)
     if not candidates:
-        return {
+        return _finalize({
             "scheduled": 0,
             "finished": 0,
             "timeouts": 0,
@@ -1123,9 +1339,9 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
             "prepare_time_ms": float(prepare_time_ms) if prepare_time_ms is not None else None,
             "schedule_guard_triggered": False,
             "budget_remaining_ms_at_schedule": remaining_budget_ms_at_schedule,
-        }
+        })
     if remaining_budget_ms_at_schedule < min_first_task_ms:
-        return {
+        return _finalize({
             "scheduled": 0,
             "finished": 0,
             "timeouts": 0,
@@ -1157,7 +1373,7 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
             "prepare_time_ms": float(prepare_time_ms) if prepare_time_ms is not None else None,
             "schedule_guard_triggered": True,
             "budget_remaining_ms_at_schedule": remaining_budget_ms_at_schedule,
-        }
+        })
 
     payloads, _, scan_stats = await _scan_candidates(
         candidates,
@@ -1203,13 +1419,25 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
         dexes = _payload_dexes(p)
         return len(set(dexes)) if dexes else 0
 
+    def _top_viability_reason(rejects: Dict[str, int]) -> Optional[str]:
+        if not rejects:
+            return None
+        try:
+            return sorted(rejects.items(), key=lambda kv: int(kv[1]), reverse=True)[0][0]
+        except Exception:
+            return None
+
     def _map_viability_rejects(rejects: Dict[str, int]) -> Dict[str, int]:
         out = {
-            "pool_missing": 0,
-            "rpc_error": 0,
-            "timeout": 0,
-            "nonsensical_price": 0,
-            "high_price_impact": 0,
+            "viability_no_pool": 0,
+            "viability_unknown_token": 0,
+            "viability_quote_timeout": 0,
+            "viability_quote_revert": 0,
+            "viability_rpc_error": 0,
+            "viability_out_of_sync": 0,
+            "viability_price_impact_too_high": 0,
+            "viability_gas_too_high": 0,
+            "viability_nonsensical_quote": 0,
         }
         for reason, count in (rejects or {}).items():
             if count is None:
@@ -1219,20 +1447,34 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
             if not n:
                 continue
             if "nonsensical" in r or "overflow_like" in r:
-                out["nonsensical_price"] += n
+                out["viability_nonsensical_quote"] += n
             elif "timeout" in r:
-                out["timeout"] += n
+                out["viability_quote_timeout"] += n
+            elif "revert" in r:
+                out["viability_quote_revert"] += n
+            elif "out_of_sync" in r:
+                out["viability_out_of_sync"] += n
             elif "rpc_error" in r or "http_" in r:
-                out["rpc_error"] += n
+                out["viability_rpc_error"] += n
             elif "impact" in r:
-                out["high_price_impact"] += n
-            elif "quote_fail" in r or "quote_error" in r:
-                out["pool_missing"] += n
+                out["viability_price_impact_too_high"] += n
+            elif "gas" in r:
+                out["viability_gas_too_high"] += n
+            elif "unknown_token" in r:
+                out["viability_unknown_token"] += n
+            elif "quote_fail" in r or "quote_error" in r or "unknown_pool" in r:
+                out["viability_no_pool"] += n
             else:
-                out["rpc_error"] += n
+                out["viability_rpc_error"] += n
         return {k: v for k, v in out.items() if v}
 
     viability_rejects_by_reason = _map_viability_rejects(scan_stats.get("rejects_by_reason", {}))
+    if viability_rejects_by_reason:
+        for reason, count in viability_rejects_by_reason.items():
+            try:
+                METRICS.inc_reason("viability_drop_reason_counts", str(reason), int(count))
+            except Exception:
+                continue
     candidates_after_cross_dex_filter: Optional[int] = None
     cross_dex_fallback_used = False
     payloads_before_cross = list(payloads)
@@ -1256,6 +1498,7 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
     zero_schedule_reason = None
     zero_schedule_detail = None
     schedule_guard_triggered = bool(scan_stats.get("schedule_guard_blocked"))
+    top_viability_reason = _top_viability_reason(viability_rejects_by_reason)
     if scheduled == 0:
         reason_if_zero = scan_stats.get("reason_if_zero_scheduled")
         if reason_if_zero == "no_candidates":
@@ -1273,9 +1516,9 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
         zero_candidates_detail = zero_schedule_detail
         zero_candidates_stage = "schedule"
     elif candidates_after_viability_filter == 0:
-        if viability_rejects_by_reason.get("rpc_error") or viability_rejects_by_reason.get("timeout"):
-            zero_candidates_reason = "rpc_unavailable"
-            zero_candidates_detail = "rpc_errors_or_timeouts"
+        if top_viability_reason:
+            zero_candidates_reason = top_viability_reason
+            zero_candidates_detail = "viability_rejects"
             zero_candidates_stage = "viability"
         else:
             zero_candidates_reason = "filtered_by_viability"
@@ -1374,7 +1617,7 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
     elif best_classification == "gross_hit":
         outcome = "gross_hit"
 
-    return {
+    return _finalize({
         "scheduled": int(scan_stats.get("scheduled", 0)),
         "finished": int(scan_stats.get("finished", 0)),
         "timeouts": int(scan_stats.get("timeouts", 0)),
@@ -1409,6 +1652,7 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
         "zero_candidates_reason": zero_candidates_reason,
         "zero_candidates_detail": zero_candidates_detail,
         "zero_candidates_stage": zero_candidates_stage,
+        "top_viability_drop_reason": top_viability_reason,
         "zero_schedule_reason": zero_schedule_reason,
         "zero_schedule_detail": zero_schedule_detail,
         "base_used": base_used,
@@ -1426,11 +1670,15 @@ async def _scan_trigger(trigger: Trigger, budget_s: float) -> Dict[str, Any]:
         "cross_dex_fallback_used": bool(cross_dex_fallback_used),
         "prepare_truncated": bool(prepare_truncated),
         "prepare_time_ms": float(prepare_time_ms) if prepare_time_ms is not None else None,
-    }
+    })
 
 
-def _make_block_context(block_number: int) -> BlockContext:
-    return BlockContext(block_number=int(block_number), block_tag=hex(int(block_number)))
+def _make_block_context(block_number: int, *, pinned_http_endpoint: Optional[str] = None) -> BlockContext:
+    return BlockContext(
+        block_number=int(block_number),
+        block_tag=hex(int(block_number)),
+        pinned_http_endpoint=str(pinned_http_endpoint).strip() if pinned_http_endpoint else None,
+    )
 
 
 _last_rpc_latency_ms: Optional[float] = None
@@ -1493,7 +1741,12 @@ def _expand_budget_s(stage1_window_s: float, s: Settings) -> float:
     max_s = float(getattr(s, "expand_budget_max_s", 2.0))
     if max_s <= 0:
         max_s = 0.5
-    return float(min(stage1_window_s * cap, max_s))
+    if bool(getattr(s, "enable_multidex", False)) and max_s < 6.0:
+        max_s = 6.0
+    target = stage1_window_s * cap
+    if bool(getattr(s, "enable_multidex", False)) and target < 4.5:
+        target = 4.5
+    return float(min(target, max_s))
 
 
 def _cap_int(value: int, *, min_value: int = 1) -> int:
@@ -1750,14 +2003,20 @@ async def _expand_multidex_candidates(
                         if stats is not None:
                             stats["routes_without_candidates"] = int(stats.get("routes_without_candidates", 0)) + 1
                         return []
+                time_left = float(deadline_s) - float(loop.time())
+                beam_k = int(settings.beam_k)
+                edge_top_m_eff = int(settings.edge_top_m)
+                if time_left < 6.0:
+                    beam_k = min(beam_k, 8)
+                    edge_top_m_eff = min(edge_top_m_eff, 2)
                 out = await _beam_candidates_for_route(
                     route,
                     amount_in=int(amount_in),
                     block_ctx=block_ctx,
                     fee_tiers=fee_tiers,
                     timeout_s=timeout_s,
-                    beam_k=int(settings.beam_k),
-                    edge_top_m=int(settings.edge_top_m),
+                    beam_k=int(beam_k),
+                    edge_top_m=int(edge_top_m_eff),
                     edge_top_m_per_dex=edge_top_m_per_dex,
                     eval_budget=int(settings.stage2_max_evals),
                     prefer_cross_dex=prefer_cross_dex,
@@ -2549,7 +2808,7 @@ async def replay_preflight(limit: int = 20) -> None:
 
     rpc_urls = list(s.rpc_urls) if getattr(s, "rpc_urls", None) else []
     if not rpc_urls:
-        raw = os.getenv("RPC_URLS")
+        raw = os.getenv("RPC_HTTP_URLS") or os.getenv("RPC_URLS")
         if raw:
             rpc_urls = [x.strip() for x in raw.split(",") if x.strip()]
     if not rpc_urls:
@@ -2616,6 +2875,12 @@ async def main() -> None:
     iteration = 0
     print("🚀 Fork simulation started...")
     await ui_push({"type": "status", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": None, "text": "started"})
+    seed_env = os.getenv("RUN_SEED")
+    if seed_env:
+        try:
+            random.seed(int(seed_env))
+        except Exception:
+            pass
 
     # Init RPC endpoints (multi-RPC failover supported)
     global PS
@@ -2625,6 +2890,27 @@ async def main() -> None:
         config.MEMPOOL_RAW_MIN_ENABLED = bool(getattr(s0, "mempool_raw_min_enabled", config.MEMPOOL_RAW_MIN_ENABLED))
         config.MEMPOOL_STRICT_UNKNOWN_TOKENS = bool(
             getattr(s0, "mempool_strict_unknown_tokens", config.MEMPOOL_STRICT_UNKNOWN_TOKENS)
+        )
+        config.TX_FETCH_BATCH_ENABLED = bool(getattr(s0, "tx_fetch_batch_enabled", config.TX_FETCH_BATCH_ENABLED))
+        config.TX_FETCH_MAX_RETRIES = int(getattr(s0, "tx_fetch_max_retries", config.TX_FETCH_MAX_RETRIES))
+        config.TX_FETCH_RETRY_BACKOFF_MS = list(getattr(s0, "tx_fetch_retry_backoff_ms", config.TX_FETCH_RETRY_BACKOFF_MS))
+        config.TX_FETCH_PER_ENDPOINT_MAX_INFLIGHT = int(
+            getattr(s0, "tx_fetch_per_endpoint_max_inflight", config.TX_FETCH_PER_ENDPOINT_MAX_INFLIGHT)
+        )
+        config.RPC_HEALTH_BAN_SECONDS = int(getattr(s0, "rpc_health_ban_seconds", config.RPC_HEALTH_BAN_SECONDS))
+        config.RPC_BAN_SECONDS = int(getattr(s0, "rpc_health_ban_seconds", config.RPC_BAN_SECONDS))
+        config.RPC_TIMEOUT_RATE_THRESHOLD = float(
+            getattr(s0, "rpc_timeout_rate_threshold", config.RPC_TIMEOUT_RATE_THRESHOLD)
+        )
+        config.RPC_BAN_TIMEOUT_RATE = float(getattr(s0, "rpc_timeout_rate_threshold", config.RPC_BAN_TIMEOUT_RATE))
+        config.RPC_LATENCY_P95_MS_THRESHOLD = float(
+            getattr(s0, "rpc_latency_p95_ms_threshold", config.RPC_LATENCY_P95_MS_THRESHOLD)
+        )
+        config.RPC_BAN_LATENCY_P95_MS = float(
+            getattr(s0, "rpc_latency_p95_ms_threshold", config.RPC_BAN_LATENCY_P95_MS)
+        )
+        config.RPC_OUT_OF_SYNC_BAN_SECONDS = int(
+            getattr(s0, "out_of_sync_ban_seconds", config.RPC_OUT_OF_SYNC_BAN_SECONDS)
         )
         addr = str(getattr(s0, "arb_executor_address", "") or "").strip()
         if addr:
@@ -2637,8 +2923,8 @@ async def main() -> None:
         pass
     rpc_urls = list(s0.rpc_urls) if getattr(s0, "rpc_urls", None) else []
     if not rpc_urls:
-        # env RPC_URLS / config fallback
-        raw = os.getenv("RPC_URLS")
+        # env RPC_HTTP_URLS / RPC_URLS fallback
+        raw = os.getenv("RPC_HTTP_URLS") or os.getenv("RPC_URLS")
         if raw:
             rpc_urls = [x.strip() for x in raw.split(",") if x.strip()]
     if not rpc_urls:
@@ -2669,21 +2955,81 @@ async def main() -> None:
     blocks_scanned = 0
     profit_hits = 0
     snapshotter: Optional[DiagnosticSnapshotter] = None
+    stop_after_blocks = 0
+    time_limit_s = 0.0
+    try:
+        stop_after_blocks = int(os.getenv("STOP_AFTER_BLOCKS", "0") or 0)
+    except Exception:
+        stop_after_blocks = 0
+    try:
+        time_limit_s = float(os.getenv("TIME_LIMIT_S", "0") or 0.0)
+    except Exception:
+        time_limit_s = 0.0
+    run_started_s = time.time()
+    blocks_seen = 0
 
     last_block = await PS.rpc.get_block_number()
     print(f"[RPC] connected=True | block={last_block} | urls={len(rpc_urls)}")
     await ui_push({"type": "status", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": int(last_block), "text": f"rpc connected=True | urls={len(rpc_urls)}"})
     global MEMPOOL_BLOCK_CTX
-    MEMPOOL_BLOCK_CTX = _make_block_context(int(last_block))
+    pinned = None
+    try:
+        if hasattr(PS.rpc, "pick_pinned_endpoint"):
+            pinned = PS.rpc.pick_pinned_endpoint()
+    except Exception:
+        pinned = None
+    MEMPOOL_BLOCK_CTX = _make_block_context(int(last_block), pinned_http_endpoint=pinned)
 
     if mempool_on:
         ws_urls = list(getattr(s0, "mempool_ws_urls", ())) or list(getattr(config, "MEMPOOL_WS_URLS", []))
+        if not ws_urls:
+            raw_ws = os.getenv("RPC_WS_URLS")
+            if raw_ws:
+                ws_urls = [x.strip() for x in raw_ws.replace("\n", ",").split(",") if x.strip()]
+        http_eps = list(getattr(s0, "rpc_http_endpoints", ()) or [])
+        ws_eps = list(getattr(s0, "rpc_ws_endpoints", ()) or [])
+        http_by_id = {str(ep.get("id")): str(ep.get("url")) for ep in http_eps if isinstance(ep, dict)}
+        ws_by_id = {str(ep.get("id")): str(ep.get("url")) for ep in ws_eps if isinstance(ep, dict)}
+        ws_pairing_cfg = getattr(s0, "rpc_ws_pairing", {}) or {}
+        ws_http_pairing: Dict[str, str] = {}
+        if isinstance(ws_pairing_cfg, dict):
+            for ws_id, http_id in ws_pairing_cfg.items():
+                ws_url = ws_by_id.get(str(ws_id)) or str(ws_id)
+                http_url = http_by_id.get(str(http_id)) or str(http_id)
+                if ws_url and http_url:
+                    ws_http_pairing[ws_url] = http_url
+        if not ws_http_pairing:
+            for ws_id, ws_url in ws_by_id.items():
+                http_url = http_by_id.get(ws_id)
+                if ws_url and http_url:
+                    ws_http_pairing[ws_url] = http_url
+        if not ws_http_pairing:
+            ws_hosts = {w.split("://", 1)[-1].split("/", 1)[0]: w for w in ws_urls}
+            for hid, hurl in http_by_id.items():
+                host = hurl.split("://", 1)[-1].split("/", 1)[0]
+                if host in ws_hosts:
+                    ws_http_pairing[ws_hosts[host]] = hurl
+
+        if http_eps:
+            tx_fetch_http_urls = [
+                str(ep.get("url"))
+                for ep in http_eps
+                if isinstance(ep, dict)
+                and ep.get("url")
+                and "flashbots" not in str(ep.get("id", "")).lower()
+                and "flashbots" not in str(ep.get("url", "")).lower()
+            ]
+        else:
+            tx_fetch_http_urls = [u for u in rpc_urls if "flashbots" not in str(u).lower()]
         filter_to = list(getattr(s0, "mempool_filter_to", ())) or list(getattr(config, "MEMPOOL_FILTER_TO", []))
         watch_mode = getattr(s0, "mempool_watch_mode", getattr(config, "MEMPOOL_WATCH_MODE", "strict"))
         watched_router_set = getattr(s0, "mempool_watched_router_sets", getattr(config, "MEMPOOL_WATCHED_ROUTER_SETS", "core"))
+        set_pinned_http_endpoint(None)
         mempool_engine = MempoolEngine(
             rpc=PS.rpc,
             ws_urls=ws_urls,
+            http_urls=tx_fetch_http_urls,
+            ws_http_pairing=ws_http_pairing,
             filter_to=filter_to,
             watch_mode=str(watch_mode),
             watched_router_set=str(watched_router_set),
@@ -2705,12 +3051,16 @@ async def main() -> None:
             ui_push=ui_push,
         )
         await mempool_engine.start(_scan_trigger)
+        set_pinned_http_endpoint(pinned)
         await ui_push({"type": "status", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": int(last_block), "text": f"mempool enabled ({scan_source})"})
         mempool_engine.set_block_number(int(last_block))
+        token = set_pinned_http_endpoint(pinned)
         try:
             await asyncio.wait_for(PS.prepare_block(MEMPOOL_BLOCK_CTX), timeout=float(_prepare_budget_s(s0)))
         except Exception:
             pass
+        finally:
+            reset_pinned_http_endpoint(token)
 
     try:
         interval_s = float(os.getenv("DIAGNOSTIC_SNAPSHOT_INTERVAL_S", "") or 45.0)
@@ -2735,6 +3085,8 @@ async def main() -> None:
     try:
         while True:
             iteration += 1
+            if time_limit_s > 0 and (time.time() - run_started_s) >= time_limit_s:
+                break
             s = _load_settings()
             try:
                 config.V2_MIN_RESERVE_RATIO = float(s.v2_min_reserve_ratio)
@@ -2757,16 +3109,25 @@ async def main() -> None:
             # 0) wait new block
             block_number = await wait_for_new_block(last_block, timeout_s=float(s.rpc_timeout_s))
             last_block = block_number
+            blocks_seen += 1
             print(f"Block {block_number}")
-            block_ctx = _make_block_context(int(block_number))
+            pinned = None
+            try:
+                if hasattr(PS.rpc, "pick_pinned_endpoint"):
+                    pinned = PS.rpc.pick_pinned_endpoint()
+            except Exception:
+                pinned = None
+            block_ctx = _make_block_context(int(block_number), pinned_http_endpoint=pinned)
             MEMPOOL_BLOCK_CTX = block_ctx
             if mempool_engine:
                 mempool_engine.set_block_number(int(block_number))
 
+            set_pinned_http_endpoint(pinned)
             # Optional gas gate
             if s.max_gas_gwei is not None:
                 gas_gwei = await _gas_gwei(timeout_s=float(s.rpc_timeout_s))
                 if gas_gwei is not None and gas_gwei > float(s.max_gas_gwei):
+                    METRICS.inc_reason("drop_reason_counts", "gas_too_high", 1)
                     await ui_push(
                         {
                             "type": "scan",
@@ -2790,6 +3151,8 @@ async def main() -> None:
                 if mempool_engine:
                     await mempool_engine.confirm_block(int(block_number))
                 await ui_push({"type": "status", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": block_number, "text": f"mempool mode block {block_number}"})
+                if stop_after_blocks > 0 and blocks_seen >= stop_after_blocks:
+                    break
                 continue
 
             await ui_push({"type": "scan", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": block_number, "text": "Scanning routes..."})
@@ -2830,14 +3193,21 @@ async def main() -> None:
                 await _confirm_mempool(mempool_engine, int(block_number))
                 continue
 
-            attempt_ctxs = [_make_block_context(block_number)]
+            attempt_ctxs = [block_ctx]
             if int(block_number) > 0:
-                attempt_ctxs.append(_make_block_context(int(block_number) - 1))
+                fallback_pin = None
+                try:
+                    if hasattr(PS.rpc, "pick_pinned_endpoint"):
+                        fallback_pin = PS.rpc.pick_pinned_endpoint()
+                except Exception:
+                    fallback_pin = None
+                attempt_ctxs.append(_make_block_context(int(block_number) - 1, pinned_http_endpoint=fallback_pin))
 
             scan_done = False
             block_ctx = attempt_ctxs[0]
             for attempt_idx, ctx in enumerate(attempt_ctxs):
                 block_ctx = ctx
+                set_pinned_http_endpoint(getattr(block_ctx, "pinned_http_endpoint", None))
                 loop = asyncio.get_running_loop()
                 block_start_t = loop.time()
                 prepare_budget_s = _prepare_budget_s(s)
@@ -2871,9 +3241,14 @@ async def main() -> None:
                     max_total_expanded = max(1, int(max_total_expanded * cap_ratio))
                     max_per_candidate = max(1, int(max_per_candidate * cap_ratio))
 
-                cand_estimate = len(routes)
+                routes_for_expand = list(routes)
                 if enable_multidex:
-                    cand_estimate = min(int(len(routes) * max_per_candidate), int(max_total_expanded))
+                    max_routes_for_expand = max(1, int(max_total_expanded / max(1, max_per_candidate)))
+                    if len(routes_for_expand) > max_routes_for_expand:
+                        routes_for_expand = routes_for_expand[: max_routes_for_expand]
+                cand_estimate = len(routes_for_expand)
+                if enable_multidex:
+                    cand_estimate = min(int(len(routes_for_expand) * max_per_candidate), int(max_total_expanded))
                 cand_estimate = min(int(cand_estimate), int(max_candidates_stage1))
                 stage1_ratio = _adaptive_stage1_ratio(int(cand_estimate), _rpc_latency_ms())
                 stage1_window_s = float(scan_budget_s) * float(stage1_ratio)
@@ -2918,7 +3293,12 @@ async def main() -> None:
                     "capped_by_max_candidates_stage1": False,
                     "capped_by_max_total_expanded": False,
                     "capped_by_max_expanded_per_candidate": False,
+                    "viability_fallback_used": False,
+                    "beam_fallback_used": False,
                 }
+                if enable_multidex and len(routes_for_expand) != len(routes):
+                    scan_stats["routes_pruned_for_expand"] = int(len(routes) - len(routes_for_expand))
+                    scan_stats["routes_for_expand"] = int(len(routes_for_expand))
                 scan_stats["prepare_ms"] = int(max(0.0, prepare_ms))
                 scan_stats["scan_start_delay_ms"] = int(max(0, scan_start_delay_ms))
                 scan_stats["stage1_deadline_remaining_ms_at_scan_start"] = int(stage1_deadline_remaining_ms_at_scan_start)
@@ -2939,7 +3319,7 @@ async def main() -> None:
                                     break
                                 amt_in = _scale_amount(base_token, u)
                                 more = await _expand_multidex_candidates(
-                                    routes,
+                                    routes_for_expand,
                                     amount_in=int(amt_in),
                                     block_ctx=block_ctx,
                                     fee_tiers=None,
@@ -2954,6 +3334,42 @@ async def main() -> None:
                                 if more:
                                     candidates.extend(more)
                                     remaining_total = int(max_total_expanded) - len(candidates)
+                            if not candidates and routes:
+                                # Fallback: skip viability probes to avoid empty candidate sets.
+                                fallback_routes = routes[: max(1, min(int(max_candidates_stage1), 40))]
+                                fallback_total = min(int(max_total_expanded), int(max_candidates_stage1), 40)
+                                fallback_per = min(int(max_per_candidate), 2)
+                                amt_in = _scale_amount(base_token, s.stage1_amount)
+                                fallback_deadline = min(stage1_deadline, loop.time() + 1.5)
+                                more = await _expand_multidex_candidates(
+                                    fallback_routes,
+                                    amount_in=int(amt_in),
+                                    block_ctx=block_ctx,
+                                    fee_tiers=None,
+                                    timeout_s=min(float(s.rpc_timeout_stage2_s), 1.2),
+                                    deadline_s=fallback_deadline,
+                                    settings=s,
+                                    max_total=int(fallback_total),
+                                    max_per_route=int(fallback_per),
+                                    viability_cache=viability_cache,
+                                    stats=expand_stats,
+                                    skip_viability=True,
+                                )
+                                if more:
+                                    candidates.extend(more)
+                                    scan_stats["viability_fallback_used"] = True
+                            if not candidates and routes_for_expand:
+                                # Final fallback: legacy token-only candidates (still multi-dex via best_edge).
+                                for route in routes_for_expand:
+                                    token_in = route[0]
+                                    for u in list(s.amount_presets):
+                                        candidates.append({"route": route, "amount_in": _scale_amount(token_in, u)})
+                                        if len(candidates) >= int(max_candidates_stage1):
+                                            break
+                                    if len(candidates) >= int(max_candidates_stage1):
+                                        break
+                                if candidates:
+                                    scan_stats["beam_fallback_used"] = True
                             if expand_stats:
                                 scan_stats["expand_ms"] = float(expand_stats.get("expand_ms", 0.0))
                                 scan_stats["beam_ms"] = float(expand_stats.get("beam_ms", 0.0))
@@ -3004,8 +3420,19 @@ async def main() -> None:
                         funnel_stats = _funnel_stats(funnel_payloads)
                         top_examples = _top_examples(funnel_payloads)
                         for p2 in payloads2:
-                            if strategies.risk_check(p2) and _passes_thresholds(p2, s):
-                                profitable.append(p2)
+                            if not strategies.risk_check(p2):
+                                METRICS.inc_reason("drop_reason_counts", "illiquid", 1)
+                                continue
+                            if not _passes_thresholds(p2, s):
+                                reason = "min_profit_not_met"
+                                try:
+                                    if float(p2.get("profit_adj", 0.0)) <= 0:
+                                        reason = "slippage_fail"
+                                except Exception:
+                                    pass
+                                METRICS.inc_reason("drop_reason_counts", reason, 1)
+                                continue
+                            profitable.append(p2)
 
                     else:
                         # Stage 1
@@ -3015,7 +3442,7 @@ async def main() -> None:
                             stage1_amount = _scale_amount(base_token, s.stage1_amount)
                             expand_stats: Dict[str, Any] = {}
                             stage1_candidates = await _expand_multidex_candidates(
-                                routes,
+                                routes_for_expand,
                                 amount_in=int(stage1_amount),
                                 block_ctx=block_ctx,
                                 fee_tiers=list(s.stage1_fee_tiers) if s.stage1_fee_tiers else None,
@@ -3027,6 +3454,36 @@ async def main() -> None:
                                 viability_cache=viability_cache,
                                 stats=expand_stats,
                             )
+                            if not stage1_candidates and routes:
+                                # Fallback: skip viability probes to avoid empty candidate sets.
+                                fallback_routes = routes[: max(1, min(int(max_candidates_stage1), 40))]
+                                fallback_total = min(int(max_total_expanded), int(max_candidates_stage1), 40)
+                                fallback_per = min(int(max_per_candidate), 2)
+                                fallback_deadline = min(stage1_deadline, loop.time() + 1.5)
+                                stage1_candidates = await _expand_multidex_candidates(
+                                    fallback_routes,
+                                    amount_in=int(stage1_amount),
+                                    block_ctx=block_ctx,
+                                    fee_tiers=list(s.stage1_fee_tiers) if s.stage1_fee_tiers else None,
+                                    timeout_s=min(float(s.rpc_timeout_stage1_s), 1.2),
+                                    deadline_s=fallback_deadline,
+                                    settings=s,
+                                    max_total=int(fallback_total),
+                                    max_per_route=int(fallback_per),
+                                    viability_cache=viability_cache,
+                                    stats=expand_stats,
+                                    skip_viability=True,
+                                )
+                                if stage1_candidates:
+                                    scan_stats["viability_fallback_used"] = True
+                            if not stage1_candidates and routes_for_expand:
+                                # Final fallback: legacy token-only candidates (still multi-dex via best_edge).
+                                stage1_candidates = [
+                                    {"route": route, "amount_in": _scale_amount(route[0], s.stage1_amount)}
+                                    for route in routes_for_expand[: int(max_candidates_stage1)]
+                                ]
+                                if stage1_candidates:
+                                    scan_stats["beam_fallback_used"] = True
                             if expand_stats:
                                 scan_stats["expand_ms"] = float(expand_stats.get("expand_ms", 0.0))
                                 scan_stats["beam_ms"] = float(expand_stats.get("beam_ms", 0.0))
@@ -3119,8 +3576,19 @@ async def main() -> None:
                         best_payloads = [bp for bp in best_payloads if bp and bp.get("profit_raw", -1) != -1]
                         best_payloads2 = [_apply_safety(bp, s) for bp in best_payloads]
                         for bp2 in best_payloads2:
-                            if strategies.risk_check(bp2) and _passes_thresholds(bp2, s):
-                                profitable.append(bp2)
+                            if not strategies.risk_check(bp2):
+                                METRICS.inc_reason("drop_reason_counts", "illiquid", 1)
+                                continue
+                            if not _passes_thresholds(bp2, s):
+                                reason = "min_profit_not_met"
+                                try:
+                                    if float(bp2.get("profit_adj", 0.0)) <= 0:
+                                        reason = "slippage_fail"
+                                except Exception:
+                                    pass
+                                METRICS.inc_reason("drop_reason_counts", reason, 1)
+                                continue
+                            profitable.append(bp2)
 
                 except Exception as e:
                     print(f"[WARN] scan failed: {type(e).__name__}: {e}")
@@ -3131,6 +3599,13 @@ async def main() -> None:
                 if attempt_idx == 0 and _should_fallback_block(scan_stats, candidates_count=candidates_count):
                     msg = f"RPC not caught up for block {block_ctx.block_number}, retrying {int(block_ctx.block_number) - 1}"
                     print(f"[WARN] {msg}")
+                    METRICS.inc("out_of_sync_count", 1)
+                    METRICS.inc("rpc_not_caught_up_events", 1)
+                    try:
+                        if hasattr(PS.rpc, "mark_out_of_sync"):
+                            PS.rpc.mark_out_of_sync(getattr(block_ctx, "pinned_http_endpoint", None))
+                    except Exception:
+                        pass
                     await ui_push({"type": "warn", "time": datetime.utcnow().strftime("%H:%M:%S"), "block": int(block_ctx.block_number), "text": msg})
                     continue
 
@@ -3141,6 +3616,18 @@ async def main() -> None:
             if not scan_done:
                 await _confirm_mempool(mempool_engine, int(block_ctx.block_number))
                 continue
+
+            try:
+                METRICS.inc("candidates_generated", int(candidates_count))
+                scheduled = int(scan_stats.get("scheduled", 0))
+                invalid = int(scan_stats.get("invalid", 0))
+                METRICS.inc("candidates_after_probe", max(0, scheduled - invalid))
+                METRICS.inc("candidates_after_refine", int(len(funnel_payloads)))
+                if scheduled == 0:
+                    reason = scan_stats.get("reason_if_zero_scheduled")
+                    METRICS.inc_reason("drop_reason_counts", _normalize_drop_reason(reason), 1)
+            except Exception:
+                pass
 
             if not profitable:
                 await ui_push(
@@ -3165,11 +3652,15 @@ async def main() -> None:
                         "expand_ms": scan_stats.get("expand_ms"),
                         "beam_ms": scan_stats.get("beam_ms"),
                         "candidates_initial": scan_stats.get("candidates_initial"),
+                        "routes_for_expand": scan_stats.get("routes_for_expand"),
+                        "routes_pruned_for_expand": scan_stats.get("routes_pruned_for_expand"),
                         "candidates_after_beam": scan_stats.get("candidates_after_beam"),
                         "candidates_after_multidex": scan_stats.get("candidates_after_multidex"),
                         "capped_by_max_candidates_stage1": scan_stats.get("capped_by_max_candidates_stage1"),
                         "capped_by_max_total_expanded": scan_stats.get("capped_by_max_total_expanded"),
                         "capped_by_max_expanded_per_candidate": scan_stats.get("capped_by_max_expanded_per_candidate"),
+                        "viability_fallback_used": scan_stats.get("viability_fallback_used"),
+                        "beam_fallback_used": scan_stats.get("beam_fallback_used"),
                         "reason_if_zero_scheduled": scan_stats.get("reason_if_zero_scheduled"),
                         "sanity_rejects_total": scan_stats.get("sanity_rejects_total"),
                         "rejects_by_reason": scan_stats.get("rejects_by_reason"),
@@ -3213,11 +3704,15 @@ async def main() -> None:
                         "expand_ms": scan_stats.get("expand_ms"),
                         "beam_ms": scan_stats.get("beam_ms"),
                         "candidates_initial": scan_stats.get("candidates_initial"),
+                        "routes_for_expand": scan_stats.get("routes_for_expand"),
+                        "routes_pruned_for_expand": scan_stats.get("routes_pruned_for_expand"),
                         "candidates_after_beam": scan_stats.get("candidates_after_beam"),
                         "candidates_after_multidex": scan_stats.get("candidates_after_multidex"),
                         "capped_by_max_candidates_stage1": scan_stats.get("capped_by_max_candidates_stage1"),
                         "capped_by_max_total_expanded": scan_stats.get("capped_by_max_total_expanded"),
                         "capped_by_max_expanded_per_candidate": scan_stats.get("capped_by_max_expanded_per_candidate"),
+                        "viability_fallback_used": scan_stats.get("viability_fallback_used"),
+                        "beam_fallback_used": scan_stats.get("beam_fallback_used"),
                         "reason_if_zero_scheduled": scan_stats.get("reason_if_zero_scheduled"),
                         "sanity_rejects_total": scan_stats.get("sanity_rejects_total"),
                         "rejects_by_reason": scan_stats.get("rejects_by_reason"),
@@ -3292,11 +3787,15 @@ async def main() -> None:
                     "expand_ms": scan_stats.get("expand_ms"),
                     "beam_ms": scan_stats.get("beam_ms"),
                     "candidates_initial": scan_stats.get("candidates_initial"),
+                    "routes_for_expand": scan_stats.get("routes_for_expand"),
+                    "routes_pruned_for_expand": scan_stats.get("routes_pruned_for_expand"),
                     "candidates_after_beam": scan_stats.get("candidates_after_beam"),
                     "candidates_after_multidex": scan_stats.get("candidates_after_multidex"),
                     "capped_by_max_candidates_stage1": scan_stats.get("capped_by_max_candidates_stage1"),
                     "capped_by_max_total_expanded": scan_stats.get("capped_by_max_total_expanded"),
                     "capped_by_max_expanded_per_candidate": scan_stats.get("capped_by_max_expanded_per_candidate"),
+                    "viability_fallback_used": scan_stats.get("viability_fallback_used"),
+                    "beam_fallback_used": scan_stats.get("beam_fallback_used"),
                     "reason_if_zero_scheduled": scan_stats.get("reason_if_zero_scheduled"),
                     "sanity_rejects_total": scan_stats.get("sanity_rejects_total"),
                     "rejects_by_reason": scan_stats.get("rejects_by_reason"),
@@ -3341,11 +3840,15 @@ async def main() -> None:
                     "expand_ms": scan_stats.get("expand_ms"),
                     "beam_ms": scan_stats.get("beam_ms"),
                     "candidates_initial": scan_stats.get("candidates_initial"),
+                    "routes_for_expand": scan_stats.get("routes_for_expand"),
+                    "routes_pruned_for_expand": scan_stats.get("routes_pruned_for_expand"),
                     "candidates_after_beam": scan_stats.get("candidates_after_beam"),
                     "candidates_after_multidex": scan_stats.get("candidates_after_multidex"),
                     "capped_by_max_candidates_stage1": scan_stats.get("capped_by_max_candidates_stage1"),
                     "capped_by_max_total_expanded": scan_stats.get("capped_by_max_total_expanded"),
                     "capped_by_max_expanded_per_candidate": scan_stats.get("capped_by_max_expanded_per_candidate"),
+                    "viability_fallback_used": scan_stats.get("viability_fallback_used"),
+                    "beam_fallback_used": scan_stats.get("beam_fallback_used"),
                     "reason_if_zero_scheduled": scan_stats.get("reason_if_zero_scheduled"),
                     "sanity_rejects_total": scan_stats.get("sanity_rejects_total"),
                     "rejects_by_reason": scan_stats.get("rejects_by_reason"),
@@ -3402,6 +3905,8 @@ async def main() -> None:
                 await simulate(payload, int(block_ctx.block_number))
             log(iteration, profitable, int(block_ctx.block_number))
             await _confirm_mempool(mempool_engine, int(block_ctx.block_number))
+            if stop_after_blocks > 0 and blocks_seen >= stop_after_blocks:
+                break
 
     finally:
         if mempool_engine:

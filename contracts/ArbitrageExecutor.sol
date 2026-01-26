@@ -55,7 +55,7 @@ contract ArbExecutor is ReentrancyGuard {
 
         uint256 beforeBal = IERC20(e.profitToken).balanceOf(address(this));
 
-        StepCodec.Step[] calldata steps = StepCodec.decodePlan(e.plan);
+        StepCodec.Step[] memory steps = StepCodec.decodePlan(e.plan);
 
         for (uint256 i = 0; i < steps.length; i++) {
             if (!adapterAllowed[steps[i].adapter]) revert AdapterNotAllowed();

@@ -3,9 +3,11 @@
   "name": "mainnet",
   "rpc_urls": [
     "https://ethereum-rpc.publicnode.com",
+    "https://eth.llamarpc.com",
+    "https://rpc.ankr.com/eth",
+    "https://rpc.flashbots.net",
     "https://go.getblock.us",
-    "https://eth.merkle.io",
-    "https://rpc.flashbots.net"
+    "https://eth.merkle.io"
   ],
   "tokens": {
     "WETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",

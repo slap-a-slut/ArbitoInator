@@ -108,6 +108,7 @@ def build_trigger(
     min_value_usd: float,
     usd_per_eth: float,
     pending_tx: Optional[PendingTx] = None,
+    allow_no_anchor: bool = False,
 ) -> Tuple[Optional[Trigger], Optional[str]]:
     if not decoded:
         return None, "no_decoded"
@@ -164,10 +165,10 @@ def build_trigger(
     else:
         if strict_unknown:
             return None, "unknown_value_strict"
-        if not has_anchor:
+        if not has_anchor and not allow_no_anchor:
             if amount_in is None:
                 return None, "missing_amount_in"
-            return None, "unknown_tokens"
+            return None, "unknown_not_in_universe"
         if not allow_unknown:
             return None, "unknown_value_strict"
 

@@ -1,0 +1,51 @@
+/Users/mac/Documents/ArbitoInator/venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+🚀 Fork simulation started...
+[RPC] connected=True | block=24306843 | urls=4
+Block 24306844
+Block 24306845
+Block 24306846
+Block 24306847
+Block 24306848
+Block 24306849
+Block 24306850
+Block 24306851
+Block 24306852
+Block 24306853
+Traceback (most recent call last):
+  File "/Users/mac/Documents/ArbitoInator/bot/diagnostic.py", line 544, in _loop
+    await asyncio.sleep(float(self.interval_s))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/tasks.py", line 654, in sleep
+    return await future
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/mac/Documents/ArbitoInator/fork_test.py", line 3574, in main
+    await snapshotter.stop()
+  File "/Users/mac/Documents/ArbitoInator/bot/diagnostic.py", line 536, in stop
+    await self._task
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/mac/Documents/ArbitoInator/fork_test.py", line 3638, in <module>
+    asyncio.run(main())
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/runners.py", line 44, in run
+    return loop.run_until_complete(main)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/base_events.py", line 642, in run_until_complete
+    return future.result()
+asyncio.exceptions.CancelledError
+Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x10c330cd0>
+Unclosed connector
+connections: ['deque([(<aiohttp.client_proto.ResponseHandler object at 0x10c4a04c0>, 122.419673708), (<aiohttp.client_proto.ResponseHandler object at 0x10c883160>, 122.420162)])']
+connector: <aiohttp.connector.TCPConnector object at 0x10c330370>
+Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x10c3f5490>
+Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x10c3f5c40>
+Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x10c403940>

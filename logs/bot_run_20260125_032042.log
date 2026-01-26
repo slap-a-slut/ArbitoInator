@@ -1,0 +1,65 @@
+/Users/mac/Documents/ArbitoInator/venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+🚀 Fork simulation started...
+[RPC] connected=True | block=24307005 | urls=4
+Block 24307006
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0x6B3595068778DD592e39A122f4f5a5CF09C90fE2', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['sushiswap'] fee_tiers=[0] amount_in=1000000 amount_out=3288679511243312850 adapter=sushiswap_router rpc=https://rpc.flashbots.net raw_len=128 raw_prefix=0x00000000000000000000000000000000
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0xD533a949740bb3306d119CC777fa900bA034cd52', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['univ2'] fee_tiers=[0] amount_in=1000000 amount_out=2380221624002256392 adapter=univ2_router rpc=https://eth.merkle.io raw_len=128 raw_prefix=0x00000000000000000000000000000000
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['sushiswap'] fee_tiers=[0] amount_in=1000000 amount_out=7884972190342191720 adapter=sushiswap_router rpc=https://rpc.flashbots.net raw_len=128 raw_prefix=0x00000000000000000000000000000000
+[WARN] RPC not caught up for block 24307006, retrying 24307005
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0x6B3595068778DD592e39A122f4f5a5CF09C90fE2', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['sushiswap'] fee_tiers=[0] amount_in=1000000 amount_out=3288679511243312850 adapter=sushiswap_router rpc=https://ethereum-rpc.publicnode.com raw_len=128 raw_prefix=0x00000000000000000000000000000000
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0xD533a949740bb3306d119CC777fa900bA034cd52', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['univ2'] fee_tiers=[0] amount_in=1000000 amount_out=2380221624002256392 adapter=univ2_router rpc=https://ethereum-rpc.publicnode.com raw_len=128 raw_prefix=0x00000000000000000000000000000000
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['sushiswap'] fee_tiers=[0] amount_in=1000000 amount_out=7884972190342191720 adapter=sushiswap_router rpc=https://ethereum-rpc.publicnode.com raw_len=128 raw_prefix=0x00000000000000000000000000000000
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0xdAC17F958D2ee523a2206206994597C13D831ec7', '0xD533a949740bb3306d119CC777fa900bA034cd52', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['univ3:500', 'univ3:3000'] fee_tiers=[500, 3000] amount_in=1000000 amount_out=2770230937278496028 adapter=univ3_quoter_v2 rpc=https://rpc.flashbots.net raw_len=128 raw_prefix=0x00000000000000000000000000000000
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0xdAC17F958D2ee523a2206206994597C13D831ec7', '0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['univ3:500', 'univ2'] fee_tiers=[500, 0] amount_in=1000000 amount_out=7912974974227462837 adapter=univ2_router rpc=https://rpc.flashbots.net raw_len=128 raw_prefix=0x00000000000000000000000000000000
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['univ3:500', 'univ3:3000'] fee_tiers=[500, 3000] amount_in=1000000 amount_out=205215660090708635 adapter=univ3_quoter_v2 rpc=https://ethereum-rpc.publicnode.com raw_len=128 raw_prefix=0x00000000000000000000000000000000
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', '0x514910771AF9Ca656af840dff83E8264EcF986CA', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['univ3:500', 'univ2'] fee_tiers=[500, 0] amount_in=1000000 amount_out=73438769017093963 adapter=univ2_router rpc=https://ethereum-rpc.publicnode.com raw_len=128 raw_prefix=0x00000000000000000000000000000000
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', '0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DdAE9', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['univ3:500', 'univ3:3000'] fee_tiers=[500, 3000] amount_in=1000000 amount_out=5744012948962359 adapter=univ3_quoter_v2 rpc=https://ethereum-rpc.publicnode.com raw_len=128 raw_prefix=0x00000000000000000000000000000000
+Block 24307011
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0x6B3595068778DD592e39A122f4f5a5CF09C90fE2', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['sushiswap'] fee_tiers=[0] amount_in=1000000 amount_out=3288679511243312850 adapter=sushiswap_router rpc=https://ethereum-rpc.publicnode.com raw_len=128 raw_prefix=0x00000000000000000000000000000000
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0xD533a949740bb3306d119CC777fa900bA034cd52', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['univ2'] fee_tiers=[0] amount_in=1000000 amount_out=2380221624002256392 adapter=univ2_router rpc=https://ethereum-rpc.publicnode.com raw_len=128 raw_prefix=0x00000000000000000000000000000000
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['sushiswap'] fee_tiers=[0] amount_in=1000000 amount_out=7884972190342191720 adapter=sushiswap_router rpc=https://ethereum-rpc.publicnode.com raw_len=128 raw_prefix=0x00000000000000000000000000000000
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0xdAC17F958D2ee523a2206206994597C13D831ec7', '0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['univ3:500', 'univ2'] fee_tiers=[500, 0] amount_in=1000000 amount_out=7912974974227462837 adapter=univ2_router rpc=https://ethereum-rpc.publicnode.com raw_len=128 raw_prefix=0x00000000000000000000000000000000
+[WARN] RPC not caught up for block 24307011, retrying 24307010
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0x6B3595068778DD592e39A122f4f5a5CF09C90fE2', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['sushiswap'] fee_tiers=[0] amount_in=1000000 amount_out=3288679511243312850 adapter=sushiswap_router rpc=https://ethereum-rpc.publicnode.com raw_len=128 raw_prefix=0x00000000000000000000000000000000
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0xD533a949740bb3306d119CC777fa900bA034cd52', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['univ2'] fee_tiers=[0] amount_in=1000000 amount_out=2380221624002256392 adapter=univ2_router rpc=https://ethereum-rpc.publicnode.com raw_len=128 raw_prefix=0x00000000000000000000000000000000
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['sushiswap'] fee_tiers=[0] amount_in=1000000 amount_out=7884972190342191720 adapter=sushiswap_router rpc=https://ethereum-rpc.publicnode.com raw_len=128 raw_prefix=0x00000000000000000000000000000000
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['univ3:500', 'univ3:3000'] fee_tiers=[500, 3000] amount_in=1000000 amount_out=205215660090708635 adapter=univ3_quoter_v2 rpc=https://ethereum-rpc.publicnode.com raw_len=128 raw_prefix=0x00000000000000000000000000000000
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', '0x6B175474E89094C44Da98b954EedeAC495271d0F', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['univ3:500', 'univ2'] fee_tiers=[500, 0] amount_in=1000000 amount_out=996542833326586100 adapter=univ2_router rpc=https://eth.merkle.io raw_len=128 raw_prefix=0x00000000000000000000000000000000
+[SANITY] reason=nonsensical_price route=('0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', '0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DdAE9', '0xA0b86991c6218b36c1d19d4a2e9eb0ce3606eb48') dex_path=['univ3:500', 'univ3:3000'] fee_tiers=[500, 3000] amount_in=1000000 amount_out=5744012948962359 adapter=univ3_quoter_v2 rpc=https://ethereum-rpc.publicnode.com raw_len=128 raw_prefix=0x00000000000000000000000000000000
+Traceback (most recent call last):
+  File "/Users/mac/Documents/ArbitoInator/bot/diagnostic.py", line 544, in _loop
+    await asyncio.sleep(float(self.interval_s))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/tasks.py", line 654, in sleep
+    return await future
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/mac/Documents/ArbitoInator/fork_test.py", line 3628, in main
+    await snapshotter.stop()
+  File "/Users/mac/Documents/ArbitoInator/bot/diagnostic.py", line 536, in stop
+    await self._task
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/mac/Documents/ArbitoInator/fork_test.py", line 3692, in <module>
+    asyncio.run(main())
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/runners.py", line 44, in run
+    return loop.run_until_complete(main)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/base_events.py", line 642, in run_until_complete
+    return future.result()
+asyncio.exceptions.CancelledError
+Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x10bf0c5e0>
+Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x10bfc2ee0>
+Unclosed connector
+connections: ['deque([(<aiohttp.client_proto.ResponseHandler object at 0x10c0ffca0>, 120.317819916), (<aiohttp.client_proto.ResponseHandler object at 0x10c32da00>, 120.378777333), (<aiohttp.client_proto.ResponseHandler object at 0x10c267e20>, 120.425359375), (<aiohttp.client_proto.ResponseHandler object at 0x10cb82d00>, 120.450602041), (<aiohttp.client_proto.ResponseHandler object at 0x10caef8e0>, 120.469872625), (<aiohttp.client_proto.ResponseHandler object at 0x10c3ae3a0>, 120.474815333), (<aiohttp.client_proto.ResponseHandler object at 0x10c0790a0>, 120.477925958), (<aiohttp.client_proto.ResponseHandler object at 0x10caef400>, 120.479731791)])']
+connector: <aiohttp.connector.TCPConnector object at 0x10bfd4fd0>
+Unclosed connector
+connections: ['deque([(<aiohttp.client_proto.ResponseHandler object at 0x10cb82f40>, 133.023999333), (<aiohttp.client_proto.ResponseHandler object at 0x10c38d0a0>, 133.029971083), (<aiohttp.client_proto.ResponseHandler object at 0x10bf7b9a0>, 133.059023583), (<aiohttp.client_proto.ResponseHandler object at 0x10c26d4c0>, 133.123258916), (<aiohttp.client_proto.ResponseHandler object at 0x10c38d460>, 133.148549458), (<aiohttp.client_proto.ResponseHandler object at 0x10bfe3580>, 133.18292975), (<aiohttp.client_proto.ResponseHandler object at 0x10c385340>, 133.1864945)])']
+connector: <aiohttp.connector.TCPConnector object at 0x10bf01e20>

@@ -1,0 +1,45 @@
+/Users/mac/Documents/ArbitoInator/venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+🚀 Fork simulation started...
+[RPC] connected=True | block=24306934 | urls=4
+Block 24306935
+Block 24306936
+Block 24306937
+Block 24306938
+Block 24306941
+Block 24306944
+Traceback (most recent call last):
+  File "/Users/mac/Documents/ArbitoInator/bot/diagnostic.py", line 544, in _loop
+    await asyncio.sleep(float(self.interval_s))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/tasks.py", line 654, in sleep
+    return await future
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/mac/Documents/ArbitoInator/fork_test.py", line 3592, in main
+    await snapshotter.stop()
+  File "/Users/mac/Documents/ArbitoInator/bot/diagnostic.py", line 536, in stop
+    await self._task
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/mac/Documents/ArbitoInator/fork_test.py", line 3656, in <module>
+    asyncio.run(main())
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/runners.py", line 44, in run
+    return loop.run_until_complete(main)
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/asyncio/base_events.py", line 642, in run_until_complete
+    return future.result()
+asyncio.exceptions.CancelledError
+Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x10a0bf4f0>
+Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x10a179bb0>
+Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x10a187d90>
+Unclosed connector
+connections: ['deque([(<aiohttp.client_proto.ResponseHandler object at 0x10aa8dca0>, 117.413161833), (<aiohttp.client_proto.ResponseHandler object at 0x10a1d5340>, 117.680320583), (<aiohttp.client_proto.ResponseHandler object at 0x10aa8d5e0>, 117.752541125), (<aiohttp.client_proto.ResponseHandler object at 0x10a366f40>, 118.009814583)])']
+connector: <aiohttp.connector.TCPConnector object at 0x10a1a3070>

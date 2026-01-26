@@ -6,9 +6,9 @@
   ],
   "tokens": {
     "WETH": "0x7b79995e5f793A07Bc00c21412e50ECae098E7f9",
-    "USDC": null,
-    "USDT": null,
-    "DAI": null
+    "USDC": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+    "USDT": "0x2c3b6C6e20b1A6b02C4b9560C1dD0d7B707cD8a",
+    "DAI": "0xFF34B3d4Aee8ddCd4F7Eabb9020f95000eF4aA8d"
   },
   "token_decimals": {
     "WETH": 18,
@@ -17,15 +17,15 @@
     "DAI": 18
   },
   "dex": {
-    "uniswap_v3_quoter": "",
-    "uniswap_v3_quoter_v2": "",
-    "uniswap_v2_factory": "",
-    "sushiswap_factory": "",
-    "uniswap_v2_router": "",
-    "sushiswap_router": "",
-    "uniswap_v3_swap_router": "",
-    "uniswap_v3_swap_router02": "",
-    "uniswap_universal_router": "",
+    "uniswap_v3_quoter": "0x27E611FD27b276ACbd7F5a8e4A0BEE71ee9A5283",
+    "uniswap_v3_quoter_v2": "0x3d4e44Eb1534cdD8f5a6f6D0C9842e869EF5e5e0",
+    "uniswap_v2_factory": "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f",
+    "sushiswap_factory": "0xC0AEe478e3658e2610c5F7A4A2E1777Ce9e4f2Ac",
+    "uniswap_v2_router": "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
+    "sushiswap_router": "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F",
+    "uniswap_v3_swap_router": "0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E",
+    "uniswap_v3_swap_router02": "0x5Ec7900B9277348157F483e55deEd6E5Ea922670",
+    "uniswap_universal_router": "0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD",
     "arb_executor_address": ""
   }
 }

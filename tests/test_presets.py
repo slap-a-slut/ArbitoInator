@@ -13,6 +13,10 @@ PRESET_ALIAS_KEYS = {
 
 KNOWN_CONFIG_KEYS = {
     "rpc_urls",
+    "rpc_http_urls",
+    "rpc_http_endpoints",
+    "rpc_ws_endpoints",
+    "rpc_ws_pairing",
     "dexes",
     "min_profit_pct",
     "min_profit_abs",
@@ -86,6 +90,14 @@ KNOWN_CONFIG_KEYS = {
     "mempool_trigger_ttl_s",
     "mempool_confirm_timeout_s",
     "mempool_post_scan_budget_s",
+    "tx_fetch_batch_enabled",
+    "tx_fetch_max_retries",
+    "tx_fetch_retry_backoff_ms",
+    "tx_fetch_per_endpoint_max_inflight",
+    "rpc_health_ban_seconds",
+    "rpc_timeout_rate_threshold",
+    "rpc_latency_p95_ms_threshold",
+    "out_of_sync_ban_seconds",
     "report_currency",
     "verbose",
 }

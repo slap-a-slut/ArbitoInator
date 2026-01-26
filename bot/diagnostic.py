@@ -6,6 +6,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from infra.metrics import METRICS
+
 
 DEFAULT_INTERVAL_S = 45.0
 DEFAULT_WINDOW_S = 900
@@ -25,6 +27,101 @@ def _mask_url(url: str) -> str:
     if scheme:
         return f"{scheme}://{host}/..."
     return host
+
+
+_ENDPOINT_HINTS = (
+    ("publicnode", ["publicnode.com"]),
+    ("llama", ["llamarpc.com"]),
+    ("ankr", ["rpc.ankr.com"]),
+    ("flashbots_calls", ["flashbots.net"]),
+    ("getblock", ["getblock.us"]),
+    ("merkle", ["merkle.io"]),
+    ("0xrpc", ["0xrpc.io"]),
+)
+
+
+def _endpoint_id_from_url(url: str) -> str:
+    raw = str(url or "").strip().lower()
+    if "://" in raw:
+        raw = raw.split("://", 1)[1]
+    host = raw.split("/", 1)[0]
+    for name, needles in _ENDPOINT_HINTS:
+        if any(n in host for n in needles):
+            return name
+    if not host:
+        return "rpc"
+    return host.replace(":", "_")
+
+
+def _endpoint_ids_from_settings(settings: Any, *, endpoints_attr: str, fallback_urls_attr: str) -> List[str]:
+    endpoints = getattr(settings, endpoints_attr, None)
+    ids: List[str] = []
+    if isinstance(endpoints, (list, tuple)):
+        for entry in endpoints:
+            if isinstance(entry, dict):
+                url = entry.get("url")
+                eid = entry.get("id") or _endpoint_id_from_url(url)
+                if eid:
+                    ids.append(str(eid))
+            elif isinstance(entry, str):
+                ids.append(_endpoint_id_from_url(entry))
+    if ids:
+        return ids
+    urls = getattr(settings, fallback_urls_attr, None)
+    if isinstance(urls, (list, tuple)):
+        return [_endpoint_id_from_url(u) for u in urls if u]
+    return []
+
+
+def _settings_endpoints(settings: Any, *, endpoints_attr: str, fallback_urls_attr: str) -> List[Dict[str, str]]:
+    endpoints = getattr(settings, endpoints_attr, None)
+    out: List[Dict[str, str]] = []
+    if isinstance(endpoints, (list, tuple)):
+        for entry in endpoints:
+            if isinstance(entry, dict):
+                url = str(entry.get("url") or "").strip()
+                if not url:
+                    continue
+                eid = str(entry.get("id") or "").strip() or _endpoint_id_from_url(url)
+                out.append({"id": eid, "url": url})
+            elif isinstance(entry, str):
+                url = entry.strip()
+                if url:
+                    out.append({"id": _endpoint_id_from_url(url), "url": url})
+    if out:
+        return out
+    urls = getattr(settings, fallback_urls_attr, None)
+    if isinstance(urls, (list, tuple)):
+        for url in urls:
+            if url:
+                out.append({"id": _endpoint_id_from_url(url), "url": str(url)})
+    return out
+
+
+def _build_ws_http_pairing(ws_eps: List[Dict[str, str]], http_eps: List[Dict[str, str]]) -> Dict[str, str]:
+    pairing: Dict[str, str] = {}
+    http_by_id: Dict[str, str] = {}
+    http_by_host: Dict[str, str] = {}
+    for ep in http_eps:
+        eid = str(ep.get("id") or "").strip()
+        url = str(ep.get("url") or "").strip()
+        if eid and url:
+            http_by_id[eid] = url
+        if url:
+            host = url.split("://", 1)[-1].split("/", 1)[0].lower()
+            http_by_host[host] = url
+    for ep in ws_eps:
+        wid = str(ep.get("id") or "").strip()
+        wurl = str(ep.get("url") or "").strip()
+        if not wurl:
+            continue
+        if wid and wid in http_by_id:
+            pairing[wurl] = http_by_id[wid]
+            continue
+        host = wurl.split("://", 1)[-1].split("/", 1)[0].lower()
+        if host in http_by_host:
+            pairing[wurl] = http_by_host[host]
+    return pairing
 
 
 def _safe_int(value: Any) -> Optional[int]:
@@ -203,6 +300,14 @@ def _aggregate_tx_ready(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
 def _summarize_last_trigger(entry: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if not entry or not isinstance(entry, dict):
         return None
+    top_viability = entry.get("top_viability_drop_reason")
+    if not top_viability:
+        try:
+            rejects = entry.get("viability_rejects_by_reason") or {}
+            if isinstance(rejects, dict) and rejects:
+                top_viability = sorted(rejects.items(), key=lambda kv: int(kv[1]), reverse=True)[0][0]
+        except Exception:
+            top_viability = None
     return {
         "candidate_id": entry.get("candidate_id"),
         "tx_hash": entry.get("tx_hash"),
@@ -224,6 +329,7 @@ def _summarize_last_trigger(entry: Optional[Dict[str, Any]]) -> Optional[Dict[st
         "post_delta_net": _format_amount(entry.get("post_delta_net")),
         "zero_candidates_reason": entry.get("zero_candidates_reason"),
         "zero_candidates_stage": entry.get("zero_candidates_stage"),
+        "top_viability_drop_reason": top_viability,
     }
 
 
@@ -234,6 +340,7 @@ def build_diagnostic_snapshot(
     session_started_at_s: Optional[float],
     current_block: Optional[int],
     rpc_stats: Optional[List[Dict[str, Any]]],
+    rpc_health: Optional[Dict[str, Any]] = None,
     window_s: int = DEFAULT_WINDOW_S,
     update_reason: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -327,6 +434,157 @@ def build_diagnostic_snapshot(
 
     rolling = _rolling_trigger_stats(trigger_log, now_ms, int(window_s))
 
+    metrics_snapshot = METRICS.snapshot()
+    counters = metrics_snapshot.get("counters", {})
+    reasons = metrics_snapshot.get("reason_counters", {})
+    hist = metrics_snapshot.get("histograms", {})
+
+    rpc_latency = hist.get("rpc_latency_ms", {})
+    rpc_latency_p50 = rpc_latency.get("p50")
+    rpc_latency_p95 = rpc_latency.get("p95")
+    rpc_latency_by_endpoint: Dict[str, Any] = {}
+    for name, stats in hist.items():
+        if not str(name).startswith("rpc_latency_ms:"):
+            continue
+        endpoint = str(name).split("rpc_latency_ms:", 1)[1]
+        rpc_latency_by_endpoint[endpoint] = {
+            "p50": stats.get("p50"),
+            "p95": stats.get("p95"),
+            "count": stats.get("count"),
+        }
+
+    metrics_section = {
+        "quotes_total": int(counters.get("quotes_total", 0)),
+        "quotes_ok": int(counters.get("quotes_ok", 0)),
+        "quotes_fail_by_reason": reasons.get("quotes_fail_by_reason", {}),
+        "rpc_requests_total": int(counters.get("rpc_requests_total", 0)),
+        "rpc_requests_by_endpoint": reasons.get("rpc_requests_by_endpoint", {}),
+        "rpc_fail_by_reason": reasons.get("rpc_fail_by_reason", {}),
+        "rpc_fallbacks_by_reason": reasons.get("rpc_fallbacks_by_reason", {}),
+        "rpc_latency_ms_p50": rpc_latency_p50,
+        "rpc_latency_ms_p95": rpc_latency_p95,
+        "rpc_latency_ms_by_endpoint": rpc_latency_by_endpoint,
+        "out_of_sync_count": int(counters.get("out_of_sync_count", 0)),
+        "rpc_not_caught_up_events": int(counters.get("rpc_not_caught_up_events", 0)),
+        "pinned_violation_count": int(counters.get("pinned_violation_count", 0)),
+        "candidates_generated": int(counters.get("candidates_generated", 0)),
+        "candidates_after_probe": int(counters.get("candidates_after_probe", 0)),
+        "candidates_after_refine": int(counters.get("candidates_after_refine", 0)),
+        "preflight_ok": int(counters.get("preflight_ok", 0)),
+        "preflight_revert": int(counters.get("preflight_revert", 0)),
+        "preflight_slippage_fail": int(counters.get("preflight_slippage_fail", 0)),
+        "drop_reason_counts": reasons.get("drop_reason_counts", {}),
+        "viability_drop_reason_counts": reasons.get("viability_drop_reason_counts", {}),
+    }
+    http_eps = _settings_endpoints(settings, endpoints_attr="rpc_http_endpoints", fallback_urls_attr="rpc_urls")
+    ws_eps = _settings_endpoints(settings, endpoints_attr="rpc_ws_endpoints", fallback_urls_attr="mempool_ws_urls")
+    pairing = getattr(settings, "rpc_ws_pairing", None)
+    if not pairing:
+        pairing = _build_ws_http_pairing(ws_eps, http_eps)
+    metrics_section.update({
+        "rpc_http_endpoints_active": _endpoint_ids_from_settings(
+            settings,
+            endpoints_attr="rpc_http_endpoints",
+            fallback_urls_attr="rpc_urls",
+        ),
+        "rpc_ws_endpoints_active": _endpoint_ids_from_settings(
+            settings,
+            endpoints_attr="rpc_ws_endpoints",
+            fallback_urls_attr="mempool_ws_urls",
+        ),
+        "ws_http_pairing_active": pairing or {},
+    })
+    tx_fetch_attempts_total = int(counters.get("tx_fetch_attempts_total", counters.get("tx_fetch_total", 0)))
+    tx_fetch_attempts_found = int(counters.get("tx_fetch_attempts_found", counters.get("tx_fetch_found", 0)))
+    tx_fetch_unique_total = int(counters.get("tx_fetch_unique_total", 0))
+    tx_fetch_unique_found = int(counters.get("tx_fetch_unique_found", 0))
+    tx_fetch_attempt_rate = (
+        float(tx_fetch_attempts_found) / float(tx_fetch_attempts_total)
+        if tx_fetch_attempts_total > 0
+        else None
+    )
+    tx_fetch_unique_rate = (
+        float(tx_fetch_unique_found) / float(tx_fetch_unique_total)
+        if tx_fetch_unique_total > 0
+        else None
+    )
+    tx_fetch_batch = hist.get("tx_fetch_batch_size", {})
+    metrics_section.update({
+        "tx_fetch_attempts_total": tx_fetch_attempts_total,
+        "tx_fetch_attempts_found": tx_fetch_attempts_found,
+        "tx_fetch_unique_total": tx_fetch_unique_total,
+        "tx_fetch_unique_found": tx_fetch_unique_found,
+        "tx_fetch_not_found": int(counters.get("tx_fetch_not_found", 0)),
+        "tx_fetch_timeout": int(counters.get("tx_fetch_timeout", 0)),
+        "tx_fetch_rate_limited": int(counters.get("tx_fetch_rate_limited", 0)),
+        "tx_fetch_errors_other": int(counters.get("tx_fetch_errors_other", 0)),
+        "tx_fetch_retries_total": int(counters.get("tx_fetch_retries_total", 0)),
+        "tx_fetch_attempt_success_rate": tx_fetch_attempt_rate,
+        "tx_fetch_unique_success_rate": tx_fetch_unique_rate,
+        "tx_fetch_success_rate": tx_fetch_unique_rate,
+        "tx_fetch_batch_attempts": int(counters.get("tx_fetch_batch_attempts", 0)),
+        "tx_fetch_batch_errors": int(counters.get("tx_fetch_batch_errors", 0)),
+        "tx_fetch_single_calls_total": int(counters.get("tx_fetch_single_calls_total", 0)),
+        "tx_fetch_batch_size_p50": tx_fetch_batch.get("p50"),
+        "tx_fetch_batch_size_p95": tx_fetch_batch.get("p95"),
+        "tx_fetch_queue_depth": _safe_int(mempool_status.get("tx_fetch_queue_depth")) if isinstance(mempool_status, dict) else None,
+        "tx_fetch_batch_disabled_endpoints_count": _safe_int(mempool_status.get("tx_fetch_batch_disabled_endpoints_count")) if isinstance(mempool_status, dict) else None,
+    })
+    if isinstance(mempool_status, dict):
+        if metrics_section["tx_fetch_attempts_total"] == 0:
+            metrics_section["tx_fetch_attempts_total"] = _safe_int(mempool_status.get("tx_fetch_attempts_total")) or _safe_int(mempool_status.get("tx_fetch_total")) or 0
+        if metrics_section["tx_fetch_attempts_found"] == 0:
+            metrics_section["tx_fetch_attempts_found"] = _safe_int(mempool_status.get("tx_fetch_attempts_found")) or _safe_int(mempool_status.get("tx_fetch_found")) or 0
+        if metrics_section["tx_fetch_unique_total"] == 0:
+            metrics_section["tx_fetch_unique_total"] = _safe_int(mempool_status.get("tx_fetch_unique_total")) or 0
+        if metrics_section["tx_fetch_unique_found"] == 0:
+            metrics_section["tx_fetch_unique_found"] = _safe_int(mempool_status.get("tx_fetch_unique_found")) or 0
+        if metrics_section["tx_fetch_not_found"] == 0:
+            metrics_section["tx_fetch_not_found"] = _safe_int(mempool_status.get("tx_fetch_not_found")) or 0
+        if metrics_section["tx_fetch_timeout"] == 0:
+            metrics_section["tx_fetch_timeout"] = _safe_int(mempool_status.get("tx_fetch_timeout")) or 0
+        if metrics_section["tx_fetch_rate_limited"] == 0:
+            metrics_section["tx_fetch_rate_limited"] = _safe_int(mempool_status.get("tx_fetch_rate_limited")) or 0
+        if metrics_section["tx_fetch_errors_other"] == 0:
+            metrics_section["tx_fetch_errors_other"] = _safe_int(mempool_status.get("tx_fetch_errors_other")) or 0
+        if metrics_section["tx_fetch_retries_total"] == 0:
+            metrics_section["tx_fetch_retries_total"] = _safe_int(mempool_status.get("tx_fetch_retries_total")) or 0
+        if metrics_section["tx_fetch_batch_attempts"] == 0:
+            metrics_section["tx_fetch_batch_attempts"] = _safe_int(mempool_status.get("tx_fetch_batch_attempts")) or 0
+        if metrics_section["tx_fetch_batch_errors"] == 0:
+            metrics_section["tx_fetch_batch_errors"] = _safe_int(mempool_status.get("tx_fetch_batch_errors")) or 0
+        if metrics_section["tx_fetch_single_calls_total"] == 0:
+            metrics_section["tx_fetch_single_calls_total"] = _safe_int(mempool_status.get("tx_fetch_single_calls_total")) or 0
+        if metrics_section["tx_fetch_unique_success_rate"] is None:
+            metrics_section["tx_fetch_unique_success_rate"] = _safe_float(mempool_status.get("tx_fetch_unique_success_rate"))
+        if metrics_section["tx_fetch_attempt_success_rate"] is None:
+            metrics_section["tx_fetch_attempt_success_rate"] = _safe_float(mempool_status.get("tx_fetch_attempt_success_rate"))
+        if metrics_section["tx_fetch_success_rate"] is None:
+            metrics_section["tx_fetch_success_rate"] = _safe_float(mempool_status.get("tx_fetch_success_rate"))
+
+    if rpc_health and isinstance(rpc_health, dict):
+        endpoints = []
+        for entry in rpc_health.get("endpoints", []) or []:
+            if not isinstance(entry, dict):
+                continue
+            url = entry.get("url")
+            endpoints.append({
+                "url": _mask_url(url),
+                "host": entry.get("host"),
+                "success_rate": entry.get("success_rate"),
+                "timeout_rate": entry.get("timeout_rate"),
+                "p50_latency_ms": entry.get("p50_latency_ms"),
+                "p95_latency_ms": entry.get("p95_latency_ms"),
+                "banned_until": entry.get("banned_until"),
+            })
+        metrics_section.update({
+            "rpc_endpoints_health": endpoints,
+            "rpc_bans_total": rpc_health.get("bans_total"),
+            "rpc_out_of_sync_bans_total": rpc_health.get("out_of_sync_bans_total"),
+            "rpc_fallbacks_total": rpc_health.get("fallbacks_total"),
+            "pinned_http_endpoint_last": _mask_url(rpc_health.get("pinned_last") or "") if rpc_health.get("pinned_last") else None,
+        })
+
     config_snapshot = {
         "routing_search": {
             "max_hops": _safe_int(getattr(settings, "max_hops", None)),
@@ -416,11 +674,13 @@ def build_diagnostic_snapshot(
             "mempool_hash_rate": _safe_float(mempool_status.get("tx_hash_rate")) if isinstance(mempool_status, dict) else None,
             "mempool_fetch_success_pct": _safe_float(mempool_status.get("tx_fetch_success_rate")) if isinstance(mempool_status, dict) else None,
             "mempool_reconnects": _safe_int(mempool_status.get("ws_reconnects")) if isinstance(mempool_status, dict) else None,
+            "ws_url_used": _mask_url(mempool_status.get("ws_url")) if isinstance(mempool_status, dict) and mempool_status.get("ws_url") else None,
         },
         "pipeline": pipeline,
         "last_trigger": last_trigger,
         "rolling": rolling,
         "config": config_snapshot,
+        "metrics": metrics_section,
         "warnings": warnings,
     }
     return snapshot
@@ -464,12 +724,19 @@ class DiagnosticSnapshotter:
 
     def write_snapshot(self, *, reason: Optional[str] = None) -> Optional[Dict[str, Any]]:
         settings = self.get_settings()
+        rpc_health = None
+        try:
+            if self.rpc_provider and hasattr(self.rpc_provider, "health_snapshot"):
+                rpc_health = self.rpc_provider.health_snapshot()
+        except Exception:
+            rpc_health = None
         snapshot = build_diagnostic_snapshot(
             log_dir=self.log_dir,
             settings=settings,
             session_started_at_s=self.session_started_at_s,
             current_block=self.get_current_block(),
             rpc_stats=self._rpc_stats(),
+            rpc_health=rpc_health,
             window_s=self.window_s,
             update_reason=reason,
         )
@@ -492,6 +759,8 @@ class DiagnosticSnapshotter:
             self._task.cancel()
             try:
                 await self._task
+            except asyncio.CancelledError:
+                pass
             except Exception:
                 pass
 

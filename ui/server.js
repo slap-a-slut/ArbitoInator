@@ -19,6 +19,7 @@ const mempoolRecentPath = path.join(projectRoot, 'logs', 'mempool_recent.json');
 const mempoolTriggersPath = path.join(projectRoot, 'logs', 'mempool_triggers.json');
 const mempoolLogPath = path.join(projectRoot, 'logs', 'mempool.jsonl');
 const triggerLogPath = path.join(projectRoot, 'logs', 'trigger_scans.jsonl');
+const diagnosticPath = path.join(projectRoot, 'logs', 'diagnostic_snapshot.json');
 const assistantPackPath = path.join(projectRoot, 'logs', 'assistant_pack.json');
 const UI_STATE_MAX_BYTES = 512 * 1024;
 
@@ -26,10 +27,24 @@ const DEFAULT_CONFIG = {
   // RPC failover (comma/newline separated in UI; stored as list)
   rpc_urls: [
     'https://ethereum-rpc.publicnode.com',
+    'https://eth.llamarpc.com',
+    'https://rpc.ankr.com/eth',
     'https://go.getblock.us',
     'https://eth.merkle.io',
     'https://rpc.flashbots.net',
   ],
+  rpc_http_urls: [
+    'https://ethereum-rpc.publicnode.com',
+    'https://eth.llamarpc.com',
+    'https://rpc.ankr.com/eth',
+    'https://go.getblock.us',
+    'https://eth.merkle.io',
+    'https://rpc.flashbots.net',
+  ],
+  rpc_ws_urls: [],
+  rpc_http_endpoints: [],
+  rpc_ws_endpoints: [],
+  rpc_ws_pairing: {},
   dexes: ['univ3'],
 
   // thresholds
@@ -88,6 +103,14 @@ const DEFAULT_CONFIG = {
   // rpc timeouts
   rpc_timeout_stage1_s: 3,
   rpc_timeout_stage2_s: 4,
+  rpc_health_ban_seconds: 60,
+  rpc_timeout_rate_threshold: 0.2,
+  rpc_latency_p95_ms_threshold: 2500,
+  out_of_sync_ban_seconds: 60,
+  tx_fetch_batch_enabled: true,
+  tx_fetch_max_retries: 3,
+  tx_fetch_retry_backoff_ms: [200, 500, 1000],
+  tx_fetch_per_endpoint_max_inflight: 4,
 
   // V2 filters
   v2_min_reserve_ratio: 20,
@@ -106,8 +129,8 @@ const DEFAULT_CONFIG = {
   // mempool (optional)
   mempool_enabled: false,
   mempool_ws_urls: [
-    'wss://ethereum-rpc.publicnode.com',
-    'wss://eth.merkle.io',
+    'wss://ethereum.publicnode.com',
+    'wss://eth.llamarpc.com/ws',
   ],
   mempool_max_inflight_tx: 200,
   mempool_fetch_tx_concurrency: 20,
@@ -134,6 +157,8 @@ const DEFAULT_CONFIG = {
   verbose: false,
 };
 
+const DEFAULT_UI_PORT = 8080;
+
 const PRESET_ORDER = [
   'smoke',
   'fast_rpc_sanity',
@@ -157,6 +182,15 @@ function resolvePython() {
   const venvPython = path.join(projectRoot, 'venv', 'bin', 'python');
   return process.env.PYTHON || (fs.existsSync(venvPython) ? venvPython : 'python3');
 }
+
+function resolveUiPort() {
+  const raw = process.env.UI_PORT || process.env.PORT || DEFAULT_UI_PORT;
+  const parsed = Number.parseInt(String(raw), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_UI_PORT;
+  return parsed;
+}
+
+let uiPort = resolveUiPort();
 
 function _asNumberArray(value) {
   if (Array.isArray(value)) {
@@ -182,6 +216,78 @@ function _asStringArray(value) {
       .filter((v) => v.length > 0);
   }
   return null;
+}
+
+const ENDPOINT_HINTS = [
+  { id: 'publicnode', match: ['publicnode.com'] },
+  { id: 'llama', match: ['llamarpc.com'] },
+  { id: 'ankr', match: ['rpc.ankr.com'] },
+  { id: 'flashbots_calls', match: ['flashbots.net'] },
+  { id: 'getblock', match: ['getblock.us'] },
+  { id: 'merkle', match: ['merkle.io'] },
+  { id: '0xrpc', match: ['0xrpc.io'] },
+];
+
+function endpointIdFromUrl(url) {
+  const raw = String(url || '').trim().toLowerCase();
+  const host = raw.includes('://') ? raw.split('://', 2)[1].split('/', 1)[0] : raw.split('/', 1)[0];
+  for (const hint of ENDPOINT_HINTS) {
+    if (hint.match.some((m) => host.includes(m))) return hint.id;
+  }
+  if (!host) return 'rpc';
+  return host.replace(/[:/]/g, '_');
+}
+
+function buildEndpointsFromUrls(urls) {
+  const list = [];
+  const seen = new Set();
+  (urls || []).forEach((u) => {
+    const url = String(u || '').trim();
+    if (!url) return;
+    let id = endpointIdFromUrl(url);
+    if (seen.has(id)) {
+      let i = 2;
+      while (seen.has(`${id}_${i}`)) i += 1;
+      id = `${id}_${i}`;
+    }
+    seen.add(id);
+    list.push({ id, url });
+  });
+  return list;
+}
+
+function normalizeEndpoints(raw, fallbackUrls) {
+  if (Array.isArray(raw) && raw.length > 0) {
+    return raw
+      .map((e) => {
+        if (typeof e === 'string') return { id: endpointIdFromUrl(e), url: e };
+        if (!e || typeof e !== 'object') return null;
+        const url = String(e.url || '').trim();
+        if (!url) return null;
+        const id = String(e.id || '').trim() || endpointIdFromUrl(url);
+        return { id, url };
+      })
+      .filter(Boolean);
+  }
+  return buildEndpointsFromUrls(fallbackUrls || []);
+}
+
+function buildWsHttpPairing(wsEndpoints, httpEndpoints) {
+  const pairing = {};
+  const httpById = {};
+  const httpByHost = {};
+  (httpEndpoints || []).forEach((ep) => {
+    if (ep && ep.id) httpById[String(ep.id)] = ep.id;
+    const host = String(ep.url || '').trim().toLowerCase().split('://').pop().split('/')[0];
+    if (host) httpByHost[host] = ep.id;
+  });
+  (wsEndpoints || []).forEach((ep) => {
+    const host = String(ep.url || '').trim().toLowerCase().split('://').pop().split('/')[0];
+    if (!host) return;
+    const httpId = httpByHost[host] || httpById[ep.id];
+    if (httpId) pairing[ep.id] = httpId;
+  });
+  return pairing;
 }
 
 function normalizePresetSettings(raw, presetId, fileName) {
@@ -302,7 +408,29 @@ function readConfig() {
     if (!fs.existsSync(configPath)) return { ...DEFAULT_CONFIG };
     const raw = fs.readFileSync(configPath, 'utf8') || '{}';
     const parsed = JSON.parse(raw);
-    return { ...DEFAULT_CONFIG, ...parsed };
+    const cfg = { ...DEFAULT_CONFIG, ...parsed };
+    const httpEndpoints = normalizeEndpoints(parsed.rpc_http_endpoints, cfg.rpc_http_urls);
+    cfg.rpc_http_endpoints = httpEndpoints;
+    if (httpEndpoints.length) {
+      cfg.rpc_http_urls = httpEndpoints.map((e) => e.url).filter(Boolean);
+      cfg.rpc_urls = cfg.rpc_http_urls;
+    }
+    const wsEndpoints = normalizeEndpoints(parsed.rpc_ws_endpoints, parsed.rpc_ws_urls || parsed.mempool_ws_urls || cfg.rpc_ws_urls);
+    cfg.rpc_ws_endpoints = wsEndpoints;
+    if (wsEndpoints.length) {
+      cfg.rpc_ws_urls = wsEndpoints.map((e) => e.url).filter(Boolean);
+      if (!Array.isArray(parsed.mempool_ws_urls) || parsed.mempool_ws_urls.length === 0) {
+        cfg.mempool_ws_urls = cfg.rpc_ws_urls;
+      }
+    }
+    if (!cfg.rpc_ws_pairing || typeof cfg.rpc_ws_pairing !== 'object') {
+      cfg.rpc_ws_pairing = buildWsHttpPairing(cfg.rpc_ws_endpoints, cfg.rpc_http_endpoints);
+    }
+    const hasHttp = Object.prototype.hasOwnProperty.call(parsed || {}, 'rpc_http_urls');
+    if (!hasHttp || !Array.isArray(cfg.rpc_http_urls) || cfg.rpc_http_urls.length === 0) {
+      cfg.rpc_http_urls = Array.isArray(cfg.rpc_urls) ? [...cfg.rpc_urls] : [];
+    }
+    return cfg;
   } catch (e) {
     return { ...DEFAULT_CONFIG };
   }
@@ -327,6 +455,20 @@ function writeConfig(cfg) {
   // Parse rpc_urls from textarea/input into list
   if (typeof cleaned.rpc_urls === 'string') {
     cleaned.rpc_urls = cleaned.rpc_urls
+      .replace(/\n/g, ',')
+      .split(',')
+      .map((x) => String(x).trim())
+      .filter((x) => x.length > 0);
+  }
+  if (typeof cleaned.rpc_http_urls === 'string') {
+    cleaned.rpc_http_urls = cleaned.rpc_http_urls
+      .replace(/\n/g, ',')
+      .split(',')
+      .map((x) => String(x).trim())
+      .filter((x) => x.length > 0);
+  }
+  if (typeof cleaned.rpc_ws_urls === 'string') {
+    cleaned.rpc_ws_urls = cleaned.rpc_ws_urls
       .replace(/\n/g, ',')
       .split(',')
       .map((x) => String(x).trim())
@@ -361,6 +503,30 @@ function writeConfig(cfg) {
   }
 
   const safe = { ...DEFAULT_CONFIG, ...cleaned };
+
+  const hasHttp = Object.prototype.hasOwnProperty.call(cleaned || {}, 'rpc_http_urls');
+  if (!hasHttp || !Array.isArray(safe.rpc_http_urls) || safe.rpc_http_urls.length === 0) {
+    safe.rpc_http_urls = Array.isArray(safe.rpc_urls) ? [...safe.rpc_urls] : [];
+  }
+  if (!Array.isArray(safe.rpc_urls) || safe.rpc_urls.length === 0) {
+    safe.rpc_urls = Array.isArray(safe.rpc_http_urls) ? [...safe.rpc_http_urls] : [];
+  }
+
+  safe.rpc_http_endpoints = normalizeEndpoints(safe.rpc_http_endpoints, safe.rpc_http_urls);
+  safe.rpc_ws_endpoints = normalizeEndpoints(safe.rpc_ws_endpoints, safe.rpc_ws_urls || safe.mempool_ws_urls);
+  if (safe.rpc_http_endpoints.length) {
+    safe.rpc_http_urls = safe.rpc_http_endpoints.map((e) => e.url).filter(Boolean);
+    safe.rpc_urls = [...safe.rpc_http_urls];
+  }
+  if (safe.rpc_ws_endpoints.length) {
+    safe.rpc_ws_urls = safe.rpc_ws_endpoints.map((e) => e.url).filter(Boolean);
+    if (!Array.isArray(safe.mempool_ws_urls) || safe.mempool_ws_urls.length === 0) {
+      safe.mempool_ws_urls = [...safe.rpc_ws_urls];
+    }
+  }
+  if (!safe.rpc_ws_pairing || typeof safe.rpc_ws_pairing !== 'object') {
+    safe.rpc_ws_pairing = buildWsHttpPairing(safe.rpc_ws_endpoints, safe.rpc_http_endpoints);
+  }
 
   // Normalize report currency
   if (typeof safe.report_currency === 'string') {
@@ -611,10 +777,13 @@ function startBot() {
     env: {
       ...process.env,
       PYTHON: python,
+      UI_PORT: String(uiPort || DEFAULT_UI_PORT),
       BOT_CONFIG: configPath,
       ARBITOINATOR_CONFIG: configPath,
       // Multi-RPC failover list for Python
       RPC_URLS: Array.isArray(cfg.rpc_urls) ? cfg.rpc_urls.join(',') : String(cfg.rpc_urls || ''),
+      RPC_HTTP_URLS: Array.isArray(cfg.rpc_http_urls) ? cfg.rpc_http_urls.join(',') : String(cfg.rpc_http_urls || ''),
+      RPC_WS_URLS: Array.isArray(cfg.rpc_ws_urls) ? cfg.rpc_ws_urls.join(',') : String(cfg.rpc_ws_urls || ''),
       REPORT_CURRENCY: String(cfg.report_currency || 'USDC'),
       DEBUG_FUNNEL: cfg.debug_funnel ? '1' : '0',
       SIM_PROFILE: String(cfg.sim_profile || ''),
@@ -761,6 +930,13 @@ const server = http.createServer((req, res) => {
     const triggers = readJsonSafe(mempoolTriggersPath) || [];
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, triggers }));
+    return;
+  }
+
+  if (req.method === 'GET' && urlPath === '/api/diagnostic') {
+    const diagnostic = readJsonSafe(diagnosticPath) || {};
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, diagnostic }));
     return;
   }
 
@@ -943,6 +1119,32 @@ wss.on('connection', (ws) => {
   );
 });
 
-server.listen(8080, () => console.log('UI server running at http://localhost:8080'));
+function listenWithFallback(startPort, maxTries = 5) {
+  let attempts = 0;
+  const tryListen = (port) => {
+    attempts += 1;
+    server.once('error', (err) => {
+      if (err && err.code === 'EADDRINUSE' && attempts < maxTries) {
+        const nextPort = port + 1;
+        console.warn(`Port ${port} in use, trying ${nextPort}...`);
+        tryListen(nextPort);
+        return;
+      }
+      console.error('UI server failed to start:', err);
+      process.exitCode = 1;
+    });
+    server.listen(port, () => {
+      uiPort = port;
+      process.env.UI_PORT = String(port);
+      console.log(`UI server running at http://localhost:${port}`);
+      if (port !== startPort) {
+        console.log(`Port ${startPort} unavailable, using ${port}.`);
+      }
+    });
+  };
+  tryListen(startPort);
+}
+
+listenWithFallback(uiPort);
 
 module.exports = { broadcast };

@@ -8,12 +8,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Deque, Dict, List, Optional
 
+from bot import config
 from mempool.confirm import check_tx_receipt
 from mempool.decoders.registry import build_decoders, decode_pending_tx, is_known_selector
+from mempool.liquidity import has_liquidity
 from mempool.listener import MempoolListener
 from mempool.routers import build_router_registry, list_router_names
+from mempool.token_cache import TokenCache, resolve_token_metadata
 from mempool.triggers import build_trigger
 from mempool.types import DecodedSwap, PendingTx, Trigger
+from infra.metrics import METRICS
 
 
 ScanFn = Callable[[Trigger, float], Awaitable[Dict[str, Any]]]
@@ -26,7 +30,9 @@ REASON_TRIGGER_BELOW_USD = "trigger_below_threshold_usd"
 REASON_TRIGGER_UNKNOWN_VALUE = "trigger_unknown_value"
 REASON_TRIGGER_BELOW_RAW = "trigger_below_raw_threshold"
 REASON_TRIGGER_MISSING_AMOUNT = "trigger_missing_amount"
-REASON_TRIGGER_UNKNOWN_TOKENS = "trigger_unknown_tokens"
+REASON_TRIGGER_UNKNOWN_METADATA = "trigger_unknown_metadata"
+REASON_TRIGGER_UNKNOWN_NO_LIQUIDITY = "trigger_unknown_no_liquidity"
+REASON_TRIGGER_UNKNOWN_NOT_IN_UNIVERSE = "trigger_unknown_not_in_universe"
 REASON_TRIGGER_QUEUE_FULL = "trigger_queue_full"
 REASON_TRIGGER_ENQUEUE_FAILED = "trigger_enqueue_failed"
 REASON_TRIGGER_TTL_EXPIRED = "trigger_ttl_expired"
@@ -48,6 +54,8 @@ class MempoolEngine:
         *,
         rpc,
         ws_urls: List[str],
+        http_urls: Optional[List[str]] = None,
+        ws_http_pairing: Optional[Dict[str, str]] = None,
         filter_to: List[str],
         watch_mode: str,
         watched_router_set: str,
@@ -102,6 +110,8 @@ class MempoolEngine:
         self._listener = MempoolListener(
             rpc,
             ws_urls,
+            http_urls=http_urls or list(getattr(rpc, "urls", []) or []),
+            ws_http_pairing=ws_http_pairing,
             max_inflight=max_inflight,
             fetch_concurrency=fetch_concurrency,
             dedup_ttl_s=dedup_ttl_s,
@@ -111,7 +121,7 @@ class MempoolEngine:
         )
 
         self._scan_fn: Optional[ScanFn] = None
-        self._queue: asyncio.Queue[Trigger] = asyncio.Queue(maxsize=max(1, self.trigger_queue_max))
+        self._queue: Optional[asyncio.Queue[Trigger]] = None
         self._trigger_tasks: List[asyncio.Task] = []
         self._running = False
         self._current_block: Optional[int] = None
@@ -147,12 +157,17 @@ class MempoolEngine:
         self._ignored_by_reason: Dict[str, int] = {}
         self._trigger_drop_reasons: Dict[str, int] = {}
         self._decoded_ts: Deque[int] = deque(maxlen=2000)
+        self._token_cache = TokenCache(Path("cache") / "token_metadata.json")
+        self._liquidity_cache: Dict[str, Dict[str, Any]] = {}
+        self._liquidity_cache_ttl_s = int(getattr(config, "MEMPOOL_LIQUIDITY_CACHE_TTL_S", 600))
 
     async def start(self, scan_fn: ScanFn) -> None:
         if self._running:
             return
         self._scan_fn = scan_fn
         self._running = True
+        if self._queue is None:
+            self._queue = asyncio.Queue(maxsize=max(1, self.trigger_queue_max))
         await self._listener.start()
         self._trigger_tasks = [asyncio.create_task(self._trigger_worker()) for _ in range(self.trigger_concurrency)]
 
@@ -195,7 +210,7 @@ class MempoolEngine:
 
     async def _on_status(self, status: Dict[str, Any]) -> None:
         payload = dict(status)
-        payload["triggers_queued"] = int(self._queue.qsize())
+        payload["triggers_queued"] = int(self._queue.qsize()) if self._queue else 0
         payload["triggers_running"] = int(self._running_triggers)
         payload["current_block"] = int(self._current_block or 0)
         payload["total_triggers_seen"] = int(self._triggers_seen)
@@ -304,13 +319,6 @@ class MempoolEngine:
                 ignore_stage="decode_failed",
             )
             return
-
-        trigger, reason = build_trigger(
-            decoded,
-            min_value_usd=self.min_value_usd,
-            usd_per_eth=self.usd_per_eth,
-            pending_tx=tx,
-        )
         summary = self._decoded_summary(decoded)
         self._decoded_swaps_total += 1
         self._decoded_ts.append(int(time.time() * 1000))
@@ -321,9 +329,80 @@ class MempoolEngine:
         self._write_json(self.recent_path, list(self._recent_swaps))
         if self.ui_push:
             await self.ui_push({"type": "mempool_swap", **summary})
+
+        tokens = self._extract_tokens(decoded)
+        has_anchor = any(self._is_anchor(t) for t in tokens)
+        unknown_tokens = [t for t in tokens if t and not config.is_known_token(t)]
+        unknown_metadata = []
+        if unknown_tokens:
+            for token in unknown_tokens:
+                _, _, meta_reason = await resolve_token_metadata(
+                    self.rpc,
+                    token,
+                    cache=self._token_cache,
+                    timeout_s=self.confirm_timeout_s,
+                )
+                if meta_reason:
+                    unknown_metadata.append(token)
+        strict_unknown = bool(getattr(config, "MEMPOOL_STRICT_UNKNOWN_TOKENS", False))
+        if unknown_metadata and strict_unknown:
+            self._bump_reason(self._trigger_drop_reasons, REASON_TRIGGER_UNKNOWN_METADATA)
+            METRICS.inc_reason("drop_reason_counts", "unknown_token", 1)
+            await self._log_mempool(
+                tx,
+                status="ignored",
+                reason=REASON_TRIGGER_UNKNOWN_METADATA,
+                decoded_summary=summary,
+                watched=watched,
+                router_name=router_name,
+                router_type=router_type,
+                ignore_stage="trigger_filtered",
+                trigger_value_usd=None,
+                trigger_unknown_value=True,
+            )
+            return
+
+        allow_no_anchor = False
+        if tokens and not has_anchor:
+            connectors = self._normalized_connectors()
+            has_liq = False
+            for token in tokens:
+                if self._is_anchor(token):
+                    continue
+                if await self._has_liquidity_cached(token, connectors):
+                    has_liq = True
+                    break
+            if not has_liq:
+                self._bump_reason(self._trigger_drop_reasons, REASON_TRIGGER_UNKNOWN_NO_LIQUIDITY)
+                METRICS.inc_reason("drop_reason_counts", "unknown_token", 1)
+                await self._log_mempool(
+                    tx,
+                    status="ignored",
+                    reason=REASON_TRIGGER_UNKNOWN_NO_LIQUIDITY,
+                    decoded_summary=summary,
+                    watched=watched,
+                    router_name=router_name,
+                    router_type=router_type,
+                    ignore_stage="trigger_filtered",
+                    trigger_value_usd=None,
+                    trigger_unknown_value=True,
+                )
+                return
+            allow_no_anchor = True
+
+        trigger, reason = build_trigger(
+            decoded,
+            min_value_usd=self.min_value_usd,
+            usd_per_eth=self.usd_per_eth,
+            pending_tx=tx,
+            allow_no_anchor=allow_no_anchor,
+        )
         if not trigger:
             mapped = self._map_trigger_reason_code(reason)
             self._bump_reason(self._trigger_drop_reasons, mapped)
+            metric_reason = self._map_drop_reason_metric(mapped)
+            if metric_reason:
+                METRICS.inc_reason("drop_reason_counts", metric_reason, 1)
             await self._log_mempool(
                 tx,
                 status="ignored",
@@ -338,9 +417,12 @@ class MempoolEngine:
             )
             return
 
+        if not self._queue:
+            self._queue = asyncio.Queue(maxsize=max(1, self.trigger_queue_max))
         if self._queue.full():
             self._triggers_dropped_queue += 1
             self._bump_reason(self._trigger_drop_reasons, REASON_TRIGGER_QUEUE_FULL)
+            METRICS.inc_reason("drop_reason_counts", "time_budget_exhausted", 1)
             await self._log_mempool(
                 tx,
                 status="ignored",
@@ -360,6 +442,7 @@ class MempoolEngine:
         except Exception:
             self._triggers_dropped_queue += 1
             self._bump_reason(self._trigger_drop_reasons, REASON_TRIGGER_ENQUEUE_FAILED)
+            METRICS.inc_reason("drop_reason_counts", "internal_error", 1)
             await self._log_mempool(
                 tx,
                 status="ignored",
@@ -391,6 +474,9 @@ class MempoolEngine:
     async def _trigger_worker(self) -> None:
         while self._running:
             try:
+                if not self._queue:
+                    await asyncio.sleep(0.01)
+                    continue
                 trigger = await self._queue.get()
             except asyncio.CancelledError:
                 break
@@ -400,6 +486,7 @@ class MempoolEngine:
             if now_ms - trigger.created_at_ms > int(self.trigger_ttl_s * 1000):
                 self._triggers_dropped_ttl += 1
                 self._bump_reason(self._trigger_drop_reasons, REASON_TRIGGER_TTL_EXPIRED)
+                METRICS.inc_reason("drop_reason_counts", "time_budget_exhausted", 1)
                 continue
             if not self._scan_fn:
                 continue
@@ -423,6 +510,61 @@ class MempoolEngine:
                 continue
             finally:
                 self._running_triggers = max(0, self._running_triggers - 1)
+
+    @staticmethod
+    def _norm_token(token: Optional[str]) -> Optional[str]:
+        if not token:
+            return None
+        try:
+            addr = config.token_address(token)
+        except Exception:
+            addr = str(token)
+        return str(addr).lower()
+
+    def _extract_tokens(self, decoded: DecodedSwap) -> List[str]:
+        tokens_raw: List[str] = []
+        if decoded.path:
+            tokens_raw.extend(decoded.path)
+        if decoded.token_in:
+            tokens_raw.append(decoded.token_in)
+        if decoded.token_out:
+            tokens_raw.append(decoded.token_out)
+        tokens: List[str] = []
+        for t in tokens_raw:
+            t_norm = self._norm_token(t)
+            if not t_norm:
+                continue
+            if t_norm not in tokens:
+                tokens.append(t_norm)
+        return tokens
+
+    def _normalized_connectors(self) -> List[str]:
+        connectors: List[str] = []
+        for t in getattr(config, "MEMPOOL_TRIGGER_CONNECTORS", []) or []:
+            t_norm = self._norm_token(t)
+            if not t_norm or t_norm in connectors:
+                continue
+            connectors.append(t_norm)
+        return connectors
+
+    def _is_anchor(self, token: str) -> bool:
+        addr = str(token or "").lower()
+        stable_set = {str(x).lower() for x in (getattr(config, "MEMPOOL_STABLE_SET", []) or []) if str(x).strip()}
+        weth = str(getattr(config, "MEMPOOL_WETH", "") or "").lower()
+        return bool(addr) and (addr in stable_set or addr == weth)
+
+    async def _has_liquidity_cached(self, token: str, connectors: List[str]) -> bool:
+        addr = str(token or "").lower()
+        if not addr:
+            return False
+        now = time.time()
+        cached = self._liquidity_cache.get(addr)
+        if cached:
+            if (now - float(cached.get("ts", 0.0))) <= float(self._liquidity_cache_ttl_s):
+                return bool(cached.get("has", False))
+        ok = await has_liquidity(self.rpc, addr, connectors, timeout_s=self.confirm_timeout_s)
+        self._liquidity_cache[addr] = {"has": bool(ok), "ts": now}
+        return bool(ok)
 
     def _decoded_summary(self, decoded: DecodedSwap) -> Dict[str, Any]:
         def _fmt_int(v: Optional[int]) -> Optional[str]:
@@ -621,17 +763,39 @@ class MempoolEngine:
             return REASON_TRIGGER_BELOW_RAW
         if reason == "missing_amount_in":
             return REASON_TRIGGER_MISSING_AMOUNT
-        if reason == "unknown_tokens":
-            return REASON_TRIGGER_UNKNOWN_TOKENS
+        if reason == "unknown_metadata":
+            return REASON_TRIGGER_UNKNOWN_METADATA
+        if reason == "unknown_no_liquidity":
+            return REASON_TRIGGER_UNKNOWN_NO_LIQUIDITY
+        if reason in ("unknown_not_in_universe", "unknown_tokens"):
+            return REASON_TRIGGER_UNKNOWN_NOT_IN_UNIVERSE
         return "trigger_filtered"
 
     @staticmethod
     def _map_trigger_ignore_stage(reason_code: str) -> str:
         if reason_code in (REASON_TRIGGER_BELOW_USD, REASON_TRIGGER_BELOW_RAW, REASON_TRIGGER_MISSING_AMOUNT):
             return "tiny_swap"
-        if reason_code in (REASON_TRIGGER_UNKNOWN_VALUE, REASON_TRIGGER_UNKNOWN_TOKENS):
+        if reason_code in (REASON_TRIGGER_UNKNOWN_VALUE, REASON_TRIGGER_UNKNOWN_METADATA, REASON_TRIGGER_UNKNOWN_NO_LIQUIDITY, REASON_TRIGGER_UNKNOWN_NOT_IN_UNIVERSE):
             return "trigger_filtered"
         return "trigger_filtered"
+
+    @staticmethod
+    def _map_drop_reason_metric(reason_code: str) -> Optional[str]:
+        if reason_code in (
+            REASON_TRIGGER_UNKNOWN_VALUE,
+            REASON_TRIGGER_UNKNOWN_METADATA,
+            REASON_TRIGGER_UNKNOWN_NO_LIQUIDITY,
+            REASON_TRIGGER_UNKNOWN_NOT_IN_UNIVERSE,
+            REASON_TRIGGER_MISSING_AMOUNT,
+        ):
+            return "unknown_token"
+        if reason_code in (REASON_TRIGGER_BELOW_USD, REASON_TRIGGER_BELOW_RAW):
+            return "min_profit_not_met"
+        if reason_code in (REASON_TRIGGER_QUEUE_FULL, REASON_TRIGGER_TTL_EXPIRED):
+            return "time_budget_exhausted"
+        if reason_code == REASON_TRIGGER_ENQUEUE_FAILED:
+            return "internal_error"
+        return None
 
     @staticmethod
     def _bump_reason(counter: Dict[str, int], reason: str) -> None:

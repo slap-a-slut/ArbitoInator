@@ -23,6 +23,7 @@ from bot.dex.registry import build_adapters
 from bot.routes import Hop
 from infra.rpc import AsyncRPC, RPCPool, get_rpc_urls
 from infra import gas as gas_oracle
+from infra.metrics import METRICS
 
 
 def _sym_by_addr(addr: str) -> str:
@@ -160,13 +161,19 @@ def _is_nonsensical_amount(amount_in: int, amount_out: int) -> bool:
 
 def _classify_quote_error(err: Exception) -> str:
     msg = str(err).lower()
+    if "timeout" in msg:
+        return "timeout"
+    if "rate limit" in msg or "http_429" in msg:
+        return "rate_limited"
     if "revert" in msg:
-        return "reverted"
+        return "revert"
     if "decode" in msg or "short blob" in msg:
         return "decode_error"
-    if "timeout" in msg or "http_" in msg or "rpc call failed" in msg:
+    if "rpc" in msg or "http_" in msg:
         return "rpc_error"
-    return "quote_error"
+    if "unknown token" in msg:
+        return "unknown_token"
+    return "internal_error"
 
 
 def _error_payload(
@@ -386,7 +393,11 @@ class PriceScanner:
             return self._quote_cache[key]
         adapter = self.adapters.get(dex_id)
         if not adapter:
+            METRICS.inc("quotes_total", 1)
+            METRICS.inc_reason("quotes_fail_by_reason", "unknown_pool", 1)
             return None
+        METRICS.inc("quotes_total", 1)
+        err_reason = None
         try:
             q = await adapter.quote_best(
                 token_in,
@@ -398,8 +409,15 @@ class PriceScanner:
             )
             self._quote_error.pop(key, None)
         except Exception as e:
-            self._quote_error[key] = {"reason": _classify_quote_error(e), "error": str(e)}
+            reason = _classify_quote_error(e)
+            self._quote_error[key] = {"reason": reason, "error": str(e)}
+            METRICS.inc_reason("quotes_fail_by_reason", reason, 1)
+            err_reason = reason
             q = None
+        if q and int(q.amount_out) > 0:
+            METRICS.inc("quotes_ok", 1)
+        elif err_reason is None:
+            METRICS.inc_reason("quotes_fail_by_reason", "unknown_pool", 1)
         if cache_enabled:
             self._quote_cache[key] = q
             if not q or int(q.amount_out) == 0:
@@ -430,8 +448,12 @@ class PriceScanner:
 
         adapter = self.adapters.get(dex_id)
         if not adapter:
+            METRICS.inc("quotes_total", 1)
+            METRICS.inc_reason("quotes_fail_by_reason", "unknown_pool", 1)
             return []
 
+        METRICS.inc("quotes_total", 1)
+        err_reason = None
         try:
             edges = await adapter.quote_many(
                 token_in,
@@ -443,16 +465,22 @@ class PriceScanner:
             )
             self._quote_error.pop((block_tag, dex_id, token_in, token_out, int(amount_in), params_key), None)
         except Exception as e:
+            reason = _classify_quote_error(e)
             self._quote_error[(block_tag, dex_id, token_in, token_out, int(amount_in), params_key)] = {
-                "reason": _classify_quote_error(e),
+                "reason": reason,
                 "error": str(e),
             }
+            METRICS.inc_reason("quotes_fail_by_reason", reason, 1)
+            err_reason = reason
             edges = []
 
         if not edges:
             if cache_enabled:
                 self._dead_edge[edge_key] = True
+            if err_reason is None:
+                METRICS.inc_reason("quotes_fail_by_reason", "unknown_pool", 1)
             return []
+        METRICS.inc("quotes_ok", 1)
 
         for edge in edges:
             edge_params = {}

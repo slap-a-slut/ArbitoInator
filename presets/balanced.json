@@ -6,6 +6,40 @@
     "sim_profile": "default",
     "gas_off": true,
     "debug_funnel": true,
+    "rpc_http_endpoints": [
+      {"id": "publicnode", "url": "https://ethereum-rpc.publicnode.com"},
+      {"id": "llama", "url": "https://eth.llamarpc.com"},
+      {"id": "ankr", "url": "https://rpc.ankr.com/eth"},
+      {"id": "flashbots_calls", "url": "https://rpc.flashbots.net"}
+    ],
+    "rpc_ws_endpoints": [
+      {"id": "publicnode", "url": "wss://ethereum.publicnode.com"},
+      {"id": "llama", "url": "wss://eth.llamarpc.com/ws"}
+    ],
+    "rpc_ws_pairing": {
+      "publicnode": "publicnode",
+      "llama": "llama"
+    },
+    "rpc_urls": [
+      "https://ethereum-rpc.publicnode.com",
+      "https://eth.llamarpc.com",
+      "https://rpc.ankr.com/eth",
+      "https://rpc.flashbots.net"
+    ],
+    "rpc_http_urls": [
+      "https://ethereum-rpc.publicnode.com",
+      "https://eth.llamarpc.com",
+      "https://rpc.ankr.com/eth",
+      "https://rpc.flashbots.net"
+    ],
+    "mempool_ws_urls": [
+      "wss://ethereum.publicnode.com",
+      "wss://eth.llamarpc.com/ws"
+    ],
+    "tx_fetch_batch_enabled": false,
+    "tx_fetch_max_retries": 3,
+    "tx_fetch_retry_backoff_ms": [200, 500, 1000],
+    "tx_fetch_per_endpoint_max_inflight": 4,
     "dex_adapters": ["univ3", "univ2", "sushiswap"],
     "enable_multidex_beam": true,
     "trigger_prefer_cross_dex": true,
@@ -19,6 +53,7 @@
     "amounts": [10, 50, 100],
     "stage2_amount_range": [1000, 8000],
     "scan_mode": "auto",
+    "scan_source": "hybrid",
     "stage2_top_k": 120,
     "stage2_max_evals": 16,
     "rpc_timeout_stage1_s": 4,

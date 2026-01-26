@@ -1,0 +1,22 @@
+/Users/mac/Documents/ArbitoInator/venv/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+🚀 Fork simulation started...
+[RPC] connected=True | block=24309784 | urls=4
+Block 24309785
+[WARN] RPC not caught up for block 24309785, retrying 24309784
+Block 24309790
+[WARN] RPC not caught up for block 24309790, retrying 24309789
+Block 24309795
+[WARN] RPC not caught up for block 24309795, retrying 24309794
+Block 24309796
+[WARN] RPC not caught up for block 24309796, retrying 24309795
+Block 24309800
+[WARN] RPC not caught up for block 24309800, retrying 24309799
+Block 24309801
+[WARN] RPC not caught up for block 24309801, retrying 24309800
+Block 24309805
+[WARN] RPC not caught up for block 24309805, retrying 24309804
+Block 24309806
+[WARN] RPC not caught up for block 24309806, retrying 24309805
+Block 24309811
+[WARN] RPC not caught up for block 24309811, retrying 24309810

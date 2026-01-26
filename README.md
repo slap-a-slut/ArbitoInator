@@ -55,3 +55,20 @@ After setting the variable, you can run the deployment with the Sepolia network:
 ```shell
 npx hardhat ignition deploy --network sepolia ignition/modules/Counter.ts
 ```
+
+---
+
+## ArbitoInator Run Pack
+
+For simulation/fork runs with stable artifacts, use:
+
+```bash
+python scripts/run_pack.py --mode fork --mempool off --blocks 5 --seed 123 --out artifacts/dev
+python scripts/run_pack.py --mode sim --mempool off --blocks 3 --seed 42 --out artifacts/sim_smoke
+```
+
+Artifacts written per run:
+- `artifacts/<run_id>/logs/` (run logs)
+- `artifacts/<run_id>/diagnostic_snapshot.json`
+- `artifacts/<run_id>/candidates.jsonl`
+- `artifacts/<run_id>/run_meta.json`

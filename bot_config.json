@@ -1,10 +1,31 @@
 {
   "rpc_urls": [
     "https://ethereum-rpc.publicnode.com",
-    "https://go.getblock.us",
-    "https://eth.merkle.io",
-    "https://rpc.flashbots.net"
+    "https://eth.llamarpc.com",
+    "https://rpc.ankr.com/eth"
   ],
+  "rpc_http_urls": [
+    "https://ethereum-rpc.publicnode.com",
+    "https://eth.llamarpc.com",
+    "https://rpc.ankr.com/eth"
+  ],
+  "rpc_ws_urls": [],
+  "rpc_http_endpoints": [
+    {
+      "id": "publicnode",
+      "url": "https://ethereum-rpc.publicnode.com"
+    },
+    {
+      "id": "llama",
+      "url": "https://eth.llamarpc.com"
+    },
+    {
+      "id": "ankr",
+      "url": "https://rpc.ankr.com/eth"
+    }
+  ],
+  "rpc_ws_endpoints": [],
+  "rpc_ws_pairing": {},
   "dexes": [
     "univ3",
     "univ2",
@@ -15,7 +36,7 @@
   "slippage_bps": 0,
   "mev_buffer_bps": 0,
   "max_gas_gwei": null,
-  "concurrency": 24,
+  "concurrency": 12,
   "block_budget_s": 30,
   "prepare_budget_ratio": 0.2,
   "prepare_budget_min_s": 2,
@@ -27,9 +48,9 @@
   "rpc_retry_count": 1,
   "enable_multidex": true,
   "max_hops": 3,
-  "beam_k": 25,
-  "edge_top_m": 3,
-  "trigger_prefer_cross_dex": false,
+  "beam_k": 12,
+  "edge_top_m": 2,
+  "trigger_prefer_cross_dex": true,
   "trigger_require_cross_dex": false,
   "trigger_require_three_hops": false,
   "trigger_base_fallback_enabled": true,
@@ -52,21 +73,31 @@
   "amount_presets": [
     10,
     50,
-    100,
-    250,
-    500
+    100
   ],
   "stage1_amount": 1,
   "stage1_fee_tiers": [
     500,
     3000
   ],
-  "stage2_top_k": 200,
+  "stage2_top_k": 120,
   "stage2_amount_min": 1000,
-  "stage2_amount_max": 15000,
-  "stage2_max_evals": 24,
+  "stage2_amount_max": 8000,
+  "stage2_max_evals": 16,
   "rpc_timeout_stage1_s": 4,
   "rpc_timeout_stage2_s": 6,
+  "rpc_health_ban_seconds": 60,
+  "rpc_timeout_rate_threshold": 0.2,
+  "rpc_latency_p95_ms_threshold": 2500,
+  "out_of_sync_ban_seconds": 60,
+  "tx_fetch_batch_enabled": true,
+  "tx_fetch_max_retries": 3,
+  "tx_fetch_retry_backoff_ms": [
+    200,
+    500,
+    1000
+  ],
+  "tx_fetch_per_endpoint_max_inflight": 4,
   "v2_min_reserve_ratio": 0,
   "v2_max_price_impact_bps": 0,
   "sim_profile": "",
@@ -79,8 +110,8 @@
   "arb_executor_owner": "",
   "mempool_enabled": true,
   "mempool_ws_urls": [
-    "wss://ethereum-rpc.publicnode.com",
-    "wss://eth.merkle.io"
+    "wss://ethereum.publicnode.com",
+    "wss://eth.llamarpc.com/ws"
   ],
   "mempool_max_inflight_tx": 200,
   "mempool_fetch_tx_concurrency": 15,
