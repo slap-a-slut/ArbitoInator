@@ -1117,6 +1117,12 @@ const server = http.createServer((req, res) => {
     res.end(fs.readFileSync(file));
     return;
   }
+  if (req.method === 'GET' && req.url === '/theme.css') {
+    const file = path.join(__dirname, 'theme.css');
+    res.writeHead(200, { 'Content-Type': 'text/css' });
+    res.end(fs.readFileSync(file));
+    return;
+  }
 
   // Status
   if (req.method === 'GET' && req.url === '/status') {

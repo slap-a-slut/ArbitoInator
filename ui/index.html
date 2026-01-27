@@ -702,10 +702,12 @@
       .settingsSearch input{ min-width: 100%; }
     }
   </style>
+  <link rel="stylesheet" href="theme.css">
 </head>
 <body>
+  <div class="bg-grid" aria-hidden="true"></div>
   <div class="frame">
-    <header class="topbar">
+    <header class="topbar glass">
       <div class="brand">
         <h1 class="title">ArbitoInator/АрбитоИнатор</h1>
         <div class="badgeRow">
@@ -755,7 +757,7 @@
       </div>
     </header>
 
-    <section class="card nowPanel">
+    <section class="card nowPanel glass">
       <div class="nowHeader">
         <div class="nowMeta">
           <div class="kv">
@@ -824,13 +826,13 @@
       </div>
 
       <div class="diagGrid">
-        <div class="diagCard">
+        <div class="diagCard glass">
           <div class="diagTitle">RPC latency</div>
           <div class="diagRow"><span>P50</span><b id="rpcP50">n/a</b></div>
           <div class="diagRow"><span>P95</span><b id="rpcP95">n/a</b></div>
           <div class="diagList" id="rpcLatencyList">n/a</div>
         </div>
-        <div class="diagCard">
+        <div class="diagCard glass">
           <div class="diagTitle">Candidates funnel</div>
           <div class="diagRow"><span>Generated</span><b id="funnelGenerated">0</b></div>
           <div class="barTrack"><div class="barFill" id="funnelGeneratedBar"></div></div>
@@ -841,7 +843,7 @@
           <div class="diagRow"><span>Preflight OK</span><b id="funnelPreflight">0</b></div>
           <div class="barTrack"><div class="barFill" id="funnelPreflightBar"></div></div>
         </div>
-        <div class="diagCard">
+        <div class="diagCard glass">
           <div class="diagTitle">Error reasons</div>
           <div class="diagSub">Quote failures</div>
           <div class="diagList" id="quoteErrors">n/a</div>
@@ -850,7 +852,7 @@
           <div class="diagSub">Missing pools</div>
           <div class="diagList" id="missingPools">n/a</div>
         </div>
-        <div class="diagCard">
+        <div class="diagCard glass">
           <div class="diagTitle">Batching / Cache</div>
           <div class="diagRow"><span>Batches</span><b id="batchTotal">0</b></div>
           <div class="diagRow"><span>Batch avg</span><b id="batchAvg">—</b></div>
@@ -862,11 +864,11 @@
       </div>
 
       <div class="splitLists">
-        <div class="listCard">
+        <div class="listCard glass">
           <div class="label">Decoded swaps (last 10)</div>
           <div class="list" id="mpSwaps">—</div>
         </div>
-        <div class="listCard">
+        <div class="listCard glass">
           <div class="label">Trigger scans (last 10)</div>
           <div class="list" id="mpTriggerScans">—</div>
         </div>
@@ -879,8 +881,8 @@
       <div class="mempoolDetail" id="mpDetail">Select a trigger to view details.</div>
     </section>
 
-    <section class="card opsPanel">
-      <details class="sectionCard opsCard" data-section="ops" open>
+    <section class="card opsPanel glass">
+      <details class="sectionCard opsCard glass" data-section="ops" open>
         <summary>
           <div class="sectionTitle">
             <span>Ops feed</span>
@@ -917,7 +919,7 @@
       </details>
     </section>
 
-    <section class="card settingsPanel" id="settings">
+    <section class="card settingsPanel glass" id="settings">
       <div class="settingsHeader">
         <div class="settingsHeadLeft">
           <h2>Settings</h2>
@@ -933,7 +935,7 @@
         </div>
       </div>
 
-      <details class="sectionCard" data-section="mode" open>
+      <details class="sectionCard glass" data-section="mode" open>
         <summary>
           <div class="sectionTitle">
             <span>Mode & Presets</span>
@@ -1018,7 +1020,7 @@
         </div>
       </details>
 
-      <details class="sectionCard" data-section="routing" open>
+      <details class="sectionCard glass" data-section="routing" open>
         <summary>
           <div class="sectionTitle">
             <span>Routing & Search</span>
@@ -1071,7 +1073,7 @@
         </div>
       </details>
 
-      <details class="sectionCard" data-section="mempool" open>
+      <details class="sectionCard glass" data-section="mempool" open>
         <summary>
           <div class="sectionTitle">
             <span>Mempool & Triggers</span>
@@ -1204,7 +1206,7 @@ wss://rpc2" style="width:100%; resize:vertical;"></textarea>
         </div>
       </details>
 
-      <details class="sectionCard" data-section="sim" open>
+      <details class="sectionCard glass" data-section="sim" open>
         <summary>
           <div class="sectionTitle">
             <span>Simulation & Safety</span>
@@ -1305,7 +1307,7 @@ wss://rpc2" style="width:100%; resize:vertical;"></textarea>
         </div>
       </details>
 
-      <details class="sectionCard" data-section="rpc" open>
+      <details class="sectionCard glass" data-section="rpc" open>
         <summary>
           <div class="sectionTitle">
             <span>RPC & Performance</span>
