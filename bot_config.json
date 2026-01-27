@@ -46,6 +46,9 @@
   "max_expanded_per_candidate": 6,
   "rpc_timeout_s": 3,
   "rpc_retry_count": 1,
+  "rpc_batch_eth_calls": true,
+  "rpc_batch_max_calls": 80,
+  "rpc_batch_flush_ms": 8,
   "enable_multidex": true,
   "max_hops": 3,
   "beam_k": 12,
@@ -64,6 +67,20 @@
   ],
   "trigger_max_candidates_raw": 80,
   "trigger_prepare_budget_ms": 250,
+  "trigger_probe_budget_ms": 0,
+  "trigger_refine_budget_ms": 0,
+  "trigger_probe_budget_ratio": 0.4,
+  "trigger_probe_top_k": 12,
+  "trigger_probe_gas_units": 180000,
+  "trigger_probe_min_net": 0,
+  "trigger_probe_amounts_usdc": [
+    50,
+    100
+  ],
+  "trigger_probe_amounts_weth": [
+    0.005,
+    0.01
+  ],
   "trigger_cross_dex_bonus_bps": 5,
   "trigger_same_dex_penalty_bps": 5,
   "trigger_edge_top_m_per_dex": 2,

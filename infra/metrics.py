@@ -55,10 +55,17 @@ class Metrics:
         for name, vals in self._histograms.items():
             p50 = self._percentile(vals, 50.0)
             p95 = self._percentile(vals, 95.0)
+            avg = None
+            if vals:
+                try:
+                    avg = float(sum(vals)) / float(len(vals))
+                except Exception:
+                    avg = None
             hist_stats[name] = {
                 "count": len(vals),
                 "p50": p50,
                 "p95": p95,
+                "avg": avg,
             }
 
         reasons: Dict[str, Dict[str, int]] = {}
@@ -73,4 +80,3 @@ class Metrics:
 
 
 METRICS = Metrics()
-

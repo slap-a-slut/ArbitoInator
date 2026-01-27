@@ -38,6 +38,11 @@ RPC_RETRY_COUNT = 1
 RPC_BACKOFF_BASE_S = 0.35
 RPC_RATE_LIMIT_BACKOFF_S = 0.35
 
+# Batch eth_call (quotes/pool state)
+RPC_BATCH_ETH_CALLS = True
+RPC_BATCH_MAX_CALLS = 80
+RPC_BATCH_FLUSH_MS = 8
+
 # RPC health tracking / auto-ban
 RPC_HEALTH_WINDOW = 50
 RPC_BAN_SECONDS = 60
@@ -73,6 +78,14 @@ MEMPOOL_DEDUP_TTL_S = 120
 MEMPOOL_TRIGGER_SCAN_BUDGET_S = 1.5
 # Trigger scan staging budgets
 TRIGGER_PREPARE_BUDGET_MS = 250
+TRIGGER_PROBE_BUDGET_MS = 0
+TRIGGER_REFINE_BUDGET_MS = 0
+TRIGGER_PROBE_BUDGET_RATIO = 0.4
+TRIGGER_PROBE_TOP_K = 12
+TRIGGER_PROBE_GAS_UNITS = 180_000
+TRIGGER_PROBE_MIN_NET = 0.0
+TRIGGER_PROBE_AMOUNTS_USDC = [50.0, 100.0]
+TRIGGER_PROBE_AMOUNTS_WETH = [0.005, 0.01]
 MEMPOOL_TRIGGER_MAX_QUEUE = 50
 MEMPOOL_TRIGGER_MAX_CONCURRENT = 1
 MEMPOOL_TRIGGER_TTL_S = 60
@@ -89,6 +102,7 @@ MEMPOOL_STRICT_UNKNOWN_TOKENS = False
 # Per-block caches (quotes/edges). TTL is one block (cleared on prepare_block).
 QUOTE_CACHE_ENABLED = True
 VIABILITY_CACHE_ENABLED = True
+POOL_DISCOVERY_TTL_BLOCKS = 300
 
 # If a block returns too many failed/invalid quotes, treat it as out-of-sync
 # and retry N-1 (prevents mixing blocks across RPCs).
@@ -250,8 +264,12 @@ UNISWAP_V3_QUOTER = "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6"
 # Source: Uniswap v3 Ethereum deployments list.
 UNISWAP_V3_QUOTER_V2 = "0x61fFE014bA17989E743c5F6cB21bF9697530B21e"
 
+# Uniswap V3 Factory — mainnet
+UNISWAP_V3_FACTORY = "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+
 # Fee tiers (в bps)
 FEE_TIERS = [100, 500, 3000, 10000]  # 0.01%, 0.05%, 0.3%, 1%
+POOL_DISCOVERY_FEE_TIERS = [500, 3000, 10000]
 
 # Supported DEX adapters (names used in UI/config).
 DEXES = ["univ3"]
@@ -373,6 +391,7 @@ def _apply_chain_overrides() -> None:
 
     _set_if_present("uniswap_v3_quoter", "UNISWAP_V3_QUOTER")
     _set_if_present("uniswap_v3_quoter_v2", "UNISWAP_V3_QUOTER_V2")
+    _set_if_present("uniswap_v3_factory", "UNISWAP_V3_FACTORY")
     _set_if_present("uniswap_v2_factory", "UNISWAP_V2_FACTORY")
     _set_if_present("sushiswap_factory", "SUSHISWAP_FACTORY")
     _set_if_present("uniswap_v2_router", "UNISWAP_V2_ROUTER")

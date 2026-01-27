@@ -2,12 +2,15 @@ const WebSocket = require('ws');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 
 // ---------------------------------
 // Bot process manager (fork_test.py)
 let botProc = null;
 let botStartedAtMs = null;
+let currentRunId = null;
+let startInProgress = false;
 
 // Runtime UI config (stored in project root)
 const projectRoot = path.join(__dirname, '..');
@@ -21,6 +24,7 @@ const mempoolLogPath = path.join(projectRoot, 'logs', 'mempool.jsonl');
 const triggerLogPath = path.join(projectRoot, 'logs', 'trigger_scans.jsonl');
 const diagnosticPath = path.join(projectRoot, 'logs', 'diagnostic_snapshot.json');
 const assistantPackPath = path.join(projectRoot, 'logs', 'assistant_pack.json');
+const runLockPath = path.join(projectRoot, 'logs', 'bot_run.lock');
 const UI_STATE_MAX_BYTES = 512 * 1024;
 
 const DEFAULT_CONFIG = {
@@ -65,6 +69,9 @@ const DEFAULT_CONFIG = {
   max_expanded_per_candidate: 6,
   rpc_timeout_s: 3,
   rpc_retry_count: 1,
+  rpc_batch_eth_calls: true,
+  rpc_batch_max_calls: 80,
+  rpc_batch_flush_ms: 8,
 
   // multidex / routing
   enable_multidex: false,
@@ -80,6 +87,14 @@ const DEFAULT_CONFIG = {
   trigger_connectors: ['WETH', 'USDC', 'USDT', 'DAI'],
   trigger_max_candidates_raw: 80,
   trigger_prepare_budget_ms: 250,
+  trigger_probe_budget_ms: 0,
+  trigger_refine_budget_ms: 0,
+  trigger_probe_budget_ratio: 0.4,
+  trigger_probe_top_k: 12,
+  trigger_probe_gas_units: 180000,
+  trigger_probe_min_net: 0,
+  trigger_probe_amounts_usdc: [50, 100],
+  trigger_probe_amounts_weth: [0.005, 0.01],
   trigger_cross_dex_bonus_bps: 5,
   trigger_same_dex_penalty_bps: 5,
   trigger_edge_top_m_per_dex: 2,
@@ -704,6 +719,52 @@ function readJsonSafe(filePath, maxBytes = 256 * 1024) {
   }
 }
 
+function isPidAlive(pid) {
+  if (!pid || Number(pid) <= 0) return false;
+  try {
+    process.kill(Number(pid), 0);
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+function readRunLock() {
+  try {
+    if (!fs.existsSync(runLockPath)) return null;
+    const raw = fs.readFileSync(runLockPath, 'utf8') || '';
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch {}
+  return null;
+}
+
+function clearRunLockIfStale() {
+  const lock = readRunLock();
+  if (!lock) return null;
+  const pid = Number(lock.pid || 0);
+  if (pid && isPidAlive(pid)) {
+    return { alive: true, pid, run_id: lock.run_id || null };
+  }
+  try { fs.unlinkSync(runLockPath); } catch {}
+  return { alive: false, pid, run_id: lock.run_id || null };
+}
+
+function killProcessTree(proc, signal = 'SIGINT') {
+  if (!proc || !proc.pid) return;
+  if (process.platform === 'win32') {
+    try {
+      spawnSync('taskkill', ['/PID', String(proc.pid), '/T', '/F']);
+    } catch {}
+    return;
+  }
+  try {
+    process.kill(-proc.pid, signal);
+  } catch {
+    try { process.kill(proc.pid, signal); } catch {}
+  }
+}
+
 function isRunning() {
   return !!(botProc && !botProc.killed);
 }
@@ -728,8 +789,20 @@ function resetMempoolArtifacts() {
 }
 
 function startBot() {
-  if (isRunning()) return { ok: true, alreadyRunning: true };
+  if (startInProgress) return { ok: false, error: 'start already in progress' };
+  if (isRunning()) return { ok: false, alreadyRunning: true };
+  const lockState = clearRunLockIfStale();
+  if (lockState && lockState.alive) {
+    broadcast({
+      type: 'status',
+      time: nowTime(),
+      block: null,
+      text: `RUN_ALREADY_RUNNING run_id=${lockState.run_id || 'unknown'} pid=${lockState.pid}`,
+    });
+    return { ok: false, alreadyRunning: true, run_id: lockState.run_id || null, pid: lockState.pid };
+  }
   resetMempoolArtifacts();
+  startInProgress = true;
 
   const script = path.join(projectRoot, 'fork_test.py');
   const python = resolvePython();
@@ -747,6 +820,7 @@ function startBot() {
           block: null,
           text: 'Missing Python deps. Use the project venv or set PYTHON to a venv path.',
         });
+        startInProgress = false;
         return { ok: false, error: 'missing python deps (use venv)' };
       }
       broadcast({ type: 'status', time: nowTime(), block: null, text: 'Installing Python dependencies (pip install -r requirements.txt)...' });
@@ -761,6 +835,7 @@ function startBot() {
 
       if (install.status !== 0) {
         broadcast({ type: 'status', time: nowTime(), block: null, text: 'Dependency install failed. See stderr above.' });
+        startInProgress = false;
         return { ok: false, error: 'pip install -r requirements.txt failed' };
       }
     }
@@ -771,12 +846,14 @@ function startBot() {
   const cfg = readConfig();
 
   botStartedAtMs = Date.now();
+  currentRunId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   botProc = spawn(python, ['-u', script], {
     cwd: projectRoot,
     // Keep both env vars for backwards compatibility.
     env: {
       ...process.env,
       PYTHON: python,
+      RUN_ID: String(currentRunId || ''),
       UI_PORT: String(uiPort || DEFAULT_UI_PORT),
       BOT_CONFIG: configPath,
       ARBITOINATOR_CONFIG: configPath,
@@ -792,9 +869,18 @@ function startBot() {
       ENABLE_MULTIDEX: cfg.enable_multidex ? '1' : '0',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
   });
 
-  broadcast({ type: 'status', time: nowTime(), block: null, text: 'Bot started', running: true, started_at_ms: botStartedAtMs });
+  broadcast({
+    type: 'status',
+    time: nowTime(),
+    block: null,
+    text: 'Bot started',
+    running: true,
+    started_at_ms: botStartedAtMs,
+    run_id: currentRunId,
+  });
 
   const forwardLines = (buf, stream) => {
     String(buf)
@@ -815,6 +901,8 @@ function startBot() {
 
   botProc.on('close', (code, signal) => {
     botStartedAtMs = null;
+    currentRunId = null;
+    startInProgress = false;
     broadcast({
       type: 'status',
       time: nowTime(),
@@ -822,17 +910,19 @@ function startBot() {
       text: `Bot stopped (code=${code}, signal=${signal || 'none'})`,
       running: false,
       started_at_ms: null,
+      run_id: currentRunId,
     });
     botProc = null;
   });
 
-  return { ok: true };
+  startInProgress = false;
+  return { ok: true, run_id: currentRunId };
 }
 
 function stopBot() {
   if (!isRunning()) return { ok: true, alreadyStopped: true };
   try {
-    botProc.kill('SIGINT');
+    killProcessTree(botProc, 'SIGINT');
     // close handler will clear started_at; keep it for clients until then
     return { ok: true };
   } catch (e) {
@@ -859,7 +949,7 @@ function stopBotWait(timeoutMs = 12000) {
     proc.once('close', () => finish({ ok: true }));
 
     try {
-      proc.kill('SIGINT');
+      killProcessTree(proc, 'SIGINT');
     } catch (e) {
       return finish({ ok: false, error: String(e) });
     }
@@ -867,7 +957,7 @@ function stopBotWait(timeoutMs = 12000) {
     // Hard timeout safety: if SIGINT doesn't stop it, SIGKILL.
     setTimeout(() => {
       if (done) return;
-      try { proc.kill('SIGKILL'); } catch {}
+      try { killProcessTree(proc, 'SIGKILL'); } catch {}
       // Give it a moment to emit close
       setTimeout(() => finish({ ok: true, forced: true }), 750);
     }, timeoutMs);
@@ -1030,8 +1120,21 @@ const server = http.createServer((req, res) => {
 
   // Status
   if (req.method === 'GET' && req.url === '/status') {
+    const diag = readJsonSafe(diagnosticPath) || {};
+    const global = (diag && diag.global) ? diag.global : {};
+    const hb = Number(global.last_heartbeat_ts || global.timestamp_ms || 0);
+    const intervalS = Number(global.heartbeat_interval_s || 0);
+    const thresholdMs = intervalS > 0 ? Math.max(20000, intervalS * 1500) : 30000;
+    const stalled = !!(isRunning() && hb > 0 && (Date.now() - hb) > thresholdMs);
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, running: isRunning(), started_at_ms: botStartedAtMs }));
+    res.end(JSON.stringify({
+      ok: true,
+      running: isRunning(),
+      started_at_ms: botStartedAtMs,
+      run_id: currentRunId,
+      stalled,
+      last_heartbeat_ts: hb || null,
+    }));
     return;
   }
 

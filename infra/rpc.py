@@ -8,7 +8,7 @@ import random
 import time
 from collections import deque
 from contextvars import ContextVar, Token
-from typing import Any, Optional, Sequence, List, Dict, Set, Tuple
+from typing import Any, Optional, Sequence, List, Dict, Set, Tuple, Callable
 
 import aiohttp
 from web3 import Web3
@@ -17,6 +17,12 @@ from bot import config
 from infra.metrics import METRICS
 
 _PINNED_HTTP_ENDPOINT: ContextVar[Optional[str]] = ContextVar("rpc_pinned_http_endpoint", default=None)
+
+_DECIMALS_SELECTOR = "0x313ce567"
+_SYMBOL_SELECTOR = "0x95d89b41"
+_V2_GET_RESERVES_SELECTOR = "0x0902f1ac"
+_V3_SLOT0_SELECTOR = "0x3850c7bd"
+_V3_LIQUIDITY_SELECTOR = "0x1a686502"
 
 
 def set_pinned_http_endpoint(url: Optional[str]) -> Token:
@@ -131,6 +137,267 @@ def _percentile(vals: List[float], pct: float) -> Optional[float]:
         return float(v[0])
     k = max(0, min(len(v) - 1, int(round((pct / 100.0) * (len(v) - 1)))))
     return float(v[k])
+
+
+def _block_cacheable(block_tag: Optional[str]) -> bool:
+    if not block_tag:
+        return False
+    tag = str(block_tag).strip().lower()
+    if tag in ("latest", "pending", "earliest"):
+        return False
+    return tag.startswith("0x") and len(tag) > 2
+
+
+def _call_selector(data: Optional[str]) -> Optional[str]:
+    if not data:
+        return None
+    hx = str(data)
+    if hx.startswith("0x"):
+        hx = hx[2:]
+    if len(hx) < 8:
+        return None
+    return "0x" + hx[:8]
+
+
+class _BlockCallCache:
+    def __init__(self) -> None:
+        self._block_tag: Optional[str] = None
+        self._decimals: Dict[str, str] = {}
+        self._symbol: Dict[str, str] = {}
+        self._v2_reserves: Dict[str, str] = {}
+        self._v3_slot0: Dict[str, str] = {}
+        self._v3_liquidity: Dict[str, str] = {}
+
+    def _rotate(self, block_tag: Optional[str]) -> bool:
+        if not _block_cacheable(block_tag):
+            return False
+        tag = str(block_tag)
+        if self._block_tag != tag:
+            self._block_tag = tag
+            self._decimals.clear()
+            self._symbol.clear()
+            self._v2_reserves.clear()
+            self._v3_slot0.clear()
+            self._v3_liquidity.clear()
+        return True
+
+    def get(self, block_tag: Optional[str], selector: Optional[str], key: str) -> Optional[str]:
+        if not self._rotate(block_tag):
+            return None
+        sel = (selector or "").lower()
+        k = str(key or "").lower()
+        if sel == _DECIMALS_SELECTOR:
+            if k in self._decimals:
+                METRICS.inc("cache_hits_decimals", 1)
+                return self._decimals[k]
+            METRICS.inc("cache_misses_decimals", 1)
+            return None
+        if sel == _SYMBOL_SELECTOR:
+            if k in self._symbol:
+                METRICS.inc("cache_hits_symbol", 1)
+                return self._symbol[k]
+            METRICS.inc("cache_misses_symbol", 1)
+            return None
+        if sel == _V2_GET_RESERVES_SELECTOR:
+            if k in self._v2_reserves:
+                METRICS.inc("cache_hits_v2_reserves", 1)
+                return self._v2_reserves[k]
+            METRICS.inc("cache_misses_v2_reserves", 1)
+            return None
+        if sel == _V3_SLOT0_SELECTOR:
+            if k in self._v3_slot0:
+                METRICS.inc("cache_hits_v3_slot0", 1)
+                return self._v3_slot0[k]
+            METRICS.inc("cache_misses_v3_slot0", 1)
+            return None
+        if sel == _V3_LIQUIDITY_SELECTOR:
+            if k in self._v3_liquidity:
+                METRICS.inc("cache_hits_v3_liquidity", 1)
+                return self._v3_liquidity[k]
+            METRICS.inc("cache_misses_v3_liquidity", 1)
+            return None
+        return None
+
+    def set(self, block_tag: Optional[str], selector: Optional[str], key: str, value: str) -> None:
+        if not self._rotate(block_tag):
+            return
+        sel = (selector or "").lower()
+        k = str(key or "").lower()
+        if not k or not value:
+            return
+        if sel == _DECIMALS_SELECTOR:
+            self._decimals[k] = value
+        elif sel == _SYMBOL_SELECTOR:
+            self._symbol[k] = value
+        elif sel == _V2_GET_RESERVES_SELECTOR:
+            self._v2_reserves[k] = value
+        elif sel == _V3_SLOT0_SELECTOR:
+            self._v3_slot0[k] = value
+        elif sel == _V3_LIQUIDITY_SELECTOR:
+            self._v3_liquidity[k] = value
+
+
+class _EthCallBatcher:
+    def __init__(
+        self,
+        *,
+        pool_call_batch: Callable[..., Any],
+        pool_pick_pinned: Callable[[Optional[Any]], Optional[str]],
+        block_cache: _BlockCallCache,
+    ) -> None:
+        self._call_batch = pool_call_batch
+        self._pick_pinned = pool_pick_pinned
+        self._cache = block_cache
+        self._lock = asyncio.Lock()
+        self._queue: List[Dict[str, Any]] = []
+        self._pending: Dict[Tuple[str, str, str, str], asyncio.Future] = {}
+        self._flush_task: Optional[asyncio.Task] = None
+
+    def _batch_enabled(self) -> bool:
+        return bool(getattr(config, "RPC_BATCH_ETH_CALLS", True))
+
+    def _max_batch(self) -> int:
+        return int(getattr(config, "RPC_BATCH_MAX_CALLS", 80))
+
+    def _flush_delay_s(self) -> float:
+        return max(0.001, float(getattr(config, "RPC_BATCH_FLUSH_MS", 8)) / 1000.0)
+
+    async def submit(
+        self,
+        params: list,
+        *,
+        timeout_s: Optional[float],
+        block_ctx: Optional[Any],
+    ) -> Any:
+        if not params or not isinstance(params, list):
+            raise RuntimeError("batcher_invalid_params")
+        call = params[0] if len(params) > 0 else None
+        block_tag = params[1] if len(params) > 1 else "latest"
+        if not isinstance(call, dict):
+            raise RuntimeError("batcher_invalid_call")
+        to = call.get("to")
+        data = call.get("data")
+        if not to or not data:
+            raise RuntimeError("batcher_missing_to_data")
+
+        selector = _call_selector(str(data))
+        cached = self._cache.get(str(block_tag), selector, str(to))
+        if cached is not None:
+            return cached
+
+        pinned_url = self._pick_pinned(block_ctx)
+        key = (str(block_tag), str(to).lower(), str(data).lower(), str(pinned_url or ""))
+
+        async with self._lock:
+            existing = self._pending.get(key)
+            if existing:
+                METRICS.inc("dedup_hits_total", 1)
+                METRICS.inc("dedup_saved_calls_total", 1)
+                fut = existing
+            else:
+                loop = asyncio.get_event_loop()
+                fut = loop.create_future()
+                self._pending[key] = fut
+                self._queue.append({
+                    "key": key,
+                    "to": str(to),
+                    "data": str(data),
+                    "block_tag": str(block_tag),
+                    "timeout_s": timeout_s,
+                    "pinned_url": pinned_url,
+                    "selector": selector,
+                })
+
+                if len(self._queue) >= self._max_batch():
+                    if self._flush_task and not self._flush_task.done():
+                        self._flush_task.cancel()
+                    self._flush_task = asyncio.create_task(self._flush())
+                elif not self._flush_task or self._flush_task.done():
+                    self._flush_task = asyncio.create_task(self._flush_later())
+
+        return await fut
+
+    async def _flush_later(self) -> None:
+        await asyncio.sleep(self._flush_delay_s())
+        await self._flush()
+
+    async def _flush(self) -> None:
+        async with self._lock:
+            batch = self._queue
+            self._queue = []
+            pending = dict(self._pending)
+
+        if not batch:
+            return
+
+        # Group by (pinned_url, block_tag)
+        grouped: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+        for item in batch:
+            gkey = (str(item.get("pinned_url") or ""), str(item.get("block_tag") or "latest"))
+            grouped.setdefault(gkey, []).append(item)
+
+        for (pinned_url, block_tag), items in grouped.items():
+            params_list = []
+            for it in items:
+                params_list.append([{"to": it["to"], "data": it["data"]}, it["block_tag"]])
+
+            try:
+                block_ctx = None
+                if pinned_url:
+                    block_ctx = type("Ctx", (), {"pinned_http_endpoint": pinned_url})
+                results = await self._call_batch(
+                    "eth_call",
+                    params_list,
+                    timeout_s=_min_timeout(items),
+                    block_ctx=block_ctx,
+                )
+            except Exception as e:
+                for it in items:
+                    fut = pending.get(it["key"])
+                    if fut and not fut.done():
+                        fut.set_exception(e)
+                    async with self._lock:
+                        self._pending.pop(it["key"], None)
+                continue
+
+            for it, res in zip(items, results):
+                fut = pending.get(it["key"])
+                if not fut or fut.done():
+                    async with self._lock:
+                        self._pending.pop(it["key"], None)
+                    continue
+                if not isinstance(res, dict):
+                    fut.set_exception(RuntimeError("batch_missing_result"))
+                    async with self._lock:
+                        self._pending.pop(it["key"], None)
+                    continue
+                if "error" in res:
+                    fut.set_exception(RuntimeError(str(res.get("error"))))
+                    async with self._lock:
+                        self._pending.pop(it["key"], None)
+                    continue
+                value = res.get("result")
+                if value is None:
+                    fut.set_exception(RuntimeError("batch_empty_result"))
+                    async with self._lock:
+                        self._pending.pop(it["key"], None)
+                    continue
+                self._cache.set(it.get("block_tag"), it.get("selector"), it.get("to"), value)
+                fut.set_result(value)
+                async with self._lock:
+                    self._pending.pop(it["key"], None)
+
+
+def _min_timeout(items: List[Dict[str, Any]]) -> Optional[float]:
+    if not items:
+        return None
+    values = [it.get("timeout_s") for it in items if it.get("timeout_s") is not None]
+    if not values:
+        return None
+    try:
+        return float(min(values))
+    except Exception:
+        return None
 
 
 class EndpointHealth:
@@ -252,6 +519,7 @@ class AsyncRPC:
                 t0 = time.perf_counter()
                 host = _url_host(self.url)
                 METRICS.inc("rpc_requests_total", 1)
+                METRICS.inc("rpc_calls_total", 1)
                 METRICS.inc_reason("rpc_requests_by_endpoint", host, 1)
                 try:
                     async def _do():
@@ -353,6 +621,7 @@ class AsyncRPC:
         params_list: List[list],
         *,
         timeout_s: Optional[float] = None,
+        track_metrics: bool = False,
     ) -> List[Dict[str, Any]]:
         if not params_list:
             return []
@@ -375,6 +644,15 @@ class AsyncRPC:
                 {"jsonrpc": "2.0", "id": start_id + i, "method": method, "params": params_list[i]}
                 for i in range(len(params_list))
             ]
+
+            if track_metrics:
+                host = _url_host(self.url)
+                METRICS.inc("rpc_requests_total", 1)
+                METRICS.inc("rpc_batches_total", 1)
+                METRICS.inc("rpc_calls_total", len(params_list))
+                METRICS.inc_reason("rpc_requests_by_endpoint", host, 1)
+                METRICS.inc_reason("rpc_calls_by_endpoint", host, len(params_list))
+                METRICS.observe("rpc_batch_size", float(len(params_list)))
 
             async def _do():
                 async with session.post(self.url, json=payload) as resp:
@@ -408,6 +686,83 @@ class AsyncRPC:
                     out.append({"error": entry.get("error")})
                 else:
                     out.append({"result": entry.get("result")})
+            async with self._stats_lock:
+                self._ok += 1
+            return out
+        except Exception:
+            async with self._stats_lock:
+                self._fail += 1
+            raise
+        finally:
+            async with self._stats_lock:
+                self._inflight = max(0, self._inflight - 1)
+
+    async def request_batch(
+        self,
+        calls: List[Dict[str, Any]],
+        *,
+        timeout_s: Optional[float] = None,
+        track_metrics: bool = False,
+    ) -> Dict[int, Dict[str, Any]]:
+        if not calls:
+            return {}
+        session = await self._get_session()
+        to_s = float(timeout_s) if timeout_s is not None else self.default_timeout_s
+        min_t = float(getattr(config, "RPC_TIMEOUT_MIN_S", 2.0))
+        max_t = float(getattr(config, "RPC_TIMEOUT_MAX_S", 4.0))
+        if max_t < min_t:
+            max_t = min_t
+        to_s = max(min_t, min(max_t, to_s))
+
+        async with self._stats_lock:
+            self._inflight += 1
+        try:
+            payload: List[Dict[str, Any]] = []
+            for idx, call in enumerate(calls):
+                if not isinstance(call, dict):
+                    continue
+                cid = call.get("id")
+                if cid is None:
+                    self._id += 1
+                    cid = self._id
+                payload.append({
+                    "jsonrpc": "2.0",
+                    "id": cid,
+                    "method": call.get("method"),
+                    "params": call.get("params", []),
+                })
+            if not payload:
+                return {}
+
+            if track_metrics:
+                host = _url_host(self.url)
+                METRICS.inc("rpc_requests_total", 1)
+                METRICS.inc("rpc_batches_total", 1)
+                METRICS.inc("rpc_calls_total", len(payload))
+                METRICS.inc_reason("rpc_requests_by_endpoint", host, 1)
+                METRICS.inc_reason("rpc_calls_by_endpoint", host, len(payload))
+                METRICS.observe("rpc_batch_size", float(len(payload)))
+
+            async def _do():
+                async with session.post(self.url, json=payload) as resp:
+                    if resp.status >= 400:
+                        text = await resp.text()
+                        raise aiohttp.ClientResponseError(
+                            request_info=resp.request_info,
+                            history=resp.history,
+                            status=resp.status,
+                            message=text,
+                            headers=resp.headers,
+                        )
+                    return await resp.json()
+
+            data = await asyncio.wait_for(_do(), timeout=to_s)
+            if not isinstance(data, list):
+                raise RuntimeError("batch_response_not_list")
+            out: Dict[int, Dict[str, Any]] = {}
+            for entry in data:
+                if isinstance(entry, dict) and isinstance(entry.get("id"), int):
+                    out[int(entry["id"])] = entry
             async with self._stats_lock:
                 self._ok += 1
             return out
@@ -540,6 +895,14 @@ class RPCPool:
         self._last_pinned_url: Optional[str] = None
         self._host_to_idx: Dict[str, int] = {_url_host(url): i for i, url in enumerate(self.urls)}
         self._pinned_missing_warned: Set[str] = set()
+
+        # Per-block cache + eth_call batcher (quotes/pool state)
+        self._block_cache = _BlockCallCache()
+        self._eth_call_batcher = _EthCallBatcher(
+            pool_call_batch=self.call_batch,
+            pool_pick_pinned=lambda ctx: getattr(ctx, "pinned_http_endpoint", None) if ctx is not None else get_pinned_http_endpoint(),
+            block_cache=self._block_cache,
+        )
 
     async def close(self) -> None:
         for c in self._clients:
@@ -771,7 +1134,7 @@ class RPCPool:
             })
         return out
 
-    async def call(
+    async def _call_direct(
         self,
         method: str,
         params: list,
@@ -781,6 +1144,7 @@ class RPCPool:
         allow_error_data: bool = False,
         block_ctx: Optional[Any] = None,
     ) -> Any:
+        METRICS.inc("rpc_calls_total", 1)
         pinned_url = None
         if block_ctx is not None:
             pinned_url = getattr(block_ctx, "pinned_http_endpoint", None)
@@ -894,6 +1258,40 @@ class RPCPool:
 
         raise last_err or Exception("RPCPool call failed")
 
+    async def call(
+        self,
+        method: str,
+        params: list,
+        *,
+        timeout_s: Optional[float] = None,
+        allow_revert_data: bool = False,
+        allow_error_data: bool = False,
+        block_ctx: Optional[Any] = None,
+    ) -> Any:
+        if (
+            method == "eth_call"
+            and not allow_revert_data
+            and not allow_error_data
+            and self._eth_call_batcher is not None
+        ):
+            try:
+                return await self._eth_call_batcher.submit(
+                    params,
+                    timeout_s=timeout_s,
+                    block_ctx=block_ctx,
+                )
+            except Exception:
+                # If batching fails unexpectedly, fall back to direct call.
+                pass
+        return await self._call_direct(
+            method,
+            params,
+            timeout_s=timeout_s,
+            allow_revert_data=allow_revert_data,
+            allow_error_data=allow_error_data,
+            block_ctx=block_ctx,
+        )
+
     async def call_batch(
         self,
         method: str,
@@ -923,12 +1321,16 @@ class RPCPool:
             c = self._clients[idx]
             self.last_url = self.urls[idx]
             host = _url_host(self.urls[idx])
-            METRICS.inc("rpc_requests_total", len(params_list))
-            METRICS.inc_reason("rpc_requests_by_endpoint", host, len(params_list))
+            METRICS.inc("rpc_requests_total", 1)
+            METRICS.inc("rpc_batches_total", 1)
+            METRICS.inc("rpc_calls_total", len(params_list))
+            METRICS.inc_reason("rpc_requests_by_endpoint", host, 1)
+            METRICS.inc_reason("rpc_calls_by_endpoint", host, len(params_list))
+            METRICS.observe("rpc_batch_size", float(len(params_list)))
             t0 = time.perf_counter()
             try:
                 async with self._sems[idx]:
-                    res = await c.call_batch(method, params_list, timeout_s=timeout_s)
+                    res = await c.call_batch(method, params_list, timeout_s=timeout_s, track_metrics=False)
                 dt_ms = (time.perf_counter() - t0) * 1000.0
                 METRICS.observe("rpc_latency_ms", float(dt_ms))
                 METRICS.observe(f"rpc_latency_ms:{host}", float(dt_ms))
@@ -1009,6 +1411,125 @@ class RPCPool:
                 continue
 
         raise last_err or Exception("RPCPool call_batch failed")
+
+    async def request_batch(
+        self,
+        calls: List[Dict[str, Any]],
+        *,
+        timeout_s: Optional[float] = None,
+        block_ctx: Optional[Any] = None,
+    ) -> Dict[int, Dict[str, Any]]:
+        if not calls:
+            return {}
+
+        pinned_url = None
+        if block_ctx is not None:
+            pinned_url = getattr(block_ctx, "pinned_http_endpoint", None)
+        if not pinned_url:
+            pinned_url = get_pinned_http_endpoint()
+        pinned_idx = self._resolve_idx(pinned_url)
+        if pinned_url and pinned_idx is None:
+            METRICS.inc("pinned_violation_count", 1)
+            if pinned_url not in self._pinned_missing_warned:
+                self._pinned_missing_warned.add(pinned_url)
+                print(f"[WARN] pinned endpoint not in pool: {pinned_url}")
+        if pinned_idx is not None:
+            self._last_pinned_url = self.urls[pinned_idx]
+
+        async def _call_idx(idx: int) -> Dict[int, Dict[str, Any]]:
+            c = self._clients[idx]
+            self.last_url = self.urls[idx]
+            host = _url_host(self.urls[idx])
+            METRICS.inc("rpc_requests_total", 1)
+            METRICS.inc("rpc_batches_total", 1)
+            METRICS.inc("rpc_calls_total", len(calls))
+            METRICS.inc_reason("rpc_requests_by_endpoint", host, 1)
+            METRICS.inc_reason("rpc_calls_by_endpoint", host, len(calls))
+            METRICS.observe("rpc_batch_size", float(len(calls)))
+            t0 = time.perf_counter()
+            try:
+                async with self._sems[idx]:
+                    res = await c.request_batch(calls, timeout_s=timeout_s, track_metrics=False)
+                dt_ms = (time.perf_counter() - t0) * 1000.0
+                METRICS.observe("rpc_latency_ms", float(dt_ms))
+                METRICS.observe(f"rpc_latency_ms:{host}", float(dt_ms))
+                self._lat_ewma_ms[idx] = (1.0 - self._ewma_alpha) * self._lat_ewma_ms[idx] + self._ewma_alpha * float(dt_ms)
+                await self._done_idx(idx, ok=True)
+                self._record_health(idx, ok=True, latency_ms=float(dt_ms), reason="ok")
+                return res
+            except Exception as e:
+                dt_ms = (time.perf_counter() - t0) * 1000.0
+                reason = _normalize_rpc_error(e)
+                await self._done_idx(idx, ok=False)
+                self._record_health(idx, ok=False, latency_ms=float(dt_ms), reason=reason)
+                raise
+
+        if pinned_idx is not None:
+            banned: Set[int] = set()
+            fallback_reason: Optional[str] = None
+            if self._is_banned(pinned_idx):
+                banned.add(pinned_idx)
+                fallback_reason = self._ban_reason[pinned_idx] or "health_ban"
+            else:
+                try:
+                    idx = await self._pick_idx(banned, pinned_idx=pinned_idx)
+                    if idx is None:
+                        banned.add(pinned_idx)
+                    else:
+                        return await _call_idx(idx)
+                except Exception as e:
+                    banned.add(pinned_idx)
+                    allow_fallback = False
+                    try:
+                        reason = _normalize_rpc_error(e)
+                        if reason == "timeout":
+                            allow_fallback = True
+                            fallback_reason = "timeout"
+                    except Exception:
+                        allow_fallback = False
+                    if self._is_banned(pinned_idx):
+                        allow_fallback = True
+                        fallback_reason = self._ban_reason[pinned_idx] or fallback_reason or "health_ban"
+                    if not allow_fallback:
+                        raise
+
+            idx2 = await self._pick_idx(banned, pinned_idx=None)
+            if idx2 is None:
+                raise Exception("RPCPool request_batch failed")
+            self._record_fallback(fallback_reason or "fallback")
+            try:
+                self._last_pinned_url = self.urls[idx2]
+                set_pinned_http_endpoint(self.urls[idx2])
+            except Exception:
+                pass
+            return await _call_idx(idx2)
+
+        banned: Set[int] = set()
+        attempts = 0
+        last_err: Optional[Exception] = None
+        max_total = len(self._clients) + self.max_retries_per_call
+        while attempts < max_total:
+            if len(banned) >= len(self._clients):
+                break
+            idx = await self._pick_idx(banned)
+            if idx is None:
+                break
+            try:
+                return await _call_idx(idx)
+            except Exception as e:
+                last_err = e
+                banned.add(idx)
+                attempts += 1
+                try:
+                    msg = str(e).lower()
+                    if "http_429" in msg or "rate limit" in msg:
+                        sleep_s = float(getattr(config, "RPC_RATE_LIMIT_BACKOFF_S", 0.35)) + random.random() * 0.25
+                        await asyncio.sleep(sleep_s)
+                except Exception:
+                    pass
+                continue
+
+        raise last_err or Exception("RPCPool request_batch failed")
 
     async def eth_call(
         self,

@@ -7,9 +7,10 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from infra.metrics import METRICS
+from bot import config
 
 
-DEFAULT_INTERVAL_S = 45.0
+DEFAULT_INTERVAL_S = 20.0
 DEFAULT_WINDOW_S = 900
 TAIL_MAX_BYTES = 2_000_000
 TAIL_MAX_LINES = 5000
@@ -330,7 +331,43 @@ def _summarize_last_trigger(entry: Optional[Dict[str, Any]]) -> Optional[Dict[st
         "zero_candidates_reason": entry.get("zero_candidates_reason"),
         "zero_candidates_stage": entry.get("zero_candidates_stage"),
         "top_viability_drop_reason": top_viability,
+        "probe_topK_summary": entry.get("probe_topK_summary"),
+        "refine_best_summary": entry.get("refine_best_summary"),
     }
+
+
+def _short_token(addr: str) -> str:
+    if not addr:
+        return ""
+    try:
+        sym = config.token_symbol(addr)
+        if sym:
+            return str(sym)
+    except Exception:
+        pass
+    a = str(addr)
+    if len(a) <= 10:
+        return a
+    return a[:6] + "..." + a[-4:]
+
+
+def _format_pool_key(key: str) -> str:
+    raw = str(key or "")
+    if not raw:
+        return raw
+    try:
+        if raw.startswith("v2:"):
+            _prefix, factory_id, pair = raw.split(":", 2)
+            token0, token1 = pair.split("/", 1)
+            return f"v2:{factory_id}:{_short_token(token0)}/{_short_token(token1)}"
+        if raw.startswith("v3:"):
+            _prefix, factory_id, rest = raw.split(":", 2)
+            pair, fee = rest.rsplit(":", 1)
+            token0, token1 = pair.split("/", 1)
+            return f"v3:{factory_id}:{_short_token(token0)}/{_short_token(token1)}:{fee}"
+    except Exception:
+        return raw
+    return raw
 
 
 def build_diagnostic_snapshot(
@@ -343,6 +380,11 @@ def build_diagnostic_snapshot(
     rpc_health: Optional[Dict[str, Any]] = None,
     window_s: int = DEFAULT_WINDOW_S,
     update_reason: Optional[str] = None,
+    run_id: Optional[str] = None,
+    writer_pid: Optional[int] = None,
+    started_at_ms: Optional[int] = None,
+    last_heartbeat_ts: Optional[int] = None,
+    heartbeat_interval_s: Optional[float] = None,
 ) -> Dict[str, Any]:
     now_ms = int(time.time() * 1000)
     if current_block is None:
@@ -350,6 +392,13 @@ def build_diagnostic_snapshot(
     uptime_s = None
     if session_started_at_s is not None:
         uptime_s = int(max(0, time.time() - float(session_started_at_s)))
+    if started_at_ms is None and session_started_at_s is not None:
+        try:
+            started_at_ms = int(float(session_started_at_s) * 1000)
+        except Exception:
+            started_at_ms = None
+    if last_heartbeat_ts is None:
+        last_heartbeat_ts = now_ms
 
     sim_profile = str(os.getenv("SIM_PROFILE", "")).strip() or None
     gas_off = str(os.getenv("GAS_OFF", "")).strip().lower() in ("1", "true", "yes", "on")
@@ -453,12 +502,30 @@ def build_diagnostic_snapshot(
             "count": stats.get("count"),
         }
 
+    batch_stats = hist.get("rpc_batch_size", {})
+    def _top_reasons(raw: Any, limit: int = 10) -> List[Dict[str, Any]]:
+        if not isinstance(raw, dict):
+            return []
+        items = []
+        for k, v in raw.items():
+            try:
+                items.append((str(k), int(v)))
+            except Exception:
+                continue
+        items.sort(key=lambda kv: kv[1], reverse=True)
+        return [{"key": k, "count": v} for k, v in items[:limit]]
     metrics_section = {
         "quotes_total": int(counters.get("quotes_total", 0)),
         "quotes_ok": int(counters.get("quotes_ok", 0)),
         "quotes_fail_by_reason": reasons.get("quotes_fail_by_reason", {}),
         "rpc_requests_total": int(counters.get("rpc_requests_total", 0)),
+        "rpc_batches_total": int(counters.get("rpc_batches_total", 0)),
+        "rpc_calls_total": int(counters.get("rpc_calls_total", 0)),
+        "rpc_batch_size_p50": batch_stats.get("p50"),
+        "rpc_batch_size_p95": batch_stats.get("p95"),
+        "rpc_batch_size_avg": batch_stats.get("avg"),
         "rpc_requests_by_endpoint": reasons.get("rpc_requests_by_endpoint", {}),
+        "rpc_calls_by_endpoint": reasons.get("rpc_calls_by_endpoint", {}),
         "rpc_fail_by_reason": reasons.get("rpc_fail_by_reason", {}),
         "rpc_fallbacks_by_reason": reasons.get("rpc_fallbacks_by_reason", {}),
         "rpc_latency_ms_p50": rpc_latency_p50,
@@ -475,6 +542,27 @@ def build_diagnostic_snapshot(
         "preflight_slippage_fail": int(counters.get("preflight_slippage_fail", 0)),
         "drop_reason_counts": reasons.get("drop_reason_counts", {}),
         "viability_drop_reason_counts": reasons.get("viability_drop_reason_counts", {}),
+        "cache_hits_decimals": int(counters.get("cache_hits_decimals", 0)),
+        "cache_misses_decimals": int(counters.get("cache_misses_decimals", 0)),
+        "cache_hits_symbol": int(counters.get("cache_hits_symbol", 0)),
+        "cache_misses_symbol": int(counters.get("cache_misses_symbol", 0)),
+        "cache_hits_v2_reserves": int(counters.get("cache_hits_v2_reserves", 0)),
+        "cache_misses_v2_reserves": int(counters.get("cache_misses_v2_reserves", 0)),
+        "cache_hits_v3_slot0": int(counters.get("cache_hits_v3_slot0", 0)),
+        "cache_misses_v3_slot0": int(counters.get("cache_misses_v3_slot0", 0)),
+        "cache_hits_v3_liquidity": int(counters.get("cache_hits_v3_liquidity", 0)),
+        "cache_misses_v3_liquidity": int(counters.get("cache_misses_v3_liquidity", 0)),
+        "dedup_hits_total": int(counters.get("dedup_hits_total", 0)),
+        "dedup_saved_calls_total": int(counters.get("dedup_saved_calls_total", 0)),
+        "pool_discovery_requests_total": int(counters.get("pool_discovery_requests_total", 0)),
+        "pool_discovery_cache_hits_block": int(counters.get("pool_discovery_cache_hits_block", 0)),
+        "pool_discovery_cache_hits_ttl": int(counters.get("pool_discovery_cache_hits_ttl", 0)),
+        "pool_discovery_cache_misses": int(counters.get("pool_discovery_cache_misses", 0)),
+        "pool_discovery_negative_cache_hits": int(counters.get("pool_discovery_negative_cache_hits", 0)),
+        "unknown_pool_top": [
+            {"key": _format_pool_key(row.get("key")), "count": row.get("count")}
+            for row in _top_reasons(reasons.get("pool_missing_keys", {}))
+        ],
     }
     http_eps = _settings_endpoints(settings, endpoints_attr="rpc_http_endpoints", fallback_urls_attr="rpc_urls")
     ws_eps = _settings_endpoints(settings, endpoints_attr="rpc_ws_endpoints", fallback_urls_attr="mempool_ws_urls")
@@ -494,6 +582,12 @@ def build_diagnostic_snapshot(
         ),
         "ws_http_pairing_active": pairing or {},
     })
+    try:
+        uptime_val = float(uptime_s) if uptime_s is not None else 0.0
+        quotes_ok = float(metrics_section.get("quotes_ok") or 0)
+        metrics_section["quotes_ok_per_sec"] = (quotes_ok / uptime_val) if uptime_val > 0 else None
+    except Exception:
+        metrics_section["quotes_ok_per_sec"] = None
     tx_fetch_attempts_total = int(counters.get("tx_fetch_attempts_total", counters.get("tx_fetch_total", 0)))
     tx_fetch_attempts_found = int(counters.get("tx_fetch_attempts_found", counters.get("tx_fetch_found", 0)))
     tx_fetch_unique_total = int(counters.get("tx_fetch_unique_total", 0))
@@ -663,6 +757,11 @@ def build_diagnostic_snapshot(
             "scan_source": scan_source,
             "sim_profile": sim_profile,
             "gas_mode": gas_mode,
+            "run_id": run_id,
+            "writer_pid": _safe_int(writer_pid),
+            "started_at_ms": _safe_int(started_at_ms),
+            "last_heartbeat_ts": _safe_int(last_heartbeat_ts),
+            "heartbeat_interval_s": _safe_float(heartbeat_interval_s),
         },
         "rpc_ws": {
             "rpc_urls": rpc_urls,
@@ -698,6 +797,9 @@ class DiagnosticSnapshotter:
         interval_s: Optional[float] = None,
         window_s: Optional[int] = None,
         path: Optional[Path] = None,
+        run_id: Optional[str] = None,
+        started_at_ms: Optional[int] = None,
+        writer_pid: Optional[int] = None,
     ) -> None:
         self.log_dir = log_dir
         self.get_settings = get_settings
@@ -709,6 +811,14 @@ class DiagnosticSnapshotter:
         self.path = path or (log_dir / "diagnostic_snapshot.json")
         self._running = False
         self._task = None
+        self.run_id = run_id
+        self.started_at_ms = started_at_ms
+        if self.started_at_ms is None and session_started_at_s is not None:
+            try:
+                self.started_at_ms = int(float(session_started_at_s) * 1000)
+            except Exception:
+                self.started_at_ms = None
+        self.writer_pid = writer_pid if writer_pid is not None else os.getpid()
 
     def _rpc_stats(self) -> Optional[List[Dict[str, Any]]]:
         if not self.rpc_provider:
@@ -739,6 +849,11 @@ class DiagnosticSnapshotter:
             rpc_health=rpc_health,
             window_s=self.window_s,
             update_reason=reason,
+            run_id=self.run_id,
+            writer_pid=self.writer_pid,
+            started_at_ms=self.started_at_ms,
+            last_heartbeat_ts=int(time.time() * 1000),
+            heartbeat_interval_s=self.interval_s,
         )
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)

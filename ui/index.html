@@ -571,6 +571,7 @@
     .statusRow{ display:flex; align-items:center; gap: 10px; }
     .statusText{ display:flex; flex-direction: column; min-width: 0; }
     .statusText span{ font-size: 12px; color: var(--muted); }
+    .statusMeta{ font-size: 11px; color: var(--muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
     .miniStatus{ display:flex; flex-direction: column; gap: 2px; min-width: 0; }
     .miniStatus span{ font-size: 11px; color: var(--muted); }
     .miniStatus b{ font-size: 13px; }
@@ -721,6 +722,7 @@
               <b id="connText">offline</b>
             </div>
           </div>
+          <div class="statusMeta" id="runMeta">run_id: —</div>
           <div class="badge" id="runBadge">stopped</div>
         </div>
 
@@ -818,6 +820,7 @@
         <span class="warnPill" id="warnWsDown">Mempool WS offline</span>
         <span class="warnPill" id="warnPersistentHit">Persistent-hit warning</span>
         <span class="warnPill" id="warnRequireCrossDex">Require cross-DEX enabled</span>
+        <span class="warnPill" id="warnStalled">Heartbeat stalled</span>
       </div>
 
       <div class="diagGrid">
@@ -844,6 +847,17 @@
           <div class="diagList" id="quoteErrors">n/a</div>
           <div class="diagSub">Drop reasons</div>
           <div class="diagList" id="dropErrors">n/a</div>
+          <div class="diagSub">Missing pools</div>
+          <div class="diagList" id="missingPools">n/a</div>
+        </div>
+        <div class="diagCard">
+          <div class="diagTitle">Batching / Cache</div>
+          <div class="diagRow"><span>Batches</span><b id="batchTotal">0</b></div>
+          <div class="diagRow"><span>Batch avg</span><b id="batchAvg">—</b></div>
+          <div class="diagRow"><span>Batch p50</span><b id="batchP50">—</b></div>
+          <div class="diagRow"><span>Batch p95</span><b id="batchP95">—</b></div>
+          <div class="diagRow"><span>Cache hit</span><b id="cacheHit">—</b></div>
+          <div class="diagRow"><span>Dedup saved</span><b id="dedupSaved">0</b></div>
         </div>
       </div>
 
@@ -1358,6 +1372,7 @@ https://rpc2
   const connDot = document.getElementById('connDot');
   const connText = document.getElementById('connText');
   const runBadge = document.getElementById('runBadge');
+  const runMeta = document.getElementById('runMeta');
   const stateText = document.getElementById('stateText');
   const currentPresetBadge = document.getElementById('currentPresetBadge');
   const currentScanSourceBadge = document.getElementById('currentScanSourceBadge');
@@ -1368,6 +1383,8 @@ https://rpc2
   const uptimeText = document.getElementById('uptimeText');
   const uptimeState = document.getElementById('uptimeState');
   let botStartedAtMs = null; // set from server (started_at_ms)
+  let isRunningState = false;
+  let heartbeatStalled = false;
 
   const lastBlockEl = document.getElementById('lastBlock');
   const noticeIcon = document.getElementById('noticeIcon');
@@ -1403,6 +1420,13 @@ https://rpc2
   const funnelPreflightBar = document.getElementById('funnelPreflightBar');
   const quoteErrors = document.getElementById('quoteErrors');
   const dropErrors = document.getElementById('dropErrors');
+  const missingPools = document.getElementById('missingPools');
+  const batchTotal = document.getElementById('batchTotal');
+  const batchAvg = document.getElementById('batchAvg');
+  const batchP50 = document.getElementById('batchP50');
+  const batchP95 = document.getElementById('batchP95');
+  const cacheHit = document.getElementById('cacheHit');
+  const dedupSaved = document.getElementById('dedupSaved');
 
   const profitRows = document.getElementById('profitRows');
   const canvas = document.getElementById('profitChart');
@@ -1538,6 +1562,7 @@ https://rpc2
   const warnWsDown = document.getElementById('warnWsDown');
   const warnPersistentHit = document.getElementById('warnPersistentHit');
   const warnRequireCrossDex = document.getElementById('warnRequireCrossDex');
+  const warnStalled = document.getElementById('warnStalled');
   const copyDebugBtn = document.getElementById('copyDebugBtn');
   const copyPackBtn = document.getElementById('copyPackBtn');
 
@@ -1650,6 +1675,40 @@ https://rpc2
     setPillVisible(warnPersistentHit, persistentWarn);
     setPillVisible(warnScheduledZero, triggerZeroStreak >= 3);
     setPillVisible(warnRequireCrossDex, requireOn);
+    setPillVisible(warnStalled, heartbeatStalled);
+  }
+
+  function updateHeartbeatStatus(){
+    const global = diagnosticSnapshot && diagnosticSnapshot.global ? diagnosticSnapshot.global : {};
+    const runId = String(global.run_id || '').trim();
+    const writerPid = global.writer_pid != null ? String(global.writer_pid) : '—';
+    if (runMeta) {
+      runMeta.textContent = runId ? `run_id ${runId.slice(0, 8)} • pid ${writerPid}` : 'run_id: —';
+      runMeta.title = runId || '';
+    }
+    const hb = Number(global.last_heartbeat_ts || global.timestamp_ms || 0);
+    const intervalS = Number(global.heartbeat_interval_s || 0);
+    const thresholdMs = intervalS > 0 ? Math.max(20000, intervalS * 1500) : 30000;
+    heartbeatStalled = false;
+    if (isRunningState && hb > 0) {
+      heartbeatStalled = (Date.now() - hb) > thresholdMs;
+    }
+    if (heartbeatStalled) {
+      runBadge.textContent = 'stalled';
+      runBadge.className = 'badge warn';
+      if (uptimeState) {
+        uptimeState.textContent = 'stalled';
+        uptimeState.className = 'badge warn';
+      }
+    } else {
+      runBadge.textContent = isRunningState ? 'running' : 'stopped';
+      runBadge.className = 'badge ' + (isRunningState ? 'good' : '');
+      if (uptimeState) {
+        uptimeState.textContent = isRunningState ? 'running' : 'stopped';
+        uptimeState.className = 'badge ' + (isRunningState ? 'good' : '');
+      }
+    }
+    updateWarnings();
   }
 
   function getWatchedRouterNames(){
@@ -1742,6 +1801,7 @@ https://rpc2
       if (funnelPreflightBar) funnelPreflightBar.style.width = '0%';
       if (quoteErrors) quoteErrors.textContent = 'n/a';
       if (dropErrors) dropErrors.textContent = 'n/a';
+      if (missingPools) missingPools.textContent = 'n/a';
       return;
     }
     const metrics = diagnosticSnapshot.metrics || {};
@@ -1783,6 +1843,33 @@ https://rpc2
     };
     if (quoteErrors) quoteErrors.textContent = formatReasons(metrics.quotes_fail_by_reason);
     if (dropErrors) dropErrors.textContent = formatReasons(metrics.drop_reason_counts);
+    if (missingPools) {
+      const items = Array.isArray(metrics.unknown_pool_top) ? metrics.unknown_pool_top : [];
+      const lines = items.slice(0, 10).map((row) => `${row.key}: ${formatCount(row.count)}`);
+      missingPools.textContent = lines.length ? lines.join('\n') : 'n/a';
+    }
+
+    if (batchTotal) batchTotal.textContent = formatCount(metrics.rpc_batches_total || 0);
+    if (batchAvg) batchAvg.textContent = fmtAmount(metrics.rpc_batch_size_avg, 1);
+    if (batchP50) batchP50.textContent = fmtAmount(metrics.rpc_batch_size_p50, 1);
+    if (batchP95) batchP95.textContent = fmtAmount(metrics.rpc_batch_size_p95, 1);
+    if (dedupSaved) dedupSaved.textContent = formatCount(metrics.dedup_saved_calls_total || 0);
+    if (cacheHit) {
+      const hits = Number(metrics.cache_hits_decimals || 0)
+        + Number(metrics.cache_hits_symbol || 0)
+        + Number(metrics.cache_hits_v2_reserves || 0)
+        + Number(metrics.cache_hits_v3_slot0 || 0)
+        + Number(metrics.cache_hits_v3_liquidity || 0);
+      const misses = Number(metrics.cache_misses_decimals || 0)
+        + Number(metrics.cache_misses_symbol || 0)
+        + Number(metrics.cache_misses_v2_reserves || 0)
+        + Number(metrics.cache_misses_v3_slot0 || 0)
+        + Number(metrics.cache_misses_v3_liquidity || 0);
+      const denom = hits + misses;
+      const rate = denom > 0 ? (hits / denom) * 100 : null;
+      cacheHit.textContent = rate == null ? '—' : `${rate.toFixed(1)}%`;
+    }
+    updateHeartbeatStatus();
   }
 
   function renderMempoolSwaps(){
@@ -1950,6 +2037,7 @@ https://rpc2
   }
 
   function setRunning(running){
+    isRunningState = !!running;
     runBadge.textContent = running ? 'running' : 'stopped';
     runBadge.className = 'badge ' + (running ? 'good' : '');
     stateText.textContent = running ? 'running' : 'stopped';
@@ -2307,10 +2395,11 @@ https://rpc2
     delete meta.time;
     delete meta.block;
     delete meta.text;
+    const blockVal = (block === null || block === undefined) ? null : block;
     const entry = {
       type: type || 'log',
       time: time || '',
-      block: block ?? null,
+      block: blockVal,
       text: text || '',
       meta: Object.keys(meta).length ? meta : null,
     };
@@ -2633,6 +2722,10 @@ https://rpc2
       if (s && s.ok) {
         httpAlive = true;
         if (typeof s.started_at_ms === 'number') botStartedAtMs = s.started_at_ms;
+        if (s.run_id && runMeta && !diagnosticSnapshot) {
+          runMeta.textContent = `run_id ${String(s.run_id).slice(0, 8)} • pid —`;
+          runMeta.title = String(s.run_id);
+        }
         setRunning(!!s.running);
       }
       else {
@@ -2706,6 +2799,10 @@ https://rpc2
         if (typeof msg.running === 'boolean') setRunning(msg.running);
         if (typeof msg.text === 'string' && msg.text.toLowerCase().includes('stopped')) setRunning(false);
         if (typeof msg.text === 'string' && msg.text.toLowerCase().includes('started')) setRunning(true);
+        if (msg.run_id && runMeta) {
+          runMeta.textContent = `run_id ${String(msg.run_id).slice(0, 8)} • pid —`;
+          runMeta.title = String(msg.run_id);
+        }
         // Status is for process/network state, not for scan results
         setNotice('status', msg.text || 'status');
       }
@@ -3277,11 +3374,16 @@ https://rpc2
     copyDebugBtn.addEventListener('click', async () => {
       const lastSwap = mempoolSwaps[mempoolSwaps.length - 1] || null;
       const lastTrigger = mempoolTriggerScans[mempoolTriggerScans.length - 1] || null;
+      const fetchRate = (mempoolStatus && mempoolStatus.tx_fetch_unique_success_rate != null)
+        ? mempoolStatus.tx_fetch_unique_success_rate
+        : (mempoolStatus && mempoolStatus.tx_fetch_success_rate != null)
+          ? mempoolStatus.tx_fetch_success_rate
+          : 0;
       const lines = [
         `last_block=${lastBlockEl ? lastBlockEl.textContent : '—'}`,
         `mempool_ws=${mempoolStatus && mempoolStatus.ws_connected ? 'connected' : 'offline'}`,
         `hash_rate=${mempoolStatus ? Number(mempoolStatus.tx_hash_rate || 0).toFixed(2) : '0'}`,
-        `fetch_success=${mempoolStatus ? (Number(mempoolStatus.tx_fetch_unique_success_rate ?? mempoolStatus.tx_fetch_success_rate ?? 0) * 100).toFixed(1) + '%' : '0%'}`,
+        `fetch_success=${(Number(fetchRate) * 100).toFixed(1)}%`,
         `last_swap=${lastSwap ? (lastSwap.kind + ' ' + (lastSwap.token_in || '?') + '->' + (lastSwap.token_out || '?')) : '—'}`,
         `last_trigger=${lastTrigger ? (lastTrigger.outcome + ' net=' + Number(lastTrigger.best_net || 0).toFixed(4)) : '—'}`,
       ];

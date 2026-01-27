@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import time
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Dict, Optional
@@ -130,6 +131,10 @@ def _write_snapshot_from_logs(
         rpc_stats=None,
         window_s=900,
         update_reason=update_reason,
+        run_id=meta.get("run_id"),
+        writer_pid=None,
+        started_at_ms=meta.get("started_at_ms"),
+        last_heartbeat_ts=int(time.time() * 1000),
     )
     snapshot["run_meta"] = {
         "seed": meta.get("seed"),
@@ -187,6 +192,7 @@ def main() -> int:
         blocks = int(args.to_block - args.from_block + 1)
 
     meta = {
+        "run_id": str(uuid.uuid4()),
         "seed": int(args.seed),
         "mode": args.mode,
         "mempool": args.mempool,
@@ -226,6 +232,7 @@ def main() -> int:
             env["BOT_CONFIG"] = str(run_config)
             env["ARBITOINATOR_CONFIG"] = str(run_config)
             env["RUN_LOG_DIR"] = str(run_dir / "logs")
+            env["RUN_ID"] = str(meta.get("run_id"))
             if args.seed:
                 env["RUN_SEED"] = str(int(args.seed))
             if blocks > 0:

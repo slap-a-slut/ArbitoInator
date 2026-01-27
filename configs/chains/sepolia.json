@@ -19,6 +19,7 @@
   "dex": {
     "uniswap_v3_quoter": "0x27E611FD27b276ACbd7F5a8e4A0BEE71ee9A5283",
     "uniswap_v3_quoter_v2": "0x3d4e44Eb1534cdD8f5a6f6D0C9842e869EF5e5e0",
+    "uniswap_v3_factory": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
     "uniswap_v2_factory": "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f",
     "sushiswap_factory": "0xC0AEe478e3658e2610c5F7A4A2E1777Ce9e4f2Ac",
     "uniswap_v2_router": "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",

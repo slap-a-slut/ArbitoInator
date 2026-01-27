@@ -1,11 +1,11 @@
 # Last Session Summary
 
-- Started (UTC): 2026-01-26T07:01:27
-- Updated (UTC): 2026-01-26T07:09:15
-- Duration: 00:07:47
+- Started (UTC): 2026-01-27T11:04:36
+- Updated (UTC): 2026-01-27T11:53:02
+- Duration: 00:48:25
 - RPC endpoints: 3
 - DEX adapters: 3
-- Blocks scanned: 10
+- Blocks scanned: 30
 - Profit hits: 0
 
 ## RPC URLs
@@ -76,6 +76,9 @@ prepare_budget_min_s: 2.0
 prepare_budget_ratio: 0.2
 probe_amount: 1.0
 report_currency: USDC
+rpc_batch_eth_calls: True
+rpc_batch_flush_ms: 8
+rpc_batch_max_calls: 80
 rpc_health_ban_seconds: 60
 rpc_http_endpoints: ({'id': 'publicnode', 'url': 'https://ethereum-rpc.publicnode.com'}, {'id': 'llama', 'url': 'https://eth.llamarpc.com'}, {'id': 'ankr', 'url': 'https://rpc.ankr.com/eth'})
 rpc_latency_p95_ms_threshold: 2500.0
@@ -106,6 +109,14 @@ trigger_edge_top_m_per_dex: 2
 trigger_max_candidates_raw: 80
 trigger_prefer_cross_dex: True
 trigger_prepare_budget_ms: 250
+trigger_probe_amounts_usdc: (50.0, 100.0)
+trigger_probe_amounts_weth: (0.005, 0.01)
+trigger_probe_budget_ms: 0
+trigger_probe_budget_ratio: 0.4
+trigger_probe_gas_units: 180000
+trigger_probe_min_net: 0
+trigger_probe_top_k: 12
+trigger_refine_budget_ms: 0
 trigger_require_cross_dex: False
 trigger_require_three_hops: False
 trigger_same_dex_penalty_bps: 5.0
